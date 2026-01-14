@@ -1,0 +1,15 @@
+{
+    "mcpServers": {
+        "findistill": {
+            "command": "python",
+            "args": [
+                "-m",
+                "core.mcp_server"
+            ],
+            "cwd": ".",
+            "env": {
+                "PYTHONPATH": "."
+            }
+        }
+    }
+}
