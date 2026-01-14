@@ -75,9 +75,24 @@ app.add_middleware(
 
 
 @app.get("/api/health")
-async def health_check():
-    """Health check endpoint."""
-    return {"status": "healthy", "service": "FinDistill API", "version": "2.0.0"}
+async def health_check(db: AsyncSession = Depends(get_db)):
+    """Health check endpoint with DB verification."""
+    try:
+        # Test DB connection
+        await db.execute(text("SELECT 1"))
+        return {
+            "status": "healthy", 
+            "service": "FinDistill API", 
+            "version": "2.0.0",
+            "database": "connected"
+        }
+    except Exception as e:
+        return {
+            "status": "degraded", 
+            "service": "FinDistill API", 
+            "version": "2.0.0",
+            "database": f"error: {str(e)}"
+        }
 
 
 @app.post("/api/extract")
