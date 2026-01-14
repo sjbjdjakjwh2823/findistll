@@ -10,3 +10,7 @@ pydantic-settings
 google-generativeai
 python-dotenv
 pgvector
+# Multi-format processing
+openpyxl
+pandas
+pyarrow

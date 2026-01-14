@@ -2,19 +2,28 @@
 
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { FileText, Calendar, ChevronRight } from 'lucide-react';
+import { FileText, Calendar, ChevronRight, Download, FileJson, FileType, Database } from 'lucide-react';
 import { apiUrl } from '@/lib/api';
+
+interface ExportLinks {
+    jsonl: string;
+    markdown: string;
+    parquet: string;
+}
 
 interface HistoryItem {
     id: number;
     filename: string;
+    file_type: string;
     upload_date: string;
     title: string;
     summary: string;
+    exports: ExportLinks;
 }
 
 export default function HistoryPage() {
     const [history, setHistory] = useState<HistoryItem[]>([]);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         const fetchHistory = async () => {
@@ -23,50 +32,104 @@ export default function HistoryPage() {
                 setHistory(res.data);
             } catch (error) {
                 console.error('Failed to fetch history', error);
+            } finally {
+                setLoading(false);
             }
         };
         fetchHistory();
     }, []);
 
+    const handleExport = (url: string, format: string) => {
+        window.open(apiUrl(url), '_blank');
+    };
+
+    const getFileTypeLabel = (mimeType: string) => {
+        if (!mimeType) return 'Unknown';
+        if (mimeType.includes('pdf')) return 'PDF';
+        if (mimeType.includes('excel') || mimeType.includes('spreadsheet')) return 'Excel';
+        if (mimeType.includes('csv')) return 'CSV';
+        if (mimeType.includes('image')) return 'Image';
+        return 'File';
+    };
+
     return (
         <div>
-            <h2 className="text-3xl font-bold mb-8">Extraction History</h2>
+            <h2 className="text-3xl font-bold mb-2">Extraction History</h2>
+            <p className="text-gray-500 mb-8">View and export your processed documents</p>
 
-            <div className="grid gap-4">
-                {history.map((item) => (
-                    <div key={item.id} className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-                        <div className="flex justify-between items-start">
-                            <div className="flex items-start gap-4">
-                                <div className="p-3 bg-blue-50 rounded-lg">
-                                    <FileText className="w-6 h-6 text-blue-600" />
+            {loading ? (
+                <div className="flex justify-center py-12">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+            ) : (
+                <div className="grid gap-4">
+                    {history.map((item) => (
+                        <div key={item.id} className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                            <div className="flex justify-between items-start">
+                                <div className="flex items-start gap-4">
+                                    <div className="p-3 bg-blue-50 rounded-lg">
+                                        <FileText className="w-6 h-6 text-blue-600" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-lg font-semibold text-gray-900">{item.title}</h3>
+                                        <p className="text-sm text-gray-500 mb-2 flex items-center gap-2">
+                                            <Calendar className="w-4 h-4" />
+                                            {new Date(item.upload_date).toLocaleDateString()}
+                                            <span className="px-2 py-0.5 bg-gray-100 rounded text-xs">
+                                                {getFileTypeLabel(item.file_type)}
+                                            </span>
+                                        </p>
+                                        <p className="text-gray-600 line-clamp-2">{item.summary}</p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <h3 className="text-lg font-semibold text-gray-900">{item.title}</h3>
-                                    <p className="text-sm text-gray-500 mb-2 flex items-center gap-1">
-                                        <Calendar className="w-4 h-4" />
-                                        {new Date(item.upload_date).toLocaleDateString()}
-                                    </p>
-                                    <p className="text-gray-600 line-clamp-2">{item.summary}</p>
-                                </div>
+
+                                <button className="p-2 hover:bg-gray-50 rounded-full transition-colors">
+                                    <ChevronRight className="w-5 h-5 text-gray-400" />
+                                </button>
                             </div>
 
-                            <button className="p-2 hover:bg-gray-50 rounded-full transition-colors">
-                                <ChevronRight className="w-5 h-5 text-gray-400" />
-                            </button>
-                        </div>
-                        <div className="mt-4 pt-4 border-t flex justify-between items-center text-sm text-gray-500">
-                            <span>{item.filename}</span>
-                            <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium">Completed</span>
-                        </div>
-                    </div>
-                ))}
+                            {/* Export Buttons */}
+                            <div className="mt-4 pt-4 border-t flex flex-wrap justify-between items-center gap-2">
+                                <span className="text-sm text-gray-500">{item.filename}</span>
 
-                {history.length === 0 && (
-                    <div className="text-center py-12 text-gray-500 bg-white rounded-xl border border-dashed">
-                        No history found. Upload a document to get started.
-                    </div>
-                )}
-            </div>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => handleExport(item.exports.jsonl, 'jsonl')}
+                                        className="flex items-center gap-1 px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg text-sm font-medium transition-colors"
+                                        title="JSONL for LLM Fine-tuning"
+                                    >
+                                        <FileJson className="w-4 h-4" />
+                                        JSONL
+                                    </button>
+                                    <button
+                                        onClick={() => handleExport(item.exports.markdown, 'markdown')}
+                                        className="flex items-center gap-1 px-3 py-1.5 bg-green-50 hover:bg-green-100 text-green-700 rounded-lg text-sm font-medium transition-colors"
+                                        title="Markdown for RAG"
+                                    >
+                                        <FileType className="w-4 h-4" />
+                                        Markdown
+                                    </button>
+                                    <button
+                                        onClick={() => handleExport(item.exports.parquet, 'parquet')}
+                                        className="flex items-center gap-1 px-3 py-1.5 bg-orange-50 hover:bg-orange-100 text-orange-700 rounded-lg text-sm font-medium transition-colors"
+                                        title="Parquet for Analytics"
+                                    >
+                                        <Database className="w-4 h-4" />
+                                        Parquet
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+
+                    {history.length === 0 && (
+                        <div className="text-center py-12 text-gray-500 bg-white rounded-xl border border-dashed">
+                            <p className="mb-2">No history found.</p>
+                            <p>Upload a document to get started.</p>
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 }
