@@ -1,2 +1,8 @@
 fastapi
-mangum
+uvicorn
+sqlalchemy
+asyncpg
+google-generativeai
+python-multipart
+pgvector
+openpyxl
