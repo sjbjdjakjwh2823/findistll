@@ -76,10 +76,18 @@ export default function UploadPage() {
         } catch (error: any) {
             console.error(error);
             setStatus('error');
-            setErrorMessage(
-                error.response?.data?.detail ||
-                'Failed to process document. Please try again.'
-            );
+
+            let msg = 'Failed to process document.';
+            if (error.response) {
+                // Server responded with a status code
+                msg = `Error (${error.response.status}): ${error.response.data?.detail || error.message}`;
+            } else if (error.request) {
+                // The request was made but no response was received
+                msg = 'No response from server. It might be a timeout (processing took too long).';
+            } else {
+                msg = error.message;
+            }
+            setErrorMessage(msg);
         } finally {
             setLoading(false);
         }
