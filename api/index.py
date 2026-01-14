@@ -1,24 +1,18 @@
-"""
-Vercel Serverless Function Entry Point (Debug Mode)
-"""
+from mangum import Mangum
 import sys
-import traceback
+import os
 
 try:
-    from mangum import Mangum
     from .app import app
-    
-    # Enable lifespan for auto-migration
-    handler = Mangum(app, lifespan="on")
-    
+    # Disable lifespan temporarily to isolate startup crashes
+    handler = Mangum(app, lifespan="off") 
 except Exception as e:
-    # Capture import errors and return as basic HTTP response
-    error_msg = f"Critical Import Error: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
-    print(error_msg)
+    import traceback
+    error_trace = traceback.format_exc()
     
     def handler(event, context):
         return {
             "statusCode": 500,
             "headers": {"Content-Type": "text/plain"},
-            "body": error_msg
+            "body": f"Init Error:\n{error_trace}\n\nPath: {sys.path}\nCWD: {os.getcwd()}"
         }
