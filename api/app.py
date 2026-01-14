@@ -63,7 +63,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="FinDistill API",
     description="Financial Document Data Distillation API",
-    version="2.0.1",
+    version="2.0.2",
     lifespan=lifespan
 )
 
@@ -86,7 +86,7 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         return {
             "status": "healthy", 
             "service": "FinDistill API", 
-            "version": "2.0.1",
+            "version": "2.0.2",
             "database": "connected"
         }
     except Exception as e:

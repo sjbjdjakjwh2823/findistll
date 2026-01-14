@@ -39,7 +39,7 @@ connect_args = {
 try:
     parsed = urlparse(DATABASE_URL)
     hostname = parsed.hostname
-    if hostname and "supabase.co" in hostname:
+if hostname and ("supabase.co" in hostname or "supabase.com" in hostname):
         # 1. Resolve to IPv4
         ip_address = socket.gethostbyname(hostname)
         print(f"DEBUG: Resolved {hostname} to {ip_address}")
