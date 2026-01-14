@@ -10,6 +10,8 @@ Handles parsing of various file formats:
 
 import io
 import json
+import csv
+import collections
 from typing import Dict, Any, List, Optional
 import google.generativeai as genai
 
@@ -37,17 +39,7 @@ class FileIngestionService:
         filename: str, 
         mime_type: str
     ) -> Dict[str, Any]:
-        """
-        Process a file and extract structured financial data.
-        
-        Args:
-            file_content: Raw file bytes
-            filename: Original filename
-            mime_type: MIME type of the file
-            
-        Returns:
-            Extracted data with metadata
-        """
+        """Process a file and extract structured financial data."""
         file_type = self.SUPPORTED_FORMATS.get(mime_type, 'unknown')
         
         if file_type == 'csv':
@@ -60,70 +52,88 @@ class FileIngestionService:
             raise ValueError(f"Unsupported file type: {mime_type}")
     
     async def _process_csv(self, content: bytes, filename: str) -> Dict[str, Any]:
-        """Process CSV file using pandas."""
-        import pandas as pd
+        """Process CSV file using standard csv module."""
+        text_content = None
         
         # Try different encodings
         for encoding in ['utf-8', 'cp949', 'euc-kr', 'latin1']:
             try:
-                df = pd.read_csv(io.BytesIO(content), encoding=encoding)
+                text_content = content.decode(encoding)
                 break
             except UnicodeDecodeError:
                 continue
-        else:
+        
+        if text_content is None:
             raise ValueError("Could not decode CSV file with any supported encoding")
         
-        # Convert to structured format
+        # Parse CSV
+        f = io.StringIO(text_content)
+        reader = csv.reader(f)
+        rows = list(reader)
+        
+        if not rows:
+            return {"title": filename, "summary": "Empty CSV file", "tables": []}
+            
+        headers = rows[0]
+        data_rows = rows[1:]
+        
         tables = [{
             "name": filename,
-            "headers": df.columns.tolist(),
-            "rows": df.values.tolist()
+            "headers": headers,
+            "rows": data_rows
         }]
         
         # Generate summary using Gemini
-        sample_data = df.head(10).to_string()
+        sample_lines = rows[:10]
+        sample_data = "\n".join([",".join(map(str, row)) for row in sample_lines])
         summary = await self._generate_summary(sample_data)
         
         return {
             "title": filename,
             "summary": summary,
             "tables": tables,
-            "key_metrics": self._extract_metrics(df),
+            "key_metrics": self._extract_metrics(headers, data_rows),
             "metadata": {
                 "file_type": "csv",
-                "row_count": len(df),
-                "column_count": len(df.columns)
+                "row_count": len(rows),
+                "column_count": len(headers)
             }
         }
     
     async def _process_excel(self, content: bytes, filename: str) -> Dict[str, Any]:
-        """Process Excel file using openpyxl/pandas."""
-        import pandas as pd
+        """Process Excel file using openpyxl."""
+        from openpyxl import load_workbook
         
-        # Read all sheets
-        excel_file = pd.ExcelFile(io.BytesIO(content))
+        wb = load_workbook(filename=io.BytesIO(content), data_only=True)
         tables = []
         all_metrics = {}
         
-        for sheet_name in excel_file.sheet_names:
-            df = pd.read_excel(excel_file, sheet_name=sheet_name)
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            rows = list(ws.values)
             
-            # Skip empty sheets
-            if df.empty:
+            if not rows:
                 continue
                 
+            headers = list(rows[0]) if rows else []
+            data_rows = [list(row) for row in rows[1:]] if len(rows) > 1 else []
+            
+            # Simple conversion of None to empty string
+            headers = [str(h) if h is not None else "" for h in headers]
+            data_rows = [[cell if cell is not None else "" for cell in row] for row in data_rows]
+            
             tables.append({
                 "name": sheet_name,
-                "headers": df.columns.tolist(),
-                "rows": df.fillna("").values.tolist()
+                "headers": headers,
+                "rows": data_rows
             })
             
-            # Merge metrics from each sheet
-            sheet_metrics = self._extract_metrics(df)
+            # Merge metrics
+            sheet_metrics = self._extract_metrics(headers, data_rows)
             all_metrics.update({f"{sheet_name}_{k}": v for k, v in sheet_metrics.items()})
         
         # Generate summary
-        sample_text = "\n".join([t["name"] + ": " + str(t["headers"]) for t in tables[:3]])
+        sample_text = "\n".join([f"{t['name']}: {t['headers']}" for t in tables[:3]])
         summary = await self._generate_summary(sample_text)
         
         return {
@@ -137,22 +147,14 @@ class FileIngestionService:
             }
         }
     
-    async def _process_with_gemini(
-        self, 
-        content: bytes, 
-        filename: str, 
-        mime_type: str
-    ) -> Dict[str, Any]:
+    async def _process_with_gemini(self, content: bytes, filename: str, mime_type: str) -> Dict[str, Any]:
         """Process PDF/Image using Gemini multimodal."""
-        
-        # Upload to Gemini
         gemini_file = genai.upload_file(
             io.BytesIO(content),
             mime_type=mime_type,
             display_name=filename
         )
         
-        # Enhanced prompt for financial documents
         prompt = """
         Analyze this financial document thoroughly. Extract ALL data into structured JSON.
         
@@ -178,11 +180,8 @@ class FileIngestionService:
                 "metric_name": "value with unit"
             },
             "currency": "KRW or USD",
-            "date_range": "YYYY-MM-DD to YYYY-MM-DD",
-            "document_type": "재무제표/손익계산서/etc"
+            "date_range": "YYYY-MM-DD to YYYY-MM-DD"
         }
-        
-        Be thorough and extract all numerical data visible in the document.
         """
         
         response = self.model.generate_content(
@@ -190,7 +189,6 @@ class FileIngestionService:
             generation_config={"response_mime_type": "application/json"}
         )
         
-        # Clean up uploaded file
         try:
             genai.delete_file(gemini_file.name)
         except Exception:
@@ -206,31 +204,53 @@ class FileIngestionService:
     
     async def _generate_summary(self, data_sample: str) -> str:
         """Generate a summary using Gemini."""
-        prompt = f"""
-        다음 데이터의 핵심 내용을 2-3문장으로 요약해주세요:
-        
-        {data_sample}
-        """
-        
+        prompt = f"다음 데이터의 핵심 내용을 2-3문장으로 요약해주세요:\n\n{data_sample}"
         response = self.model.generate_content(prompt)
         return response.text.strip()
     
-    def _extract_metrics(self, df) -> Dict[str, Any]:
-        """Extract key metrics from a pandas DataFrame."""
-        import pandas as pd
-        
+    def _extract_metrics(self, headers: List[str], rows: List[List[Any]]) -> Dict[str, Any]:
+        """Extract simple metrics from headers and rows without pandas."""
         metrics = {}
+        if not headers or not rows:
+            return metrics
+
+        # Find potential numeric columns (simple heuristic)
+        numeric_indices = []
+        for i in range(len(headers)):
+            # Check first few non-empty rows
+            is_numeric = False
+            for row in rows[:5]:
+                if i < len(row) and isinstance(row[i], (int, float)):
+                   is_numeric = True
+                   break
+                elif i < len(row) and isinstance(row[i], str) and row[i].replace('.','',1).isdigit():
+                   is_numeric = True
+                   break
+            if is_numeric:
+                numeric_indices.append(i)
         
-        # Find numeric columns
-        numeric_cols = df.select_dtypes(include=['number']).columns
-        
-        for col in numeric_cols[:5]:  # Limit to first 5 numeric columns
-            if len(df[col].dropna()) > 0:
-                metrics[f"{col}_total"] = float(df[col].sum())
-                metrics[f"{col}_avg"] = float(df[col].mean())
-        
+        # Calculate sums/averages for first few numeric columns
+        for i in numeric_indices[:5]:
+            col_name = str(headers[i])
+            values = []
+            for row in rows:
+                if i < len(row):
+                    val = row[i]
+                    try:
+                        if isinstance(val, (int, float)):
+                            values.append(float(val))
+                        elif isinstance(val, str):
+                            # clean string
+                            clean_val = val.replace(',', '').replace(' ', '')
+                            if clean_val:
+                                values.append(float(clean_val))
+                    except ValueError:
+                        continue
+            
+            if values:
+                metrics[f"{col_name}_total"] = sum(values)
+                metrics[f"{col_name}_avg"] = sum(values) / len(values)
+                
         return metrics
 
-
-# Singleton instance
 ingestion_service = FileIngestionService()

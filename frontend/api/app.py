@@ -228,10 +228,10 @@ async def export_parquet(document_id: int, db: AsyncSession = Depends(get_db)):
                 "Content-Disposition": f"attachment; filename=document_{document_id}.parquet"
             }
         )
-    except ImportError:
+    except (ImportError, RuntimeError) as e:
         raise HTTPException(
             status_code=501,
-            detail="Parquet export requires pyarrow. Install with: pip install pyarrow"
+            detail=f"Parquet export is not available in this environment: {str(e)}"
         )
 
 

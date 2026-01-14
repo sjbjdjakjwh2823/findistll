@@ -10,7 +10,5 @@ pydantic-settings
 google-generativeai
 python-dotenv
 pgvector
-# Multi-format processing
+# Lightweight Excel parsing (minimal dependencies)
 openpyxl
-pandas
-pyarrow

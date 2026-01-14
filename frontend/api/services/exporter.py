@@ -2,28 +2,19 @@
 FinDistill Multi-Format Exporter
 
 Exports normalized financial data to:
-- JSONL: For LLM fine-tuning (instruction-response pairs)
-- Markdown: For RAG systems (hierarchical text)
-- Parquet: For large-scale analytics (compressed columnar)
+- JSONL: For LLM fine-tuning
+- Markdown: For RAG systems
 """
 
 import json
-import io
-from typing import Dict, Any, List
+from typing import Dict, Any
 from datetime import datetime
-
 
 class DataExporter:
     """Exports financial data to various formats for AI training."""
     
     def to_jsonl(self, data: Dict[str, Any]) -> str:
-        """
-        Convert to JSONL format for LLM fine-tuning.
-        Creates instruction-response pairs from the data.
-        
-        Output format per line:
-        {"instruction": "...", "input": "...", "output": "..."}
-        """
+        """Convert to JSONL format for LLM fine-tuning."""
         lines = []
         
         # Summary instruction
@@ -40,7 +31,6 @@ class DataExporter:
             rows = table.get("rows", [])
             
             if rows:
-                # Create instruction for table understanding
                 table_text = self._table_to_text(table)
                 lines.append(json.dumps({
                     "instruction": f"다음 '{table_name}' 테이블의 데이터를 분석해주세요.",
@@ -49,12 +39,17 @@ class DataExporter:
                 }, ensure_ascii=False))
                 
                 # Create Q&A pairs for each row
-                for row in rows[:10]:  # Limit to first 10 rows
+                for row in rows[:10]:
                     if len(headers) > 0 and len(row) > 0:
+                        # Safe zip handling
+                        pairs = []
+                        for h, v in zip(headers, row):
+                            pairs.append(f"{h}: {v}")
+                        
                         lines.append(json.dumps({
                             "instruction": f"'{table_name}'에서 '{headers[0]}'이(가) '{row[0]}'인 데이터를 찾아주세요.",
                             "input": table_text,
-                            "output": ", ".join([f"{h}: {v}" for h, v in zip(headers, row)])
+                            "output": ", ".join(pairs)
                         }, ensure_ascii=False))
         
         # Key metrics instructions
@@ -68,10 +63,7 @@ class DataExporter:
         return "\n".join(lines)
     
     def to_markdown(self, data: Dict[str, Any]) -> str:
-        """
-        Convert to Markdown format for RAG systems.
-        Creates hierarchical document with proper table formatting.
-        """
+        """Convert to Markdown format for RAG systems."""
         md_lines = []
         
         # Title
@@ -112,15 +104,15 @@ class DataExporter:
             md_lines.append("")
             
             if headers:
-                # Header row
-                md_lines.append("| " + " | ".join(str(h) for h in headers) + " |")
+                # Sanitized headers
+                safe_headers = [str(h).replace("|", "\\|") for h in headers]
+                md_lines.append("| " + " | ".join(safe_headers) + " |")
                 md_lines.append("|" + "|".join(["---"] * len(headers)) + "|")
                 
-                # Data rows
                 for row in rows:
-                    # Ensure row has same length as headers
                     padded_row = list(row) + [""] * (len(headers) - len(row))
-                    md_lines.append("| " + " | ".join(str(v) for v in padded_row[:len(headers)]) + " |")
+                    safe_row = [str(v).replace("|", "\\|") for v in padded_row[:len(headers)]]
+                    md_lines.append("| " + " | ".join(safe_row) + " |")
             
             md_lines.append("")
         
@@ -132,54 +124,41 @@ class DataExporter:
     
     def to_parquet(self, data: Dict[str, Any]) -> bytes:
         """
-        Convert to Parquet format for large-scale analytics.
-        Uses PyArrow for efficient columnar storage.
+        Convert to Parquet format.
+        Warning: This requires pandas/pyarrow which are not installed in serverless mode to save size.
+        Will raise an error if called.
         """
-        import pandas as pd
-        import pyarrow as pa
-        import pyarrow.parquet as pq
-        
-        # Collect all tables into DataFrames
-        dfs = []
-        
-        for table in data.get("tables", []):
-            table_name = table.get("name", "Unknown")
-            headers = table.get("headers", [])
-            rows = table.get("rows", [])
+        try:
+            import pandas as pd
+            import pyarrow as pa
+            import pyarrow.parquet as pq
+            import io
             
-            if headers and rows:
-                df = pd.DataFrame(rows, columns=headers)
-                df["_source_table"] = table_name
-                df["_document_title"] = data.get("title", "Unknown")
-                dfs.append(df)
-        
-        # Add key metrics as a separate "table"
-        if data.get("key_metrics"):
-            metrics_df = pd.DataFrame([{
-                "metric": k,
-                "value": str(v),
-                "_source_table": "key_metrics",
-                "_document_title": data.get("title", "Unknown")
-            } for k, v in data["key_metrics"].items()])
-            dfs.append(metrics_df)
-        
-        if not dfs:
-            # Create empty DataFrame if no data
-            combined = pd.DataFrame({
-                "title": [data.get("title", "")],
-                "summary": [data.get("summary", "")]
-            })
-        else:
-            # Combine all DataFrames
-            combined = pd.concat(dfs, ignore_index=True)
-        
-        # Convert to Parquet bytes
-        buffer = io.BytesIO()
-        table = pa.Table.from_pandas(combined)
-        pq.write_table(table, buffer, compression='snappy')
-        
-        return buffer.getvalue()
-    
+            # Implementation if libraries exist
+            dfs = []
+            for table in data.get("tables", []):
+                table_name = table.get("name", "Unknown")
+                headers = table.get("headers", [])
+                rows = table.get("rows", [])
+                
+                if headers and rows:
+                    df = pd.DataFrame(rows, columns=headers)
+                    df["_source_table"] = table_name
+                    dfs.append(df)
+            
+            if not dfs:
+                 combined = pd.DataFrame({"info": ["no data"]})
+            else:
+                 combined = pd.concat(dfs, ignore_index=True)
+            
+            buffer = io.BytesIO()
+            table = pa.Table.from_pandas(combined)
+            pq.write_table(table, buffer, compression='snappy')
+            return buffer.getvalue()
+            
+        except ImportError:
+            raise RuntimeError("Parquet export not supported in serverless mode (requires pyarrow/pandas)")
+
     def _table_to_text(self, table: Dict[str, Any]) -> str:
         """Convert a table to readable text format."""
         lines = []
@@ -189,8 +168,9 @@ class DataExporter:
         if headers:
             lines.append("컬럼: " + ", ".join(str(h) for h in headers))
         
-        for i, row in enumerate(rows[:5], 1):  # Limit to 5 rows for context
-            lines.append(f"행 {i}: " + ", ".join(str(v) for v in row))
+        for i, row in enumerate(rows[:5], 1):
+            val_strs = [str(v) for v in row]
+            lines.append(f"행 {i}: " + ", ".join(val_strs))
         
         if len(rows) > 5:
             lines.append(f"... 외 {len(rows) - 5}개 행")
