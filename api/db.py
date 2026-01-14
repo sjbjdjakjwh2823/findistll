@@ -19,12 +19,43 @@ raw_url = os.getenv(
 )
 
 # FIX: Force Supabase to use port 6543 (Transaction Pooler / IPv4)
-# Direct connection (5432) often fails in Vercel with [Errno 99] due to IPv6 issues.
 if "supabase.co" in raw_url and ":5432" in raw_url:
     print("WARNING: Detected Supabase Direct URL (:5432). Auto-switching to Pooler (:6543) for Vercel compatibility.")
     DATABASE_URL = raw_url.replace(":5432", ":6543")
 else:
     DATABASE_URL = raw_url
+
+# FIX: Resolve Hostname to IPv4 to prevent [Errno 99] (IPv6 mismatch) on Vercel
+# and configure SSL to accept the IP-based connection (disable hostname check)
+import socket
+from urllib.parse import urlparse
+import ssl
+
+connect_args = {
+    "prepared_statement_cache_size": 0,
+    "statement_cache_size": 0,
+}
+
+try:
+    parsed = urlparse(DATABASE_URL)
+    hostname = parsed.hostname
+    if hostname and "supabase.co" in hostname:
+        # 1. Resolve to IPv4
+        ip_address = socket.gethostbyname(hostname)
+        print(f"DEBUG: Resolved {hostname} to {ip_address}")
+        
+        # 2. Replace hostname with IP in URL
+        DATABASE_URL = DATABASE_URL.replace(hostname, ip_address)
+        
+        # 3. Create SSL Context that ignores hostname mismatch (since we are connecting to IP)
+        ssl_ctx = ssl.create_default_context()
+        ssl_ctx.check_hostname = False
+        ssl_ctx.verify_mode = ssl.CERT_NONE  # Supabase requires SSL, but we relax verification for IP connection
+        
+        connect_args["ssl"] = ssl_ctx
+        
+except Exception as e:
+    print(f"WARNING: DNS Resolution fix failed: {e}")
 
 # Serverless-optimized engine configuration
 # NullPool is recommended for serverless: creates new connection per request
@@ -34,10 +65,8 @@ engine = create_async_engine(
     echo=False,  # Disable SQL logging in production
     poolclass=NullPool,  # No connection pooling (serverless-friendly)
     # Supabase Pooler (PgBouncer) requires prepared statements to be disabled
-    connect_args={
-        "prepared_statement_cache_size": 0,
-        "statement_cache_size": 0,
-    },
+    # Supabase Pooler (PgBouncer) requires prepared statements to be disabled
+    connect_args=connect_args,
 )
 
 AsyncSessionLocal = async_sessionmaker(
