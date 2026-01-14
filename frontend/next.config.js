@@ -2,15 +2,19 @@
 const nextConfig = {
     reactStrictMode: true,
     swcMinify: true,
-    // Enable if you need standalone output for Docker/custom deployments
-    // output: 'standalone',
     images: {
-        // Add allowed image domains if using next/image with external URLs
         remotePatterns: [],
     },
-    // Environment variables that can be accessed in the browser
-    env: {
-        // NEXT_PUBLIC_API_URL is automatically available via process.env
+    // Rewrite requests to /api/* to the Python backend
+    async rewrites() {
+        return [
+            {
+                source: '/api/:path*',
+                destination: process.env.NODE_ENV === 'development'
+                    ? 'http://127.0.0.1:8000/api/:path*' // Local development
+                    : '/api/:path*', // Production (handled by Vercel functions)
+            },
+        ];
     },
 };
 
