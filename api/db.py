@@ -46,7 +46,11 @@ try:
         
     parsed = urlparse(DATABASE_URL)
     hostname = parsed.hostname
-    if hostname and ("supabase.co" in hostname or "supabase.com" in hostname):
+    
+    # FIX: Only apply DNS resolution fix for Direct URLs (supabase.co)
+    # Pooler URLs (supabase.com) require SNI/Hostname to route to the correct tenant.
+    # Replacing Pooler hostname with IP causes "Tenant or user not found".
+    if hostname and "supabase.co" in hostname and "pooler" not in hostname:
         # 1. Resolve to IPv4
         ip_address = socket.gethostbyname(hostname)
         print(f"DEBUG: Resolved {hostname} to {ip_address}")
