@@ -1,11 +1,9 @@
-from fastapi import FastAPI
-from mangum import Mangum
-
-# Minimal dummy app to allow Vercel to start without heavy dependencies
-app = FastAPI()
-
-@app.get("/api/health")
-def health():
-    return {"status": "alive_minimal", "message": "It works!"}
-
-handler = Mangum(app)
+def handler(request):
+    """
+    Pure Vercel Python Function (No dependencies)
+    """
+    return {
+        "statusCode": 200,
+        "headers": { "Content-Type": "text/plain" },
+        "body": "Hello from Pure Python! Deployment is working."
+    }
