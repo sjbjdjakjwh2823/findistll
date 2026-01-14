@@ -35,16 +35,19 @@ async def lifespan(app: FastAPI):
     Perform database auto-migration on server startup.
     """
     try:
-        print("Starting database auto-migration...")
-        async with engine.begin() as conn:
-            # 1. Create vector extension if not exists
-            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-            print("Vector extension checked/created.")
-            
-            # 2. Create all tables defined in models
-            # This is equivalent to "CREATE TABLE IF NOT EXISTS"
-            await conn.run_sync(Base.metadata.create_all)
-            print("Database tables checked/created successfully.")
+        # NOTE: Auto-migration disabled for Vercel stability.
+        # Run migrations manually or via a separate script.
+        pass
+        # print("Starting database auto-migration...")
+        # async with engine.begin() as conn:
+        #     # 1. Create vector extension if not exists
+        #     await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        #     print("Vector extension checked/created.")
+        #     
+        #     # 2. Create all tables defined in models
+        #     # This is equivalent to "CREATE TABLE IF NOT EXISTS"
+        #     await conn.run_sync(Base.metadata.create_all)
+        #     print("Database tables checked/created successfully.")
             
     except Exception as e:
         print(f"CRITICAL: Database initialization failed: {e}")
@@ -87,11 +90,18 @@ async def health_check(db: AsyncSession = Depends(get_db)):
             "database": "connected"
         }
     except Exception as e:
+        error_msg = str(e)
+        from .db import DATABASE_URL
+        masked_url = DATABASE_URL.split("@")[-1] if "@" in DATABASE_URL else "INVALID_URL"
+        
         return {
             "status": "degraded", 
             "service": "FinDistill API", 
             "version": "2.0.0",
-            "database": f"error: {str(e)}"
+            "database": f"error: {error_msg}",
+            "debug_info": {
+                "dbal_host": masked_url
+            }
         }
 
 
