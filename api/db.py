@@ -47,10 +47,21 @@ try:
     parsed = urlparse(DATABASE_URL)
     hostname = parsed.hostname
     
-    # FIX: Only apply DNS resolution fix for Direct URLs (supabase.co)
-    # Pooler URLs (supabase.com) require SNI/Hostname to route to the correct tenant.
-    # Replacing Pooler hostname with IP causes "Tenant or user not found".
-    if hostname and "supabase.co" in hostname and "pooler" not in hostname:
+    # CASE 1: Supabase Pooler URLs (pooler.supabase.com)
+    # SNI is required to route to the correct tenant - do NOT replace hostname with IP.
+    # Explicitly enable SSL to ensure SNI is sent for tenant routing.
+    if hostname and "pooler.supabase.com" in hostname:
+        print(f"DEBUG: Using Supabase Pooler URL: {hostname}")
+        # asyncpg needs explicit SSL config for proper SNI handling
+        ssl_ctx = ssl.create_default_context()
+        # Keep hostname verification disabled for flexibility (Supabase handles auth via SNI)
+        ssl_ctx.check_hostname = False
+        ssl_ctx.verify_mode = ssl.CERT_NONE
+        connect_args["ssl"] = ssl_ctx
+        
+    # CASE 2: Direct URLs (supabase.co)
+    # Apply DNS resolution fix to prevent IPv6 issues on Vercel.
+    elif hostname and "supabase.co" in hostname:
         # 1. Resolve to IPv4
         ip_address = socket.gethostbyname(hostname)
         print(f"DEBUG: Resolved {hostname} to {ip_address}")
