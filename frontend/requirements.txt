@@ -4,11 +4,8 @@ mangum
 python-multipart
 sqlalchemy
 asyncpg
-greenlet
 pydantic
-pydantic-settings
 google-generativeai
 python-dotenv
 pgvector
-# Lightweight Excel parsing (minimal dependencies)
 openpyxl
