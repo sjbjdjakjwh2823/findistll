@@ -11,11 +11,20 @@ from sqlalchemy.pool import NullPool
 import os
 
 # Supabase PostgreSQL connection URL
+# Supabase PostgreSQL connection URL
 # Format: postgresql+asyncpg://user:password@host:port/database
-DATABASE_URL = os.getenv(
+raw_url = os.getenv(
     "SUPABASE_DATABASE_URL",
     os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:password@localhost:5432/findistill_db")
 )
+
+# FIX: Force Supabase to use port 6543 (Transaction Pooler / IPv4)
+# Direct connection (5432) often fails in Vercel with [Errno 99] due to IPv6 issues.
+if "supabase.co" in raw_url and ":5432" in raw_url:
+    print("WARNING: Detected Supabase Direct URL (:5432). Auto-switching to Pooler (:6543) for Vercel compatibility.")
+    DATABASE_URL = raw_url.replace(":5432", ":6543")
+else:
+    DATABASE_URL = raw_url
 
 # Serverless-optimized engine configuration
 # NullPool is recommended for serverless: creates new connection per request
