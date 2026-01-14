@@ -31,7 +31,7 @@ class FileIngestionService:
     }
 
     def __init__(self):
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
+        self.model = genai.GenerativeModel('gemini-2.0-flash')
     
     async def process_file(
         self, 
@@ -197,7 +197,7 @@ class FileIngestionService:
         result = json.loads(response.text)
         result["metadata"] = {
             "file_type": "pdf" if "pdf" in mime_type else "image",
-            "processed_by": "gemini-1.5-flash"
+            "processed_by": "gemini-2.0-flash"
         }
         
         return result
