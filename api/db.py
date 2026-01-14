@@ -25,6 +25,10 @@ if "supabase.co" in raw_url and ":5432" in raw_url:
 else:
     DATABASE_URL = raw_url
 
+# FIX: Remove 'pgbouncer=true' query param if present (incompatible with asyncpg)
+if "?" in DATABASE_URL and "pgbouncer=true" in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("?pgbouncer=true", "").replace("&pgbouncer=true", "")
+
 # FIX: Resolve Hostname to IPv4 to prevent [Errno 99] (IPv6 mismatch) on Vercel
 # and configure SSL to accept the IP-based connection (disable hostname check)
 import socket
