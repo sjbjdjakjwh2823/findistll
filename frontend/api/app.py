@@ -7,17 +7,18 @@ Multi-format financial document distillation:
 - Database: Supabase with pgvector
 """
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, text
 import os
 import json
 
 import google.generativeai as genai
 
-from .db import get_db
+from .db import get_db, engine, Base
 from .models import Document, ExtractedResult
 from .services.ingestion import ingestion_service
 from .services.normalizer import normalizer
@@ -27,10 +28,40 @@ from .services.embedder import embedder
 # Configure Gemini API
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    App lifespan context manager for startup/shutdown tasks.
+    Perform database auto-migration on server startup.
+    """
+    try:
+        print("Starting database auto-migration...")
+        async with engine.begin() as conn:
+            # 1. Create vector extension if not exists
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            print("Vector extension checked/created.")
+            
+            # 2. Create all tables defined in models
+            # This is equivalent to "CREATE TABLE IF NOT EXISTS"
+            await conn.run_sync(Base.metadata.create_all)
+            print("Database tables checked/created successfully.")
+            
+    except Exception as e:
+        print(f"CRITICAL: Database initialization failed: {e}")
+        # We don't raise here to allow the app to start even if DB is flaky,
+        # but errors will be logged for debugging.
+    
+    yield
+    
+    # Clean up connection resources on shutdown
+    await engine.dispose()
+
+
 app = FastAPI(
     title="FinDistill API",
     description="Financial Document Data Distillation API",
-    version="2.0.0"
+    version="2.0.0",
+    lifespan=lifespan
 )
 
 # CORS Setup
