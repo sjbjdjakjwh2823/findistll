@@ -58,6 +58,8 @@ try:
         ssl_ctx.check_hostname = False
         ssl_ctx.verify_mode = ssl.CERT_NONE
         connect_args["ssl"] = ssl_ctx
+        # CRITICAL: asyncpg needs server_hostname to send SNI correctly
+        connect_args["server_hostname"] = hostname
         
     # CASE 2: Direct URLs (supabase.co)
     # Apply DNS resolution fix to prevent IPv6 issues on Vercel.
