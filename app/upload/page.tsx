@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import axios from 'axios';
-import { Upload, FileText, CheckCircle, AlertCircle, Loader2, FileSpreadsheet, Image } from 'lucide-react';
+import { Upload, FileText, CheckCircle, AlertCircle, Loader2, FileSpreadsheet, Image, Download } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { apiUrl } from '@/lib/api';
 
@@ -23,6 +23,7 @@ export default function UploadPage() {
     const [errorMessage, setErrorMessage] = useState('');
     const [dragOver, setDragOver] = useState(false);
     const [exportFormat, setExportFormat] = useState<'jsonl' | 'markdown' | 'parquet'>('jsonl');
+    const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
     const router = useRouter();
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -74,11 +75,11 @@ export default function UploadPage() {
 
             setStatus('success');
 
-            // Auto-download the converted file in selected format
+            // Save download URL for the download button
             const documentId = response.data.document_id;
             if (documentId) {
                 const exportUrl = apiUrl(`/api/export/${exportFormat}/${documentId}`);
-                window.open(exportUrl, '_blank');
+                setDownloadUrl(exportUrl);
             }
 
             // Don't auto-redirect to history - stay on the page
@@ -147,12 +148,14 @@ export default function UploadPage() {
                     id="file-upload"
                     accept=".pdf,.xlsx,.xls,.csv,image/*"
                 />
-                <label
-                    htmlFor="file-upload"
-                    className="inline-block px-6 py-3 bg-white border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors font-medium text-gray-700"
-                >
-                    Select File
-                </label>
+                {status !== 'success' && (
+                    <label
+                        htmlFor="file-upload"
+                        className="inline-block px-6 py-3 bg-white border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors font-medium text-gray-700"
+                    >
+                        Select File
+                    </label>
+                )}
 
                 {file && fileInfo && (
                     <div className="mt-6 p-4 bg-gray-50 rounded-lg flex items-center justify-between">
@@ -174,28 +177,38 @@ export default function UploadPage() {
                 )}
 
                 <div className="mt-8">
-                    <button
-                        onClick={handleUpload}
-                        disabled={!file || loading}
-                        className={`w-full py-3 rounded-lg font-medium text-white transition-all flex items-center justify-center gap-2
-                            ${!file || loading ? 'bg-gray-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 shadow-md'}
-                        `}
-                    >
-                        {loading ? (
-                            <>
-                                <Loader2 className="w-5 h-5 animate-spin" />
-                                Processing with AI...
-                            </>
-                        ) : (
-                            'Start Distillation'
-                        )}
-                    </button>
+                    {status === 'success' && downloadUrl ? (
+                        <button
+                            onClick={() => window.open(downloadUrl, '_blank')}
+                            className="w-full py-3 rounded-lg font-medium text-white transition-all flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 shadow-md"
+                        >
+                            <Download className="w-5 h-5" />
+                            Download {exportFormat.toUpperCase()} File
+                        </button>
+                    ) : (
+                        <button
+                            onClick={handleUpload}
+                            disabled={!file || loading}
+                            className={`w-full py-3 rounded-lg font-medium text-white transition-all flex items-center justify-center gap-2
+                                ${!file || loading ? 'bg-gray-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 shadow-md'}
+                            `}
+                        >
+                            {loading ? (
+                                <>
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                    Processing with AI...
+                                </>
+                            ) : (
+                                'Start Distillation'
+                            )}
+                        </button>
+                    )}
                 </div>
 
                 {status === 'success' && (
                     <div className="mt-4 p-4 bg-green-50 text-green-700 rounded-lg flex items-center gap-2 justify-center">
                         <CheckCircle className="w-5 h-5" />
-                        Distillation complete! Your {exportFormat.toUpperCase()} file is downloading...
+                        Distillation complete! Click the button above to download.
                     </div>
                 )}
 
