@@ -22,29 +22,75 @@ security = HTTPBearer(auto_error=False)
 
 
 class SupabaseAuth:
-    """Supabase Authentication client."""
+    """Supabase Authentication client with lazy loading for Vercel compatibility."""
     
     def __init__(self):
-        # HARDCODED VALUES (temporary fix for Vercel env var issue)
-        # TODO: Remove hardcoding once Vercel env vars work properly
+        """Initialize with lazy-loaded environment variables."""
+        # Lazy load settings at runtime
+        settings = self._get_settings()
+        
+        self.url = settings["url"]
+        self.anon_key = settings["anon_key"]
+        self.jwt_secret = settings["jwt_secret"]
+        self.auth_url = f"{self.url}/auth/v1"
+    
+    def _get_settings(self) -> dict:
+        """
+        Lazy load environment variables at runtime.
+        Uses new variable names (SB_*) to avoid Vercel caching issues.
+        Falls back to legacy names for backwards compatibility.
+        """
         import os
         
-        supabase_url = os.getenv("SUPABASE_URL") or "https://nnuixqxmalttautcqckt.supabase.co"
-        supabase_anon_key = os.getenv("SUPABASE_ANON_KEY") or "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5udWl4cXhtYWx0dGF1dGNxY2t0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNjQ1NjIsImV4cCI6MjA4Mzk0MDU2Mn0.RKQm2hVC7IkuW_ldtGedJQtWr15RrAJYWWMkJ5SWdAM"
-        supabase_jwt_secret = os.getenv("SUPABASE_JWT_SECRET") or "mqNTfktrwOGkPUPRLZD1XYOsZYcGJ88TBs8dLdZOBLTY/tkP7rlsh1gDpH1Db4HMSFbH5uG+VZc0+hm/D0bU4g=="
+        # Debug: List all environment variable names containing our prefixes
+        all_env_keys = list(os.environ.keys())
+        sb_keys = [k for k in all_env_keys if k.startswith("SB_") or "SUPABASE" in k.upper()]
+        print(f"[AUTH DEBUG] Environment variables with SB_/SUPABASE prefix: {sb_keys}")
         
-        print(f"[AUTH DEBUG] SUPABASE_URL: '{supabase_url}'")
-        print(f"[AUTH DEBUG] SUPABASE_ANON_KEY present: {bool(supabase_anon_key)}")
+        # Try new names first (SB_*), then fall back to legacy names
+        supabase_url = (
+            os.environ.get("SB_URL") or
+            os.environ.get("SUPABASE_URL") or
+            ""
+        )
+        supabase_anon_key = (
+            os.environ.get("SB_KEY") or
+            os.environ.get("SUPABASE_ANON_KEY") or
+            ""
+        )
+        supabase_jwt_secret = (
+            os.environ.get("SB_JWT_SECRET") or
+            os.environ.get("SUPABASE_JWT_SECRET") or
+            ""
+        )
         
-        self.url = supabase_url.rstrip("/")
-        if not self.url.startswith(("http://", "https://")):
-            self.url = f"https://{self.url}"
+        # Debug logging (values hidden for security)
+        print(f"[AUTH DEBUG] SB_URL loaded: {bool(supabase_url)} (len={len(supabase_url) if supabase_url else 0})")
+        print(f"[AUTH DEBUG] SB_KEY loaded: {bool(supabase_anon_key)} (len={len(supabase_anon_key) if supabase_anon_key else 0})")
+        print(f"[AUTH DEBUG] SB_JWT_SECRET loaded: {bool(supabase_jwt_secret)}")
         
-        print(f"[AUTH DEBUG] Final URL: '{self.url}'")
-
-        self.anon_key = supabase_anon_key
-        self.jwt_secret = supabase_jwt_secret
-        self.auth_url = f"{self.url}/auth/v1"
+        # Validate required variables
+        if not supabase_url:
+            print("[AUTH ERROR] SB_URL (or SUPABASE_URL) is not set!")
+            print(f"[AUTH ERROR] Available env keys: {all_env_keys[:20]}...")  # Show first 20 keys
+            raise ValueError("SB_URL or SUPABASE_URL environment variable is required")
+        
+        if not supabase_anon_key:
+            print("[AUTH ERROR] SB_KEY (or SUPABASE_ANON_KEY) is not set!")
+            raise ValueError("SB_KEY or SUPABASE_ANON_KEY environment variable is required")
+        
+        # Ensure URL has protocol
+        url = supabase_url.rstrip("/")
+        if not url.startswith(("http://", "https://")):
+            url = f"https://{url}"
+        
+        print(f"[AUTH DEBUG] Final URL: '{url}'")
+        
+        return {
+            "url": url,
+            "anon_key": supabase_anon_key,
+            "jwt_secret": supabase_jwt_secret
+        }
     
     def _get_headers(self, access_token: Optional[str] = None) -> dict:
         """Get headers for Supabase API requests."""
