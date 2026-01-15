@@ -38,9 +38,11 @@ class SupabaseAuth:
         """
         Lazy load environment variables at runtime.
         Uses new variable names (SB_*) to avoid Vercel caching issues.
-        Falls back to legacy names for backwards compatibility.
+        Falls back to legacy names and SUPABASE_DATABASE_URL extraction.
         """
         import os
+        import re
+        from urllib.parse import urlparse, parse_qs
         
         # Debug: List all environment variable names containing our prefixes
         all_env_keys = list(os.environ.keys())
@@ -64,6 +66,32 @@ class SupabaseAuth:
             ""
         )
         
+        # FALLBACK: Extract from SUPABASE_DATABASE_URL if needed
+        db_url = os.environ.get("SUPABASE_DATABASE_URL", os.environ.get("DATABASE_URL", ""))
+        if db_url and (not supabase_url or not supabase_anon_key):
+            print(f"[AUTH DEBUG] Attempting extraction from DATABASE_URL...")
+            
+            # Extract project ID for URL: postgresql+asyncpg://postgres.PROJECT_ID:...
+            if not supabase_url:
+                match = re.search(r"postgres\.([a-zA-Z0-9]+)", db_url)
+                if match:
+                    project_id = match.group(1)
+                    supabase_url = f"https://{project_id}.supabase.co"
+                    print(f"[AUTH DEBUG] Extracted URL from DATABASE_URL: {supabase_url}")
+            
+            # Extract anon_key and jwt_secret from query parameters if present
+            if "?" in db_url:
+                query_string = db_url.split("?", 1)[1]
+                params = parse_qs(query_string)
+                
+                if not supabase_anon_key and "sb_key" in params:
+                    supabase_anon_key = params["sb_key"][0]
+                    print(f"[AUTH DEBUG] Extracted SB_KEY from DATABASE_URL")
+                
+                if not supabase_jwt_secret and "sb_jwt" in params:
+                    supabase_jwt_secret = params["sb_jwt"][0]
+                    print(f"[AUTH DEBUG] Extracted SB_JWT_SECRET from DATABASE_URL")
+        
         # Debug logging (values hidden for security)
         print(f"[AUTH DEBUG] SB_URL loaded: {bool(supabase_url)} (len={len(supabase_url) if supabase_url else 0})")
         print(f"[AUTH DEBUG] SB_KEY loaded: {bool(supabase_anon_key)} (len={len(supabase_anon_key) if supabase_anon_key else 0})")
@@ -72,11 +100,12 @@ class SupabaseAuth:
         # Validate required variables
         if not supabase_url:
             print("[AUTH ERROR] SB_URL (or SUPABASE_URL) is not set!")
-            print(f"[AUTH ERROR] Available env keys: {all_env_keys[:20]}...")  # Show first 20 keys
+            print(f"[AUTH ERROR] Available env keys: {all_env_keys[:20]}...")
             raise ValueError("SB_URL or SUPABASE_URL environment variable is required")
         
         if not supabase_anon_key:
             print("[AUTH ERROR] SB_KEY (or SUPABASE_ANON_KEY) is not set!")
+            print("[AUTH HINT] Add sb_key=YOUR_KEY to SUPABASE_DATABASE_URL query string")
             raise ValueError("SB_KEY or SUPABASE_ANON_KEY environment variable is required")
         
         # Ensure URL has protocol
