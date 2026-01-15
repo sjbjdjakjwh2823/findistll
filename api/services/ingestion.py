@@ -13,8 +13,11 @@ import json
 import csv
 import collections
 from typing import Dict, Any, List, Optional
-import google.genai as genai
+import google.generativeai as genai
 import os
+
+# Configure Gemini API at module load
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 class FileIngestionService:
     """Service for ingesting and parsing various file formats."""
@@ -31,8 +34,7 @@ class FileIngestionService:
     }
 
     def __init__(self):
-        self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-        self.model_name = 'gemini-2.0-flash'
+        self.model = genai.GenerativeModel('gemini-1.5-flash')
     
     async def process_file(
         self, 
@@ -150,10 +152,11 @@ class FileIngestionService:
     
     async def _process_with_gemini(self, content: bytes, filename: str, mime_type: str) -> Dict[str, Any]:
         """Process PDF/Image using Gemini multimodal."""
-        # New SDK upload
-        gemini_file = self.client.files.upload(
-            file=io.BytesIO(content),
-            config={'mime_type': mime_type, 'display_name': filename}
+        # Upload file to Gemini
+        gemini_file = genai.upload_file(
+            io.BytesIO(content),
+            mime_type=mime_type,
+            display_name=filename
         )
         
         prompt = """
@@ -185,21 +188,23 @@ class FileIngestionService:
         }
         """
         
-        response = self.client.models.generate_content(
-            model=self.model_name,
-            contents=[gemini_file, prompt],
-            config={"response_mime_type": "application/json"}
+        response = self.model.generate_content(
+            [gemini_file, prompt],
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json"
+            )
         )
         
+        # Clean up uploaded file
         try:
-            self.client.files.delete(name=gemini_file.name)
+            genai.delete_file(gemini_file.name)
         except Exception:
             pass
         
         result = json.loads(response.text)
         result["metadata"] = {
             "file_type": "pdf" if "pdf" in mime_type else "image",
-            "processed_by": "gemini-2.0-flash"
+            "processed_by": "gemini-1.5-flash"
         }
         
         return result
@@ -207,10 +212,7 @@ class FileIngestionService:
     async def _generate_summary(self, data_sample: str) -> str:
         """Generate a summary using Gemini."""
         prompt = f"다음 데이터의 핵심 내용을 2-3문장으로 요약해주세요:\n\n{data_sample}"
-        response = self.client.models.generate_content(
-            model=self.model_name, 
-            contents=prompt
-        )
+        response = self.model.generate_content(prompt)
         return response.text.strip()
     
     def _extract_metrics(self, headers: List[str], rows: List[List[Any]]) -> Dict[str, Any]:
