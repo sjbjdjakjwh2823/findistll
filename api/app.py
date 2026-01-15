@@ -24,6 +24,8 @@ from .services.ingestion import ingestion_service
 from .services.normalizer import normalizer
 from .services.exporter import exporter
 from .services.embedder import embedder
+from .auth import supabase_auth, get_current_user, require_auth
+from .schemas import UserRegister, UserLogin, TokenResponse
 
 # Configure Gemini API
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
@@ -110,6 +112,47 @@ async def health_check(db: AsyncSession = Depends(get_db)):
                 "dbal_host": masked_url
             }
         }
+
+
+# ==================== AUTH ENDPOINTS ====================
+
+@app.post("/api/auth/register", response_model=TokenResponse)
+async def register(user_data: UserRegister):
+    """
+    Register a new user with Supabase Auth.
+    Returns access token on successful registration.
+    """
+    return await supabase_auth.register(
+        email=user_data.email,
+        password=user_data.password,
+        full_name=user_data.full_name
+    )
+
+
+@app.post("/api/auth/login", response_model=TokenResponse)
+async def login(user_data: UserLogin):
+    """
+    Login with email and password.
+    Returns access token on successful authentication.
+    """
+    return await supabase_auth.login(
+        email=user_data.email,
+        password=user_data.password
+    )
+
+
+@app.get("/api/auth/me")
+async def get_me(current_user: dict = Depends(require_auth)):
+    """
+    Get current authenticated user info.
+    Requires valid Bearer token.
+    """
+    return {
+        "id": current_user.get("id"),
+        "email": current_user.get("email"),
+        "role": current_user.get("role"),
+        "metadata": current_user.get("user_metadata", {})
+    }
 
 
 @app.post("/api/extract")
