@@ -9,7 +9,10 @@ try:
 except Exception as e:
     # DEBUG: Deep inspection of the environment
     import sys
+    import traceback
     import pkg_resources
+    from fastapi import FastAPI
+    from fastapi.responses import JSONResponse
     
     debug_info = []
     debug_info.append(f"Python Version: {sys.version}")
