@@ -13,7 +13,7 @@ except Exception as e:
     from fastapi import FastAPI
     from fastapi.responses import JSONResponse
     
-    error_msg = f"STARTUP ERROR:\n{traceback.format_exc()}"
+    error_msg = f"STARTUP ERROR (HANDLER v2):\n{traceback.format_exc()}"
     print(error_msg)
     
     app = FastAPI()
