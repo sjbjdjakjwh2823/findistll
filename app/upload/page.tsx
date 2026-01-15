@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import axios from 'axios';
-import { Upload, FileText, CheckCircle, AlertCircle, Loader2, FileSpreadsheet, Image, Download } from 'lucide-react';
+import { Upload, FileText, CheckCircle, AlertCircle, Loader2, FileSpreadsheet, Image, Download, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { apiUrl } from '@/lib/api';
 
@@ -157,7 +157,7 @@ export default function UploadPage() {
                     </label>
                 )}
 
-                {file && fileInfo && (
+                {file && fileInfo && status !== 'success' && (
                     <div className="mt-6 p-4 bg-gray-50 rounded-lg flex items-center justify-between">
                         <div className="flex items-center gap-3">
                             <div className={`p-2 bg-${fileInfo.color}-100 rounded-lg`}>
@@ -170,9 +170,13 @@ export default function UploadPage() {
                                 </span>
                             </div>
                         </div>
-                        <span className={`px-2 py-1 bg-${fileInfo.color}-100 text-${fileInfo.color}-700 rounded text-xs font-medium`}>
-                            {fileInfo.label}
-                        </span>
+                        <button
+                            onClick={() => { setFile(null); setStatus('idle'); setErrorMessage(''); }}
+                            className="p-1 hover:bg-gray-200 rounded-full transition-colors"
+                            title="Remove file"
+                        >
+                            <X className="w-5 h-5 text-gray-500" />
+                        </button>
                     </div>
                 )}
 
@@ -206,10 +210,23 @@ export default function UploadPage() {
                 </div>
 
                 {status === 'success' && (
-                    <div className="mt-4 p-4 bg-green-50 text-green-700 rounded-lg flex items-center gap-2 justify-center">
-                        <CheckCircle className="w-5 h-5" />
-                        Distillation complete! Click the button above to download.
-                    </div>
+                    <>
+                        <div className="mt-4 p-4 bg-green-50 text-green-700 rounded-lg flex items-center gap-2 justify-center">
+                            <CheckCircle className="w-5 h-5" />
+                            Distillation complete! Click the button above to download.
+                        </div>
+                        <button
+                            onClick={() => {
+                                setFile(null);
+                                setStatus('idle');
+                                setDownloadUrl(null);
+                                setErrorMessage('');
+                            }}
+                            className="mt-3 w-full py-2 rounded-lg font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors"
+                        >
+                            Convert New File
+                        </button>
+                    </>
                 )}
 
                 {status === 'error' && (
