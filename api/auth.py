@@ -30,12 +30,26 @@ class SupabaseAuth:
         supabase_anon_key = os.getenv("SUPABASE_ANON_KEY", "")
         supabase_jwt_secret = os.getenv("SUPABASE_JWT_SECRET", "")
         
+        # FALLBACK: If SUPABASE_URL is not set, try to extract from SUPABASE_DATABASE_URL
+        if not supabase_url:
+            db_url = os.getenv("SUPABASE_DATABASE_URL", os.getenv("DATABASE_URL", ""))
+            print(f"[AUTH DEBUG] Attempting fallback from DATABASE_URL: {db_url[:50] if db_url else 'empty'}...")
+            # Extract project ID from URLs like: postgresql+asyncpg://postgres.PROJECT_ID:...@...
+            if db_url and "supabase" in db_url:
+                import re
+                # Pattern: postgres.PROJECT_ID at the start after ://
+                match = re.search(r"postgres\.([a-zA-Z0-9]+)", db_url)
+                if match:
+                    project_id = match.group(1)
+                    supabase_url = f"https://{project_id}.supabase.co"
+                    print(f"[AUTH DEBUG] Extracted SUPABASE_URL from DATABASE_URL: {supabase_url}")
+        
         # DEBUG: Log environment variables
-        print(f"[AUTH DEBUG] SUPABASE_URL from env: '{supabase_url}'")
+        print(f"[AUTH DEBUG] SUPABASE_URL: '{supabase_url}'")
         print(f"[AUTH DEBUG] SUPABASE_ANON_KEY present: {bool(supabase_anon_key)}")
         
         if not supabase_url:
-            print("[AUTH ERROR] SUPABASE_URL is not set!")
+            print("[AUTH ERROR] SUPABASE_URL is not set and could not be extracted!")
             raise ValueError("SUPABASE_URL environment variable is required")
         
         self.url = supabase_url.rstrip("/")
