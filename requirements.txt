@@ -3,6 +3,8 @@ uvicorn
 sqlalchemy
 asyncpg
 google-genai>=1.50.0
+google-auth
+setuptools
 python-multipart
 pgvector
 openpyxl
@@ -10,3 +12,4 @@ pyjwt
 httpx
 pydantic-settings
 cryptography
+python-dotenv
