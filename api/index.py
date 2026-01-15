@@ -1,5 +1,7 @@
-import sys
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Vercel entry point - with Startup Error Handling
 try:

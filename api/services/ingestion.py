@@ -13,8 +13,8 @@ import json
 import csv
 import collections
 from typing import Dict, Any, List, Optional
-import google.generativeai as genai
-
+from google import genai
+import os
 
 class FileIngestionService:
     """Service for ingesting and parsing various file formats."""
@@ -31,7 +31,8 @@ class FileIngestionService:
     }
 
     def __init__(self):
-        self.model = genai.GenerativeModel('gemini-2.0-flash')
+        self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        self.model_name = 'gemini-2.0-flash'
     
     async def process_file(
         self, 
@@ -149,10 +150,10 @@ class FileIngestionService:
     
     async def _process_with_gemini(self, content: bytes, filename: str, mime_type: str) -> Dict[str, Any]:
         """Process PDF/Image using Gemini multimodal."""
-        gemini_file = genai.upload_file(
-            io.BytesIO(content),
-            mime_type=mime_type,
-            display_name=filename
+        # New SDK upload
+        gemini_file = self.client.files.upload(
+            file=io.BytesIO(content),
+            config={'mime_type': mime_type, 'display_name': filename}
         )
         
         prompt = """
@@ -184,13 +185,14 @@ class FileIngestionService:
         }
         """
         
-        response = self.model.generate_content(
-            [gemini_file, prompt],
-            generation_config={"response_mime_type": "application/json"}
+        response = self.client.models.generate_content(
+            model=self.model_name,
+            contents=[gemini_file, prompt],
+            config={"response_mime_type": "application/json"}
         )
         
         try:
-            genai.delete_file(gemini_file.name)
+            self.client.files.delete(name=gemini_file.name)
         except Exception:
             pass
         
@@ -205,7 +207,10 @@ class FileIngestionService:
     async def _generate_summary(self, data_sample: str) -> str:
         """Generate a summary using Gemini."""
         prompt = f"다음 데이터의 핵심 내용을 2-3문장으로 요약해주세요:\n\n{data_sample}"
-        response = self.model.generate_content(prompt)
+        response = self.client.models.generate_content(
+            model=self.model_name, 
+            contents=prompt
+        )
         return response.text.strip()
     
     def _extract_metrics(self, headers: List[str], rows: List[List[Any]]) -> Dict[str, Any]:

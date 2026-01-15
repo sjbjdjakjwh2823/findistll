@@ -2,7 +2,7 @@ fastapi
 uvicorn
 sqlalchemy
 asyncpg
-google-generativeai
+google-genai
 python-multipart
 pgvector
 openpyxl
