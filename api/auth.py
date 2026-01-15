@@ -28,14 +28,19 @@ class SupabaseAuth:
     """Supabase Authentication client."""
     
     def __init__(self):
+        # DEBUG: Log environment variables
+        print(f"[AUTH DEBUG] SUPABASE_URL from env: '{SUPABASE_URL}'")
+        print(f"[AUTH DEBUG] SUPABASE_ANON_KEY present: {bool(SUPABASE_ANON_KEY)}")
+        
         if not SUPABASE_URL:
-            # Fallback or raise error? For now, we'll try to use what we have but warn.
-            print("[AUTH WARNING] SUPABASE_URL is not set.")
-            self.url = ""
-        else:
-            self.url = SUPABASE_URL.rstrip("/")
-            if not self.url.startswith(("http://", "https://")):
-                self.url = f"https://{self.url}"
+            print("[AUTH ERROR] SUPABASE_URL is not set!")
+            raise ValueError("SUPABASE_URL environment variable is required")
+        
+        self.url = SUPABASE_URL.rstrip("/")
+        if not self.url.startswith(("http://", "https://")):
+            self.url = f"https://{self.url}"
+        
+        print(f"[AUTH DEBUG] Final URL: '{self.url}'")
 
         self.anon_key = SUPABASE_ANON_KEY
         self.jwt_secret = SUPABASE_JWT_SECRET
