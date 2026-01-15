@@ -75,6 +75,14 @@ class SupabaseAuth:
         
         # FALLBACK: Extract from SUPABASE_DATABASE_URL if needed
         db_url = os.environ.get("SUPABASE_DATABASE_URL", os.environ.get("DATABASE_URL", ""))
+        
+        # DEBUG: Check the actual value of db_url to see if query params are preserved
+        if db_url:
+            masked_url = db_url
+            if "password" in db_url:
+                masked_url = re.sub(r":[^:@]+@", ":***@", masked_url)
+            print(f"[AUTH DEBUG] RAW DATABASE_URL (masked): {masked_url}")
+            
         if db_url and (not supabase_url or not supabase_anon_key):
             print(f"[AUTH DEBUG] Attempting extraction from DATABASE_URL...")
             
