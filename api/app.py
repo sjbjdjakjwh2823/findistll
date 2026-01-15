@@ -89,14 +89,23 @@ app.add_middleware(
 async def log_requests(request, call_next):
     """Log incoming requests to debug auth headers and paths."""
     print(f"[API DEBUG] Request: {request.method} {request.url.path}")
-    auth = request.headers.get("Authorization")
-    if auth:
-        print(f"[API DEBUG] Auth Header present: {auth[:10]}...")
-    else:
-        print("[API DEBUG] No Authorization header found.")
-    
-    response = await call_next(request)
-    return response
+    try:
+        auth = request.headers.get("Authorization")
+        if auth:
+            print(f"[API DEBUG] Auth Header present: {auth[:10]}...")
+        else:
+            print("[API DEBUG] No Authorization header found.")
+        
+        response = await call_next(request)
+        return response
+    except Exception as e:
+        print(f"[API CRITICAL] Unhandled exception in request: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Internal Server Error: {str(e)}", "type": str(type(e).__name__)}
+        )
 
 
 @app.get("/api/health")

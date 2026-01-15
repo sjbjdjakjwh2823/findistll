@@ -78,9 +78,16 @@ class SupabaseAuth:
                     detail=error.get("msg", "Invalid email or password format")
                 )
             else:
+                # Capture the original status code from Supabase
+                print(f"[AUTH ERROR] Register failed with status {response.status_code}: {response.text}")
+                try:
+                    detail = response.json()
+                except:
+                    detail = {"msg": response.text}
+                    
                 raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Registration failed: {response.text}"
+                    status_code=response.status_code,
+                    detail=detail.get("msg", detail.get("error_description", f"Registration failed: {response.text}"))
                 )
     
     async def login(self, email: str, password: str) -> TokenResponse:
