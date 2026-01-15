@@ -27,6 +27,8 @@ class SupabaseAuth:
     def __init__(self):
         # DEBUG: Print all environment variables that contain SUPABASE
         import os
+        from urllib.parse import urlparse, parse_qs
+        
         supabase_vars = {k: v[:20] + "..." if len(v) > 20 else v for k, v in os.environ.items() if "SUPABASE" in k.upper()}
         print(f"[AUTH DEBUG] All SUPABASE env vars: {supabase_vars}")
         
@@ -48,19 +50,32 @@ class SupabaseAuth:
             ""
         )
         
-        # FALLBACK: If SUPABASE_URL is not set, try to extract from SUPABASE_DATABASE_URL
-        if not supabase_url:
-            db_url = os.getenv("SUPABASE_DATABASE_URL", os.getenv("DATABASE_URL", ""))
-            print(f"[AUTH DEBUG] Attempting fallback from DATABASE_URL: {db_url[:50] if db_url else 'empty'}...")
-            # Extract project ID from URLs like: postgresql+asyncpg://postgres.PROJECT_ID:...@...
-            if db_url and "supabase" in db_url:
+        # FALLBACK: Extract from SUPABASE_DATABASE_URL query parameters
+        db_url = os.getenv("SUPABASE_DATABASE_URL", os.getenv("DATABASE_URL", ""))
+        if db_url:
+            print(f"[AUTH DEBUG] Attempting fallback from DATABASE_URL: {db_url[:50]}...")
+            
+            # Extract project ID for SUPABASE_URL
+            if not supabase_url and "supabase" in db_url:
                 import re
-                # Pattern: postgres.PROJECT_ID at the start after ://
                 match = re.search(r"postgres\.([a-zA-Z0-9]+)", db_url)
                 if match:
                     project_id = match.group(1)
                     supabase_url = f"https://{project_id}.supabase.co"
-                    print(f"[AUTH DEBUG] Extracted SUPABASE_URL from DATABASE_URL: {supabase_url}")
+                    print(f"[AUTH DEBUG] Extracted SUPABASE_URL: {supabase_url}")
+            
+            # Extract anon_key and jwt_secret from query parameters
+            if "?" in db_url:
+                query_string = db_url.split("?", 1)[1]
+                params = parse_qs(query_string)
+                
+                if not supabase_anon_key and "supabase_anon_key" in params:
+                    supabase_anon_key = params["supabase_anon_key"][0]
+                    print(f"[AUTH DEBUG] Extracted SUPABASE_ANON_KEY from DATABASE_URL")
+                
+                if not supabase_jwt_secret and "supabase_jwt_secret" in params:
+                    supabase_jwt_secret = params["supabase_jwt_secret"][0]
+                    print(f"[AUTH DEBUG] Extracted SUPABASE_JWT_SECRET from DATABASE_URL")
         
         # DEBUG: Log environment variables
         print(f"[AUTH DEBUG] SUPABASE_URL: '{supabase_url}'")
