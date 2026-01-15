@@ -36,120 +36,87 @@ class SupabaseAuth:
     
     def _get_settings(self) -> dict:
         """
-        Lazy load environment variables at runtime.
-        Uses new variable names (SB_*) to avoid Vercel caching issues.
-        Falls back to legacy names and SUPABASE_DATABASE_URL extraction.
+        Lazy load environment variables at runtime with defensive logic.
+        Implements priority: Standard > Legacy > Typo/Fallback
         """
         import os
         import re
-        from urllib.parse import urlparse, parse_qs
         
-        # Debug: List all environment variable names containing our prefixes
-        all_env_keys = list(os.environ.keys())
-        sb_keys = [k for k in all_env_keys if k.startswith("SB_") or "SUPABASE" in k.upper()]
-        print(f"[AUTH DEBUG] Environment variables with SB_/SUPABASE prefix: {sb_keys}")
-        
-        # Try Vercel-specific names first, then standard names, then NEXT_PUBLIC, then legacy
-        supabase_url = (
-            os.environ.get("VERCEL_SB_URL") or
-            os.environ.get("SB_URL") or
-            os.environ.get("NEXT_PUBLIC_SB_URL") or
-            os.environ.get("SUPABASE_URL") or
-            os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or
-            ""
-        )
-        supabase_anon_key = (
-            os.environ.get("VERCEL_SB_KEY") or
-            os.environ.get("SB_KEY") or
-            os.environ.get("NEXT_PUBLIC_SB_KEY") or
-            os.environ.get("SUPABASE_ANON_KEY") or
-            os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY") or
-            ""
-        )
-        supabase_jwt_secret = (
-            os.environ.get("VERCEL_SB_JWT_SECRET") or
-            os.environ.get("SB_JWT_SECRET") or
-            os.environ.get("SUPABASE_JWT_SECRET") or
-            ""
-        )
-        
-        # FALLBACK: Extract from SUPABASE_DATABASE_URL if needed
-        db_url = os.environ.get("SUPABASE_DATABASE_URL", os.environ.get("DATABASE_URL", ""))
-        
-        # DEBUG: Check the actual value of db_url to see if query params are preserved
-        if db_url:
-            masked_url = db_url
-            if "password" in db_url:
-                masked_url = re.sub(r":[^:@]+@", ":***@", masked_url)
-            print(f"[AUTH DEBUG] RAW DATABASE_URL (masked): {masked_url}")
-            
-        if db_url and (not supabase_url or not supabase_anon_key):
-            print(f"[AUTH DEBUG] Attempting extraction from DATABASE_URL...")
-            
-            # Extract project ID for URL: postgresql+asyncpg://postgres.PROJECT_ID:...
-            if not supabase_url:
-                match = re.search(r"postgres\.([a-zA-Z0-9]+)", db_url)
-                if match:
-                    project_id = match.group(1)
-                    supabase_url = f"https://{project_id}.supabase.co"
-                    print(f"[AUTH DEBUG] Extracted URL from DATABASE_URL: {supabase_url}")
-            
-            # Extract anon_key and jwt_secret from query parameters if present
-            # Use Regex instead of urlparse/parse_qs for robustness against connection string formats
-            try:
-                if "sb_key=" in db_url:
-                    sb_key_match = re.search(r"sb_key=([^&]+)", db_url)
-                    if sb_key_match:
-                        supabase_anon_key = sb_key_match.group(1)
-                        print(f"[AUTH DEBUG] Extracted SB_KEY using Regex")
+        def get_env_variable(keys: list, default=None):
+            """Returns the first existing value from a list of keys."""
+            for key in keys:
+                value = os.environ.get(key)
+                if value:
+                    print(f"[AUTH DEBUG] Loaded {keys[0]} using key: {key}")
+                    return value
+            return default
 
-                if "sb_jwt=" in db_url:
-                    sb_jwt_match = re.search(r"sb_jwt=([^&]+)", db_url)
-                    if sb_jwt_match:
-                        supabase_jwt_secret = sb_jwt_match.group(1)
-                        print(f"[AUTH DEBUG] Extracted SB_JWT_SECRET using Regex")
-                        
-                # Debug: Print the end of the URL to verify if params exist (careful with secrets)
-                SAFE_DEBUG_LEN = 20
-                url_end = db_url[-SAFE_DEBUG_LEN:] if len(db_url) > SAFE_DEBUG_LEN else db_url
-                print(f"[AUTH DEBUG] Database URL ends with: '...{url_end}'")
+        # 1. Supabase URL
+        # Priority: Vercel Config (NEXT_PUBLIC_SB_URL) > Standard (SUPABASE_URL) > Legacy (SB_URL, VERCEL_SB_URL)
+        supabase_url = get_env_variable([
+            "NEXT_PUBLIC_SB_URL",     # Current Vercel Config
+            "SUPABASE_URL",           # Standard
+            "NEXT_PUBLIC_SUPABASE_URL",
+            "SB_URL",
+            "VERCEL_SB_URL"           # Legacy
+        ], "")
+        
+        # 2. Supabase Anon Key
+        # Priority: Standard (SUPABASE_ANON_KEY) > Short (ANON_KEY) > Vercel Legacy
+        supabase_anon_key = get_env_variable([
+            "SUPABASE_ANON_KEY",
+            "ANON_KEY",               # User plan alternative
+            "NEXT_PUBLIC_SB_KEY",
+            "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+            "SB_KEY",
+            "VERCEL_SB_KEY"
+        ], "")
+
+        # 3. JWT Secret
+        # Priority: Standard > Short > Typo (Hotfix) > Legacy
+        supabase_jwt_secret = get_env_variable([
+            "SUPABASE_JWT_SECRET",
+            "JWT_SECRET",
+            "JWT_SECRE",              # HOTFIX: Handle user typo
+            "SB_JWT_SECRET",
+            "VERCEL_SB_JWT_SECRET"
+        ], "")
+
+        # FALLBACK: Extract from DATABASE_URL if strictly necessary (and missing above)
+        # Only try this if we are missing critical values, to act as a safety net
+        if not supabase_url or not supabase_anon_key:
+             db_url = os.environ.get("SUPABASE_DATABASE_URL", os.environ.get("DATABASE_URL", ""))
+             if db_url and "postgres" in db_url:
+                print(f"[AUTH DEBUG] Attempting fallback extraction from DATABASE_URL...")
                 
-            except Exception as e:
-                print(f"[AUTH ERROR] Failed to extract params with regex: {str(e)}")
-        
-        # fallback for VERCEL_* prefixes as a last resort
-        if not supabase_url:
-             supabase_url = os.environ.get("VERCEL_SB_URL", "")
-        if not supabase_anon_key:
-             supabase_anon_key = os.environ.get("VERCEL_SB_KEY", "")
-        if not supabase_jwt_secret:
-             supabase_jwt_secret = os.environ.get("VERCEL_SB_JWT_SECRET", "")
-        
-        # Debug logging (values hidden for security)
-        print(f"[AUTH DEBUG] SB_URL loaded: {bool(supabase_url)} (len={len(supabase_url) if supabase_url else 0})")
-        print(f"[AUTH DEBUG] SB_KEY loaded: {bool(supabase_anon_key)} (len={len(supabase_anon_key) if supabase_anon_key else 0})")
-        print(f"[AUTH DEBUG] SB_JWT_SECRET loaded: {bool(supabase_jwt_secret)}")
-        
-        # Validate required variables (SOFT CHECK - Don't crash app on startup)
-        if not supabase_url:
-            print("[AUTH ERROR] SB_URL (or SUPABASE_URL) is not set! Auth will be disabled.")
-            # Don't raise error, just return empty config to allow app startup
-        
-        if not supabase_anon_key:
-            print("[AUTH ERROR] SB_KEY (or SUPABASE_ANON_KEY) is not set! Auth will be disabled.")
+                # Extract URL
+                if not supabase_url:
+                    match = re.search(r"postgres\.([a-zA-Z0-9]+)", db_url)
+                    if match:
+                        supabase_url = f"https://{match.group(1)}.supabase.co"
+                        print(f"[AUTH DEBUG] Extracted URL from DB connection string")
+
+                # Extract Key/Secret from query params (e.g. ?sb_key=...)
+                if not supabase_anon_key and "sb_key=" in db_url:
+                    match = re.search(r"sb_key=([^&]+)", db_url)
+                    if match: supabase_anon_key = match.group(1)
+
+                if not supabase_jwt_secret and "sb_jwt=" in db_url:
+                    match = re.search(r"sb_jwt=([^&]+)", db_url)
+                    if match: supabase_jwt_secret = match.group(1)
+
+        # Validate required variables
+        if not supabase_url or not supabase_anon_key:
+            print("[AUTH ERROR] CRITICAL: Required environment variables (URL/ANON_KEY) are missing!")
+            # We don't raise here to allow the app to start in 'degraded' mode if needed, 
+            # but auth will fail.
         
         # Ensure URL has protocol
-        if supabase_url:
-            url = supabase_url.rstrip("/")
-            if not url.startswith(("http://", "https://")):
-                url = f"https://{url}"
-        else:
-            url = ""
-            
-        print(f"[AUTH DEBUG] Final URL (configured): '{url}'")
-        
+        if supabase_url and not supabase_url.startswith(("http://", "https://")):
+             supabase_url = f"https://{supabase_url}"
+             
         return {
-            "url": url,
+            "url": supabase_url,
             "anon_key": supabase_anon_key,
             "jwt_secret": supabase_jwt_secret
         }
