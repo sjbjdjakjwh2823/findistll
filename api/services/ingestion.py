@@ -1,7 +1,7 @@
 """
 FinDistill File Ingestion Service
 
-Handles parsing of various file formats:
+Handles parsing of various file formats using Gemini API via HTTP.
 - PDF (with complex table extraction)
 - Excel (.xlsx, .xls)
 - CSV (with auto-detection)
@@ -11,11 +11,66 @@ Handles parsing of various file formats:
 import io
 import json
 import csv
-import collections
+import base64
 from typing import Dict, Any, List, Optional
-from google import genai
-from google.genai import types
+import httpx
 import os
+
+# Gemini API configuration
+GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
+
+
+class GeminiClient:
+    """Simple Gemini API client using httpx."""
+    
+    def __init__(self):
+        self.api_key = os.getenv("GEMINI_API_KEY", "")
+        self.model = "gemini-2.0-flash"
+        
+    async def generate_content(self, contents: list, response_mime_type: str = None) -> str:
+        """Generate content using Gemini API."""
+        url = f"{GEMINI_API_BASE}/models/{self.model}:generateContent?key={self.api_key}"
+        
+        generation_config = {}
+        if response_mime_type:
+            generation_config["responseMimeType"] = response_mime_type
+        
+        payload = {"contents": contents}
+        if generation_config:
+            payload["generationConfig"] = generation_config
+        
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+            data = response.json()
+            
+        # Extract text from response
+        candidates = data.get("candidates", [])
+        if candidates:
+            parts = candidates[0].get("content", {}).get("parts", [])
+            if parts:
+                return parts[0].get("text", "")
+        return ""
+    
+    async def generate_with_file(self, file_content: bytes, mime_type: str, prompt: str, response_mime_type: str = None) -> str:
+        """Generate content with inline file data."""
+        # Encode file as base64
+        file_b64 = base64.b64encode(file_content).decode("utf-8")
+        
+        contents = [{
+            "parts": [
+                {
+                    "inline_data": {
+                        "mime_type": mime_type,
+                        "data": file_b64
+                    }
+                },
+                {"text": prompt}
+            ]
+        }]
+        
+        return await self.generate_content(contents, response_mime_type)
+
 
 class FileIngestionService:
     """Service for ingesting and parsing various file formats."""
@@ -32,8 +87,7 @@ class FileIngestionService:
     }
 
     def __init__(self):
-        self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-        self.model_name = 'gemini-2.0-flash'
+        self.gemini = GeminiClient()
     
     async def process_file(
         self, 
@@ -150,13 +204,7 @@ class FileIngestionService:
         }
     
     async def _process_with_gemini(self, content: bytes, filename: str, mime_type: str) -> Dict[str, Any]:
-        """Process PDF/Image using Gemini multimodal."""
-        # New SDK upload
-        gemini_file = self.client.files.upload(
-            file=io.BytesIO(content),
-            config=types.UploadFileConfig(mime_type=mime_type, display_name=filename)
-        )
-        
+        """Process PDF/Image using Gemini multimodal via HTTP."""
         prompt = """
         Analyze this financial document thoroughly. Extract ALL data into structured JSON.
         
@@ -186,19 +234,11 @@ class FileIngestionService:
         }
         """
         
-        response = self.client.models.generate_content(
-            model=self.model_name,
-            contents=[gemini_file, prompt],
-            config=types.GenerateContentConfig(response_mime_type="application/json")
+        response_text = await self.gemini.generate_with_file(
+            content, mime_type, prompt, "application/json"
         )
         
-        # Clean up uploaded file
-        try:
-            self.client.files.delete(name=gemini_file.name)
-        except Exception:
-            pass
-        
-        result = json.loads(response.text)
+        result = json.loads(response_text)
         result["metadata"] = {
             "file_type": "pdf" if "pdf" in mime_type else "image",
             "processed_by": "gemini-2.0-flash"
@@ -209,11 +249,9 @@ class FileIngestionService:
     async def _generate_summary(self, data_sample: str) -> str:
         """Generate a summary using Gemini."""
         prompt = f"다음 데이터의 핵심 내용을 2-3문장으로 요약해주세요:\n\n{data_sample}"
-        response = self.client.models.generate_content(
-            model=self.model_name, 
-            contents=prompt
-        )
-        return response.text.strip()
+        
+        contents = [{"parts": [{"text": prompt}]}]
+        return await self.gemini.generate_content(contents)
     
     def _extract_metrics(self, headers: List[str], rows: List[List[Any]]) -> Dict[str, Any]:
         """Extract simple metrics from headers and rows without pandas."""
