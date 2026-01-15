@@ -13,7 +13,7 @@ import json
 import csv
 import collections
 from typing import Dict, Any, List, Optional
-from google import genai
+import google.genai as genai
 import os
 
 class FileIngestionService:
