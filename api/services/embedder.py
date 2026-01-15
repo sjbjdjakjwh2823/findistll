@@ -7,7 +7,7 @@ Generates vector embeddings using Gemini API for:
 - Semantic clustering
 """
 
-from google import genai
+import google.genai as genai
 from typing import List, Optional
 import os
 
