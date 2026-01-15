@@ -8,7 +8,7 @@ except Exception as e:
     # If imports fail (common in serverless), create a dummy app to display the error
     import traceback
     from fastapi import FastAPI
-    from fastapi.responses import PlainTextResponse
+    from fastapi.responses import JSONResponse
     
     error_msg = f"CRITICAL STARTUP ERROR:\n{traceback.format_exc()}"
     print(error_msg)
@@ -17,7 +17,7 @@ except Exception as e:
     
     @app.api_route("/{path_name:path}", methods=["GET", "POST", "PUT", "DELETE"])
     async def catch_all(path_name: str):
-        return PlainTextResponse(
+        return JSONResponse(
             status_code=500,
-            content=f"Server failed to start.\n\n{error_msg}"
+            content={"detail": f"Server failed to start. Check logs or dependency installation.\n{error_msg}"}
         )

@@ -6,3 +6,6 @@ google-generativeai
 python-multipart
 pgvector
 openpyxl
+pyjwt
+httpx
+pydantic-settings
