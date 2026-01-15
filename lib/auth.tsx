@@ -17,11 +17,16 @@ interface AuthContextType {
     loading: boolean;
     login: (email: string, password: string) => Promise<void>;
     register: (email: string, password: string, fullName?: string) => Promise<void>;
+    signInWithOAuth: (provider: 'google' | 'github') => Promise<void>;
     logout: () => void;
     isAuthenticated: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+// Supabase URL for OAuth (hardcoded to match backend)
+const SUPABASE_URL = 'https://nnuixqxmalttautcqckt.supabase.co';
+const SUPABASE_ANON_KEY = 'REDACTED_JWT';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
@@ -37,6 +42,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } else {
             setLoading(false);
         }
+    }, []);
+
+    // Handle OAuth callback - check URL for tokens
+    useEffect(() => {
+        const handleOAuthCallback = () => {
+            // Check hash fragment for OAuth tokens
+            const hashParams = new URLSearchParams(window.location.hash.substring(1));
+            const accessToken = hashParams.get('access_token');
+            const refreshToken = hashParams.get('refresh_token');
+
+            if (accessToken) {
+                localStorage.setItem('access_token', accessToken);
+                if (refreshToken) {
+                    localStorage.setItem('refresh_token', refreshToken);
+                }
+                setToken(accessToken);
+                fetchUser(accessToken);
+
+                // Clear the hash from URL
+                window.history.replaceState(null, '', window.location.pathname);
+            }
+        };
+
+        handleOAuthCallback();
     }, []);
 
     const fetchUser = async (accessToken: string) => {
@@ -97,8 +126,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
     };
 
+    const signInWithOAuth = async (provider: 'google' | 'github') => {
+        // Get the current origin for redirect
+        const redirectTo = typeof window !== 'undefined'
+            ? `${window.location.origin}/`
+            : '';
+
+        // Build Supabase OAuth URL
+        const authUrl = new URL(`${SUPABASE_URL}/auth/v1/authorize`);
+        authUrl.searchParams.set('provider', provider);
+        authUrl.searchParams.set('redirect_to', redirectTo);
+
+        // Redirect to OAuth provider
+        window.location.href = authUrl.toString();
+    };
+
     const logout = () => {
         localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
         setToken(null);
         setUser(null);
     };
@@ -110,6 +155,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             loading,
             login,
             register,
+            signInWithOAuth,
             logout,
             isAuthenticated: !!token
         }}>
