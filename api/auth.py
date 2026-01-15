@@ -25,66 +25,16 @@ class SupabaseAuth:
     """Supabase Authentication client."""
     
     def __init__(self):
-        # DEBUG: Print all environment variables that contain SUPABASE
+        # HARDCODED VALUES (temporary fix for Vercel env var issue)
+        # TODO: Remove hardcoding once Vercel env vars work properly
         import os
-        from urllib.parse import urlparse, parse_qs
         
-        supabase_vars = {k: v[:20] + "..." if len(v) > 20 else v for k, v in os.environ.items() if "SUPABASE" in k.upper()}
-        print(f"[AUTH DEBUG] All SUPABASE env vars: {supabase_vars}")
+        supabase_url = os.getenv("SUPABASE_URL") or "https://nnuixqxmalttautcqckt.supabase.co"
+        supabase_anon_key = os.getenv("SUPABASE_ANON_KEY") or "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5udWl4cXhtYWx0dGF1dGNxY2t0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNjQ1NjIsImV4cCI6MjA4Mzk0MDU2Mn0.RKQm2hVC7IkuW_ldtGedJQtWr15RrAJYWWMkJ5SWdAM"
+        supabase_jwt_secret = os.getenv("SUPABASE_JWT_SECRET") or "mqNTfktrwOGkPUPRLZD1XYOsZYcGJ88TBs8dLdZOBLTY/tkP7rlsh1gDpH1Db4HMSFbH5uG+VZc0+hm/D0bU4g=="
         
-        # Load environment variables at runtime - try multiple names for Vercel compatibility
-        supabase_url = (
-            os.getenv("SUPABASE_URL") or 
-            os.getenv("NEXT_PUBLIC_SUPABASE_URL") or 
-            ""
-        )
-        supabase_anon_key = (
-            os.getenv("SUPABASE_ANON_KEY") or 
-            os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY") or 
-            os.getenv("SUPABASE_KEY") or
-            ""
-        )
-        supabase_jwt_secret = (
-            os.getenv("SUPABASE_JWT_SECRET") or 
-            os.getenv("SUPABASE_SERVICE_ROLE_KEY") or
-            ""
-        )
-        
-        # FALLBACK: Extract from SUPABASE_DATABASE_URL query parameters
-        db_url = os.getenv("SUPABASE_DATABASE_URL", os.getenv("DATABASE_URL", ""))
-        if db_url:
-            print(f"[AUTH DEBUG] Attempting fallback from DATABASE_URL: {db_url[:50]}...")
-            
-            # Extract project ID for SUPABASE_URL
-            if not supabase_url and "supabase" in db_url:
-                import re
-                match = re.search(r"postgres\.([a-zA-Z0-9]+)", db_url)
-                if match:
-                    project_id = match.group(1)
-                    supabase_url = f"https://{project_id}.supabase.co"
-                    print(f"[AUTH DEBUG] Extracted SUPABASE_URL: {supabase_url}")
-            
-            # Extract anon_key and jwt_secret from query parameters
-            if "?" in db_url:
-                query_string = db_url.split("?", 1)[1]
-                params = parse_qs(query_string)
-                
-                if not supabase_anon_key and "supabase_anon_key" in params:
-                    supabase_anon_key = params["supabase_anon_key"][0]
-                    print(f"[AUTH DEBUG] Extracted SUPABASE_ANON_KEY from DATABASE_URL")
-                
-                if not supabase_jwt_secret and "supabase_jwt_secret" in params:
-                    supabase_jwt_secret = params["supabase_jwt_secret"][0]
-                    print(f"[AUTH DEBUG] Extracted SUPABASE_JWT_SECRET from DATABASE_URL")
-        
-        # DEBUG: Log environment variables
         print(f"[AUTH DEBUG] SUPABASE_URL: '{supabase_url}'")
         print(f"[AUTH DEBUG] SUPABASE_ANON_KEY present: {bool(supabase_anon_key)}")
-        print(f"[AUTH DEBUG] SUPABASE_ANON_KEY value (first 20): '{supabase_anon_key[:20] if supabase_anon_key else 'EMPTY'}'")
-        
-        if not supabase_url:
-            print("[AUTH ERROR] SUPABASE_URL is not set and could not be extracted!")
-            raise ValueError("SUPABASE_URL environment variable is required")
         
         self.url = supabase_url.rstrip("/")
         if not self.url.startswith(("http://", "https://")):
