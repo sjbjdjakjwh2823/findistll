@@ -130,23 +130,23 @@ class SupabaseAuth:
         print(f"[AUTH DEBUG] SB_KEY loaded: {bool(supabase_anon_key)} (len={len(supabase_anon_key) if supabase_anon_key else 0})")
         print(f"[AUTH DEBUG] SB_JWT_SECRET loaded: {bool(supabase_jwt_secret)}")
         
-        # Validate required variables
+        # Validate required variables (SOFT CHECK - Don't crash app on startup)
         if not supabase_url:
-            print("[AUTH ERROR] SB_URL (or SUPABASE_URL) is not set!")
-            print(f"[AUTH ERROR] Available env keys: {all_env_keys[:20]}...")
-            raise ValueError("SB_URL or SUPABASE_URL environment variable is required")
+            print("[AUTH ERROR] SB_URL (or SUPABASE_URL) is not set! Auth will be disabled.")
+            # Don't raise error, just return empty config to allow app startup
         
         if not supabase_anon_key:
-            print("[AUTH ERROR] SB_KEY (or SUPABASE_ANON_KEY) is not set!")
-            print("[AUTH HINT] Add sb_key=YOUR_KEY to SUPABASE_DATABASE_URL query string")
-            raise ValueError("SB_KEY or SUPABASE_ANON_KEY environment variable is required")
+            print("[AUTH ERROR] SB_KEY (or SUPABASE_ANON_KEY) is not set! Auth will be disabled.")
         
         # Ensure URL has protocol
-        url = supabase_url.rstrip("/")
-        if not url.startswith(("http://", "https://")):
-            url = f"https://{url}"
-        
-        print(f"[AUTH DEBUG] Final URL: '{url}'")
+        if supabase_url:
+            url = supabase_url.rstrip("/")
+            if not url.startswith(("http://", "https://")):
+                url = f"https://{url}"
+        else:
+            url = ""
+            
+        print(f"[AUTH DEBUG] Final URL (configured): '{url}'")
         
         return {
             "url": url,
@@ -156,6 +156,10 @@ class SupabaseAuth:
     
     def _get_headers(self, access_token: Optional[str] = None) -> dict:
         """Get headers for Supabase API requests."""
+        if not self.anon_key:
+            print("[AUTH ERROR] Attempted to get headers but ANON_KEY is missing")
+            return {}
+            
         headers = {
             "apikey": self.anon_key,
             "Content-Type": "application/json",
@@ -164,8 +168,18 @@ class SupabaseAuth:
             headers["Authorization"] = f"Bearer {access_token}"
         return headers
     
+    def _check_config(self):
+        """Check if configuration is valid, raise error if not."""
+        if not self.url or not self.anon_key:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Authentication service is not properly configured (Missing URL or Key)"
+            )
+
     async def register(self, email: str, password: str, full_name: Optional[str] = None) -> TokenResponse:
         """Register a new user with Supabase Auth."""
+        self._check_config()  # Ensure config is valid before proceeding
+
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{self.auth_url}/signup",
@@ -213,6 +227,7 @@ class SupabaseAuth:
     
     async def login(self, email: str, password: str) -> TokenResponse:
         """Login user with Supabase Auth."""
+        self._check_config()
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{self.auth_url}/token?grant_type=password",
@@ -246,6 +261,7 @@ class SupabaseAuth:
     
     async def get_user(self, access_token: str) -> dict:
         """Get current user info from Supabase."""
+        self._check_config()
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.auth_url}/user",
@@ -263,6 +279,13 @@ class SupabaseAuth:
     
     def verify_token(self, token: str) -> dict:
         """Verify JWT token locally using Supabase JWT secret."""
+        # Soft check for config
+        if not self.jwt_secret:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Authentication service not configured (Missing JWT Secret)"
+            )
+            
         try:
             # 1. Log token header to debug Algorithm/Key ID issues
             try:

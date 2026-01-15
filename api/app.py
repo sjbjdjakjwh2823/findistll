@@ -136,6 +136,33 @@ async def health_check(db: AsyncSession = Depends(get_db)):
 
 # ==================== AUTH ENDPOINTS ====================
 
+@app.get("/api/debug-env")
+async def debug_env():
+    """
+    Debug endpoint to check environment configuration safely.
+    Values are masked for security.
+    """
+    settings = supabase_auth._get_settings()
+    
+    # Mask secrets
+    def mask(s):
+        if not s: return "[EMPTY]"
+        if len(s) < 10: return s[:2] + "***"
+        return s[:5] + "***" + s[-5:]
+    
+    import os
+    db_url = os.environ.get("SUPABASE_DATABASE_URL", "")
+    
+    return {
+        "SB_URL": settings["url"],
+        "SB_KEY_STATUS": "Present" if settings["anon_key"] else "Missing",
+        "SB_KEY_MASKED": mask(settings["anon_key"]),
+        "SB_JWT_STATUS": "Present" if settings["jwt_secret"] else "Missing",
+        "DATABASE_URL_HAS_PARAMS": "?" in db_url,
+        "DATABASE_URL_HAS_SB_KEY": "sb_key=" in db_url,
+        "VERSION": "1.0.3-regex-fix"
+    }
+
 @app.post("/api/auth/register", response_model=TokenResponse)
 async def register(user_data: UserRegister):
     """
