@@ -10,13 +10,11 @@ Multi-format financial document distillation:
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response, PlainTextResponse
+from fastapi.responses import Response, PlainTextResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, text
 import os
 import json
-
-import google.generativeai as genai
 
 from .db import get_db, engine, Base
 from .models import Document, ExtractedResult
@@ -27,8 +25,8 @@ from .services.embedder import embedder
 from .auth import supabase_auth, get_current_user, require_auth
 from .schemas import UserRegister, UserLogin, TokenResponse
 
-# Configure Gemini API
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+# Configure Gemini API - MIGRATED: Services now handle their own Client instantiation
+# genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

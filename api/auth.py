@@ -28,7 +28,15 @@ class SupabaseAuth:
     """Supabase Authentication client."""
     
     def __init__(self):
-        self.url = SUPABASE_URL
+        if not SUPABASE_URL:
+            # Fallback or raise error? For now, we'll try to use what we have but warn.
+            print("[AUTH WARNING] SUPABASE_URL is not set.")
+            self.url = ""
+        else:
+            self.url = SUPABASE_URL.rstrip("/")
+            if not self.url.startswith(("http://", "https://")):
+                self.url = f"https://{self.url}"
+
         self.anon_key = SUPABASE_ANON_KEY
         self.jwt_secret = SUPABASE_JWT_SECRET
         self.auth_url = f"{self.url}/auth/v1"

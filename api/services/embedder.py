@@ -7,7 +7,7 @@ Generates vector embeddings using Gemini API for:
 - Semantic clustering
 """
 
-import google.generativeai as genai
+from google import genai
 from typing import List, Optional
 import os
 
@@ -19,7 +19,8 @@ class EmbeddingService:
     EMBEDDING_DIM = 768
     
     def __init__(self):
-        self.model = "models/embedding-001"
+        self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        self.model = "text-embedding-004" # Updated to newer model for V2
     
     async def generate_embedding(self, text: str) -> List[float]:
         """
@@ -39,13 +40,14 @@ class EmbeddingService:
         if len(text) > max_chars:
             text = text[:max_chars]
         
-        result = genai.embed_content(
+        # New SDK call
+        response = self.client.models.embed_content(
             model=self.model,
-            content=text,
-            task_type="retrieval_document"
+            contents=text,
+            config={"task_type": "RETRIEVAL_DOCUMENT"}
         )
         
-        return result['embedding']
+        return response.embeddings[0].values
     
     async def generate_query_embedding(self, query: str) -> List[float]:
         """
@@ -55,13 +57,13 @@ class EmbeddingService:
         if not query or len(query.strip()) == 0:
             return [0.0] * self.EMBEDDING_DIM
         
-        result = genai.embed_content(
+        response = self.client.models.embed_content(
             model=self.model,
-            content=query,
-            task_type="retrieval_query"
+            contents=query,
+            config={"task_type": "RETRIEVAL_QUERY"}
         )
         
-        return result['embedding']
+        return response.embeddings[0].values
     
     def create_document_text(self, data: dict) -> str:
         """
