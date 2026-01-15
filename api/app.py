@@ -22,7 +22,7 @@ from .services.ingestion import ingestion_service
 from .services.normalizer import normalizer
 from .services.exporter import exporter
 from .services.embedder import embedder
-from .auth import supabase_auth, get_current_user, require_auth
+from .auth_service import supabase_auth, get_current_user, require_auth
 from .schemas import UserRegister, UserLogin, TokenResponse
 
 # Configure Gemini API - MIGRATED: Services now handle their own Client instantiation
@@ -160,7 +160,7 @@ async def debug_env():
         "SB_JWT_STATUS": "Present" if settings["jwt_secret"] else "Missing",
         "DATABASE_URL_HAS_PARAMS": "?" in db_url,
         "DATABASE_URL_HAS_SB_KEY": "sb_key=" in db_url,
-        "VERSION": "1.0.3-regex-fix"
+        "VERSION": "2.0.0-reset"
     }
 
 @app.post("/api/auth/register", response_model=TokenResponse)
