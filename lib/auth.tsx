@@ -47,12 +47,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Handle OAuth callback - check URL for tokens
     useEffect(() => {
         const handleOAuthCallback = () => {
-            // Check hash fragment for OAuth tokens
-            const hashParams = new URLSearchParams(window.location.hash.substring(1));
-            const accessToken = hashParams.get('access_token');
-            const refreshToken = hashParams.get('refresh_token');
+            // Check hash fragment for OAuth tokens (Supabase implicit flow)
+            let accessToken: string | null = null;
+            let refreshToken: string | null = null;
+
+            // Try hash fragment first (#access_token=...)
+            if (window.location.hash) {
+                const hashParams = new URLSearchParams(window.location.hash.substring(1));
+                accessToken = hashParams.get('access_token');
+                refreshToken = hashParams.get('refresh_token');
+                console.log('[OAuth] Found hash params, access_token:', accessToken ? 'present' : 'null');
+            }
+
+            // Also check query params (?access_token=...)
+            if (!accessToken && window.location.search) {
+                const queryParams = new URLSearchParams(window.location.search);
+                accessToken = queryParams.get('access_token');
+                refreshToken = queryParams.get('refresh_token');
+                console.log('[OAuth] Found query params, access_token:', accessToken ? 'present' : 'null');
+            }
 
             if (accessToken) {
+                console.log('[OAuth] Storing token and fetching user...');
                 localStorage.setItem('access_token', accessToken);
                 if (refreshToken) {
                     localStorage.setItem('refresh_token', refreshToken);
@@ -60,7 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 setToken(accessToken);
                 fetchUser(accessToken);
 
-                // Clear the hash from URL
+                // Clear the hash/query from URL
                 window.history.replaceState(null, '', window.location.pathname);
             }
         };
