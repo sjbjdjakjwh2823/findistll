@@ -73,7 +73,15 @@ export default function UploadPage() {
             });
 
             setStatus('success');
-            setTimeout(() => router.push('/history'), 1500);
+
+            // Auto-download the converted file in selected format
+            const documentId = response.data.document_id;
+            if (documentId) {
+                const exportUrl = apiUrl(`/api/export/${exportFormat}/${documentId}`);
+                window.open(exportUrl, '_blank');
+            }
+
+            // Don't auto-redirect to history - stay on the page
         } catch (error: any) {
             console.error(error);
             setStatus('error');
@@ -187,7 +195,7 @@ export default function UploadPage() {
                 {status === 'success' && (
                     <div className="mt-4 p-4 bg-green-50 text-green-700 rounded-lg flex items-center gap-2 justify-center">
                         <CheckCircle className="w-5 h-5" />
-                        Distillation complete! Redirecting to exports...
+                        Distillation complete! Your {exportFormat.toUpperCase()} file is downloading...
                     </div>
                 )}
 
@@ -206,8 +214,8 @@ export default function UploadPage() {
                     <button
                         onClick={() => setExportFormat('jsonl')}
                         className={`p-4 rounded-lg text-center transition-all border-2 ${exportFormat === 'jsonl'
-                                ? 'bg-purple-100 border-purple-500 shadow-md'
-                                : 'bg-purple-50 border-transparent hover:border-purple-300'
+                            ? 'bg-purple-100 border-purple-500 shadow-md'
+                            : 'bg-purple-50 border-transparent hover:border-purple-300'
                             }`}
                     >
                         <h4 className={`font-semibold ${exportFormat === 'jsonl' ? 'text-purple-800' : 'text-purple-700'}`}>
@@ -221,8 +229,8 @@ export default function UploadPage() {
                     <button
                         onClick={() => setExportFormat('markdown')}
                         className={`p-4 rounded-lg text-center transition-all border-2 ${exportFormat === 'markdown'
-                                ? 'bg-green-100 border-green-500 shadow-md'
-                                : 'bg-green-50 border-transparent hover:border-green-300'
+                            ? 'bg-green-100 border-green-500 shadow-md'
+                            : 'bg-green-50 border-transparent hover:border-green-300'
                             }`}
                     >
                         <h4 className={`font-semibold ${exportFormat === 'markdown' ? 'text-green-800' : 'text-green-700'}`}>
@@ -236,8 +244,8 @@ export default function UploadPage() {
                     <button
                         onClick={() => setExportFormat('parquet')}
                         className={`p-4 rounded-lg text-center transition-all border-2 ${exportFormat === 'parquet'
-                                ? 'bg-orange-100 border-orange-500 shadow-md'
-                                : 'bg-orange-50 border-transparent hover:border-orange-300'
+                            ? 'bg-orange-100 border-orange-500 shadow-md'
+                            : 'bg-orange-50 border-transparent hover:border-orange-300'
                             }`}
                     >
                         <h4 className={`font-semibold ${exportFormat === 'parquet' ? 'text-orange-800' : 'text-orange-700'}`}>
