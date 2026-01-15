@@ -1,31 +1,33 @@
 """
 FinDistill Embedding Service
 
-Generates vector embeddings using Gemini API for:
+Generates vector embeddings using Gemini API via HTTP for:
 - Document similarity search
 - RAG retrieval
 - Semantic clustering
 """
 
-from google import genai
-from google.genai import types
-from typing import List, Optional
+import httpx
+from typing import List
 import os
+
+# Gemini API configuration
+GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
 
 
 class EmbeddingService:
-    """Generates and manages vector embeddings for documents."""
+    """Generates and manages vector embeddings for documents via HTTP."""
     
     # Gemini embedding dimension
     EMBEDDING_DIM = 768
     
     def __init__(self):
-        self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        self.api_key = os.getenv("GEMINI_API_KEY", "")
         self.model = "text-embedding-004"
     
     async def generate_embedding(self, text: str) -> List[float]:
         """
-        Generate embedding vector for text using Gemini.
+        Generate embedding vector for text using Gemini via HTTP.
         
         Args:
             text: Text to embed
@@ -41,14 +43,7 @@ class EmbeddingService:
         if len(text) > max_chars:
             text = text[:max_chars]
         
-        # New SDK call
-        response = self.client.models.embed_content(
-            model=self.model,
-            contents=text,
-            config=types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT")
-        )
-        
-        return response.embeddings[0].values
+        return await self._call_embed_api(text, "RETRIEVAL_DOCUMENT")
     
     async def generate_query_embedding(self, query: str) -> List[float]:
         """
@@ -58,13 +53,30 @@ class EmbeddingService:
         if not query or len(query.strip()) == 0:
             return [0.0] * self.EMBEDDING_DIM
         
-        response = self.client.models.embed_content(
-            model=self.model,
-            contents=query,
-            config=types.EmbedContentConfig(task_type="RETRIEVAL_QUERY")
-        )
+        return await self._call_embed_api(query, "RETRIEVAL_QUERY")
+    
+    async def _call_embed_api(self, text: str, task_type: str) -> List[float]:
+        """Call Gemini embedding API via HTTP."""
+        url = f"{GEMINI_API_BASE}/models/{self.model}:embedContent?key={self.api_key}"
         
-        return response.embeddings[0].values
+        payload = {
+            "model": f"models/{self.model}",
+            "content": {
+                "parts": [{"text": text}]
+            },
+            "taskType": task_type
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+            data = response.json()
+        
+        embedding = data.get("embedding", {}).get("values", [])
+        if not embedding:
+            return [0.0] * self.EMBEDDING_DIM
+        
+        return embedding
     
     def create_document_text(self, data: dict) -> str:
         """
