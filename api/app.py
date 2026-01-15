@@ -35,19 +35,26 @@ async def lifespan(app: FastAPI):
     Perform database auto-migration on server startup.
     """
     try:
-        # NOTE: Auto-migration disabled for Vercel stability.
-        # Run migrations manually or via a separate script.
-        pass
-        # print("Starting database auto-migration...")
-        # async with engine.begin() as conn:
-        #     # 1. Create vector extension if not exists
-        #     await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        #     print("Vector extension checked/created.")
-        #     
-        #     # 2. Create all tables defined in models
-        #     # This is equivalent to "CREATE TABLE IF NOT EXISTS"
-        #     await conn.run_sync(Base.metadata.create_all)
-        #     print("Database tables checked/created successfully.")
+        print("Starting database auto-migration...")
+        async with engine.begin() as conn:
+            # 1. Create vector extension if not exists
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            print("Vector extension checked/created.")
+            
+            # 2. Create all tables defined in models
+            await conn.run_sync(Base.metadata.create_all)
+            print("Database tables checked/created successfully.")
+            
+            # 3. Add missing columns (safe migration for existing tables)
+            # Check and add file_type column to documents table
+            try:
+                await conn.execute(text("""
+                    ALTER TABLE documents 
+                    ADD COLUMN IF NOT EXISTS file_type VARCHAR
+                """))
+                print("Column 'file_type' checked/added to documents table.")
+            except Exception as col_error:
+                print(f"Note: Could not add file_type column (may already exist): {col_error}")
             
     except Exception as e:
         print(f"CRITICAL: Database initialization failed: {e}")
@@ -108,6 +115,7 @@ async def health_check(db: AsyncSession = Depends(get_db)):
 @app.post("/api/extract")
 async def extract_document(
     file: UploadFile = File(...),
+    export_format: str = "jsonl",  # Default export format: jsonl, markdown, parquet
     db: AsyncSession = Depends(get_db)
 ):
     """
