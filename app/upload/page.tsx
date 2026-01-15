@@ -22,6 +22,7 @@ export default function UploadPage() {
     const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
     const [errorMessage, setErrorMessage] = useState('');
     const [dragOver, setDragOver] = useState(false);
+    const [exportFormat, setExportFormat] = useState<'jsonl' | 'markdown' | 'parquet'>('jsonl');
     const router = useRouter();
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -64,7 +65,7 @@ export default function UploadPage() {
         formData.append('file', file);
 
         try {
-            const response = await axios.post(apiUrl('/api/extract'), formData, {
+            const response = await axios.post(apiUrl(`/api/extract?export_format=${exportFormat}`), formData, {
                 headers: {
                     'Content-Type': 'multipart/form-data',
                 },
@@ -198,19 +199,55 @@ export default function UploadPage() {
                 )}
             </div>
 
-            {/* Export Format Info */}
-            <div className="mt-8 grid grid-cols-3 gap-4">
-                <div className="bg-purple-50 p-4 rounded-lg text-center">
-                    <h4 className="font-semibold text-purple-700">JSONL</h4>
-                    <p className="text-sm text-purple-600">LLM Fine-tuning</p>
-                </div>
-                <div className="bg-green-50 p-4 rounded-lg text-center">
-                    <h4 className="font-semibold text-green-700">Markdown</h4>
-                    <p className="text-sm text-green-600">RAG Systems</p>
-                </div>
-                <div className="bg-orange-50 p-4 rounded-lg text-center">
-                    <h4 className="font-semibold text-orange-700">Parquet</h4>
-                    <p className="text-sm text-orange-600">Analytics</p>
+            {/* Export Format Selector */}
+            <div className="mt-8">
+                <h3 className="text-lg font-semibold mb-3 text-gray-700">Select Export Format</h3>
+                <div className="grid grid-cols-3 gap-4">
+                    <button
+                        onClick={() => setExportFormat('jsonl')}
+                        className={`p-4 rounded-lg text-center transition-all border-2 ${exportFormat === 'jsonl'
+                                ? 'bg-purple-100 border-purple-500 shadow-md'
+                                : 'bg-purple-50 border-transparent hover:border-purple-300'
+                            }`}
+                    >
+                        <h4 className={`font-semibold ${exportFormat === 'jsonl' ? 'text-purple-800' : 'text-purple-700'}`}>
+                            JSONL
+                        </h4>
+                        <p className="text-sm text-purple-600">LLM Fine-tuning</p>
+                        {exportFormat === 'jsonl' && (
+                            <span className="inline-block mt-2 px-2 py-0.5 bg-purple-500 text-white text-xs rounded-full">Selected</span>
+                        )}
+                    </button>
+                    <button
+                        onClick={() => setExportFormat('markdown')}
+                        className={`p-4 rounded-lg text-center transition-all border-2 ${exportFormat === 'markdown'
+                                ? 'bg-green-100 border-green-500 shadow-md'
+                                : 'bg-green-50 border-transparent hover:border-green-300'
+                            }`}
+                    >
+                        <h4 className={`font-semibold ${exportFormat === 'markdown' ? 'text-green-800' : 'text-green-700'}`}>
+                            Markdown
+                        </h4>
+                        <p className="text-sm text-green-600">RAG Systems</p>
+                        {exportFormat === 'markdown' && (
+                            <span className="inline-block mt-2 px-2 py-0.5 bg-green-500 text-white text-xs rounded-full">Selected</span>
+                        )}
+                    </button>
+                    <button
+                        onClick={() => setExportFormat('parquet')}
+                        className={`p-4 rounded-lg text-center transition-all border-2 ${exportFormat === 'parquet'
+                                ? 'bg-orange-100 border-orange-500 shadow-md'
+                                : 'bg-orange-50 border-transparent hover:border-orange-300'
+                            }`}
+                    >
+                        <h4 className={`font-semibold ${exportFormat === 'parquet' ? 'text-orange-800' : 'text-orange-700'}`}>
+                            Parquet
+                        </h4>
+                        <p className="text-sm text-orange-600">Analytics</p>
+                        {exportFormat === 'parquet' && (
+                            <span className="inline-block mt-2 px-2 py-0.5 bg-orange-500 text-white text-xs rounded-full">Selected</span>
+                        )}
+                    </button>
                 </div>
             </div>
         </div>
