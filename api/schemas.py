@@ -4,7 +4,7 @@ Pydantic Schemas for FinDistill API
 Request/Response models for authentication and API endpoints.
 """
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 
@@ -13,14 +13,14 @@ from datetime import datetime
 
 class UserRegister(BaseModel):
     """User registration request."""
-    email: EmailStr
+    email: str
     password: str
     full_name: Optional[str] = None
 
 
 class UserLogin(BaseModel):
     """User login request."""
-    email: EmailStr
+    email: str
     password: str
 
 
