@@ -49,18 +49,21 @@ class SupabaseAuth:
         sb_keys = [k for k in all_env_keys if k.startswith("SB_") or "SUPABASE" in k.upper()]
         print(f"[AUTH DEBUG] Environment variables with SB_/SUPABASE prefix: {sb_keys}")
         
-        # Try new names first (SB_*), then fall back to legacy names
+        # Try Vercel-specific names first, then standard names, then legacy
         supabase_url = (
+            os.environ.get("VERCEL_SB_URL") or
             os.environ.get("SB_URL") or
             os.environ.get("SUPABASE_URL") or
             ""
         )
         supabase_anon_key = (
+            os.environ.get("VERCEL_SB_KEY") or
             os.environ.get("SB_KEY") or
             os.environ.get("SUPABASE_ANON_KEY") or
             ""
         )
         supabase_jwt_secret = (
+            os.environ.get("VERCEL_SB_JWT_SECRET") or
             os.environ.get("SB_JWT_SECRET") or
             os.environ.get("SUPABASE_JWT_SECRET") or
             ""
