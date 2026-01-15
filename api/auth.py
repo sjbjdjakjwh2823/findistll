@@ -49,17 +49,21 @@ class SupabaseAuth:
         sb_keys = [k for k in all_env_keys if k.startswith("SB_") or "SUPABASE" in k.upper()]
         print(f"[AUTH DEBUG] Environment variables with SB_/SUPABASE prefix: {sb_keys}")
         
-        # Try Vercel-specific names first, then standard names, then legacy
+        # Try Vercel-specific names first, then standard names, then NEXT_PUBLIC, then legacy
         supabase_url = (
             os.environ.get("VERCEL_SB_URL") or
             os.environ.get("SB_URL") or
+            os.environ.get("NEXT_PUBLIC_SB_URL") or
             os.environ.get("SUPABASE_URL") or
+            os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or
             ""
         )
         supabase_anon_key = (
             os.environ.get("VERCEL_SB_KEY") or
             os.environ.get("SB_KEY") or
+            os.environ.get("NEXT_PUBLIC_SB_KEY") or
             os.environ.get("SUPABASE_ANON_KEY") or
+            os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY") or
             ""
         )
         supabase_jwt_secret = (
@@ -83,17 +87,35 @@ class SupabaseAuth:
                     print(f"[AUTH DEBUG] Extracted URL from DATABASE_URL: {supabase_url}")
             
             # Extract anon_key and jwt_secret from query parameters if present
-            if "?" in db_url:
-                query_string = db_url.split("?", 1)[1]
-                params = parse_qs(query_string)
+            # Use Regex instead of urlparse/parse_qs for robustness against connection string formats
+            try:
+                if "sb_key=" in db_url:
+                    sb_key_match = re.search(r"sb_key=([^&]+)", db_url)
+                    if sb_key_match:
+                        supabase_anon_key = sb_key_match.group(1)
+                        print(f"[AUTH DEBUG] Extracted SB_KEY using Regex")
+
+                if "sb_jwt=" in db_url:
+                    sb_jwt_match = re.search(r"sb_jwt=([^&]+)", db_url)
+                    if sb_jwt_match:
+                        supabase_jwt_secret = sb_jwt_match.group(1)
+                        print(f"[AUTH DEBUG] Extracted SB_JWT_SECRET using Regex")
+                        
+                # Debug: Print the end of the URL to verify if params exist (careful with secrets)
+                SAFE_DEBUG_LEN = 20
+                url_end = db_url[-SAFE_DEBUG_LEN:] if len(db_url) > SAFE_DEBUG_LEN else db_url
+                print(f"[AUTH DEBUG] Database URL ends with: '...{url_end}'")
                 
-                if not supabase_anon_key and "sb_key" in params:
-                    supabase_anon_key = params["sb_key"][0]
-                    print(f"[AUTH DEBUG] Extracted SB_KEY from DATABASE_URL")
-                
-                if not supabase_jwt_secret and "sb_jwt" in params:
-                    supabase_jwt_secret = params["sb_jwt"][0]
-                    print(f"[AUTH DEBUG] Extracted SB_JWT_SECRET from DATABASE_URL")
+            except Exception as e:
+                print(f"[AUTH ERROR] Failed to extract params with regex: {str(e)}")
+        
+        # fallback for VERCEL_* prefixes as a last resort
+        if not supabase_url:
+             supabase_url = os.environ.get("VERCEL_SB_URL", "")
+        if not supabase_anon_key:
+             supabase_anon_key = os.environ.get("VERCEL_SB_KEY", "")
+        if not supabase_jwt_secret:
+             supabase_jwt_secret = os.environ.get("VERCEL_SB_JWT_SECRET", "")
         
         # Debug logging (values hidden for security)
         print(f"[AUTH DEBUG] SB_URL loaded: {bool(supabase_url)} (len={len(supabase_url) if supabase_url else 0})")
