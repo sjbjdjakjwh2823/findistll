@@ -18,32 +18,34 @@ from .schemas import UserRegister, UserLogin, TokenResponse, UserProfile
 # Security scheme for Bearer token
 security = HTTPBearer(auto_error=False)
 
-# Supabase configuration
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
-SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
+# Note: Environment variables are loaded inside SupabaseAuth.__init__ for Vercel compatibility
 
 
 class SupabaseAuth:
     """Supabase Authentication client."""
     
     def __init__(self):
-        # DEBUG: Log environment variables
-        print(f"[AUTH DEBUG] SUPABASE_URL from env: '{SUPABASE_URL}'")
-        print(f"[AUTH DEBUG] SUPABASE_ANON_KEY present: {bool(SUPABASE_ANON_KEY)}")
+        # Load environment variables at runtime for Vercel compatibility
+        supabase_url = os.getenv("SUPABASE_URL", "")
+        supabase_anon_key = os.getenv("SUPABASE_ANON_KEY", "")
+        supabase_jwt_secret = os.getenv("SUPABASE_JWT_SECRET", "")
         
-        if not SUPABASE_URL:
+        # DEBUG: Log environment variables
+        print(f"[AUTH DEBUG] SUPABASE_URL from env: '{supabase_url}'")
+        print(f"[AUTH DEBUG] SUPABASE_ANON_KEY present: {bool(supabase_anon_key)}")
+        
+        if not supabase_url:
             print("[AUTH ERROR] SUPABASE_URL is not set!")
             raise ValueError("SUPABASE_URL environment variable is required")
         
-        self.url = SUPABASE_URL.rstrip("/")
+        self.url = supabase_url.rstrip("/")
         if not self.url.startswith(("http://", "https://")):
             self.url = f"https://{self.url}"
         
         print(f"[AUTH DEBUG] Final URL: '{self.url}'")
 
-        self.anon_key = SUPABASE_ANON_KEY
-        self.jwt_secret = SUPABASE_JWT_SECRET
+        self.anon_key = supabase_anon_key
+        self.jwt_secret = supabase_jwt_secret
         self.auth_url = f"{self.url}/auth/v1"
     
     def _get_headers(self, access_token: Optional[str] = None) -> dict:
