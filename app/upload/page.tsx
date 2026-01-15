@@ -22,7 +22,7 @@ export default function UploadPage() {
     const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
     const [errorMessage, setErrorMessage] = useState('');
     const [dragOver, setDragOver] = useState(false);
-    const [exportFormat, setExportFormat] = useState<'jsonl' | 'markdown' | 'parquet'>('jsonl');
+    const [exportFormat, setExportFormat] = useState<'jsonl' | 'markdown'>('jsonl');
     const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const router = useRouter();
@@ -192,7 +192,22 @@ export default function UploadPage() {
                 <div className="mt-8">
                     {status === 'success' && downloadUrl ? (
                         <button
-                            onClick={() => window.open(downloadUrl, '_blank')}
+                            onClick={async () => {
+                                try {
+                                    const response = await fetch(downloadUrl);
+                                    const blob = await response.blob();
+                                    const url = window.URL.createObjectURL(blob);
+                                    const a = document.createElement('a');
+                                    a.href = url;
+                                    a.download = `document.${exportFormat === 'jsonl' ? 'jsonl' : 'md'}`;
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    window.URL.revokeObjectURL(url);
+                                    document.body.removeChild(a);
+                                } catch (error) {
+                                    console.error('Download failed:', error);
+                                }
+                            }}
                             className="w-full py-3 rounded-lg font-medium text-white transition-all flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 shadow-md"
                         >
                             <Download className="w-5 h-5" />
@@ -252,7 +267,7 @@ export default function UploadPage() {
             {/* Export Format Selector */}
             <div className="mt-8">
                 <h3 className="text-lg font-semibold mb-3 text-gray-700">Select Export Format</h3>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                     <button
                         onClick={() => setExportFormat('jsonl')}
                         className={`p-4 rounded-lg text-center transition-all border-2 ${exportFormat === 'jsonl'
@@ -281,21 +296,6 @@ export default function UploadPage() {
                         <p className="text-sm text-green-600">RAG Systems</p>
                         {exportFormat === 'markdown' && (
                             <span className="inline-block mt-2 px-2 py-0.5 bg-green-500 text-white text-xs rounded-full">Selected</span>
-                        )}
-                    </button>
-                    <button
-                        onClick={() => setExportFormat('parquet')}
-                        className={`p-4 rounded-lg text-center transition-all border-2 ${exportFormat === 'parquet'
-                            ? 'bg-orange-100 border-orange-500 shadow-md'
-                            : 'bg-orange-50 border-transparent hover:border-orange-300'
-                            }`}
-                    >
-                        <h4 className={`font-semibold ${exportFormat === 'parquet' ? 'text-orange-800' : 'text-orange-700'}`}>
-                            Parquet
-                        </h4>
-                        <p className="text-sm text-orange-600">Analytics</p>
-                        {exportFormat === 'parquet' && (
-                            <span className="inline-block mt-2 px-2 py-0.5 bg-orange-500 text-white text-xs rounded-full">Selected</span>
                         )}
                     </button>
                 </div>
