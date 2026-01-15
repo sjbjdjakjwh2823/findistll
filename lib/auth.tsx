@@ -24,9 +24,10 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Supabase URL for OAuth (hardcoded to match backend)
-const SUPABASE_URL = 'https://nnuixqxmalttautcqckt.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5udWl4cXhtYWx0dGF1dGNxY2t0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNjQ1NjIsImV4cCI6MjA4Mzk0MDU2Mn0.RKQm2hVC7IkuW_ldtGedJQtWr15RrAJYWWMkJ5SWdAM';
+// Supabase URL for OAuth - loaded from environment variables
+// NEXT_PUBLIC_ prefix required for client-side access in Next.js
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SB_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+
 
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
