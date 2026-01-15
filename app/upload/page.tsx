@@ -16,22 +16,45 @@ const SUPPORTED_FORMATS = {
     'image/webp': { label: 'Image', icon: Image, color: 'purple' },
 };
 
+interface FileResult {
+    file: File;
+    status: 'pending' | 'processing' | 'success' | 'error';
+    downloadUrl?: string;
+    error?: string;
+}
+
+const MAX_FILES = 5;
+
 export default function UploadPage() {
-    const [file, setFile] = useState<File | null>(null);
+    const [files, setFiles] = useState<FileResult[]>([]);
     const [loading, setLoading] = useState(false);
-    const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
-    const [errorMessage, setErrorMessage] = useState('');
     const [dragOver, setDragOver] = useState(false);
     const [exportFormat, setExportFormat] = useState<'jsonl' | 'markdown'>('jsonl');
-    const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const router = useRouter();
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            setFile(e.target.files[0]);
-            setStatus('idle');
-            setErrorMessage('');
+        if (e.target.files) {
+            addFiles(Array.from(e.target.files));
+        }
+    };
+
+    const addFiles = (newFiles: File[]) => {
+        const remainingSlots = MAX_FILES - files.length;
+        const filesToAdd = newFiles.slice(0, remainingSlots).map(file => ({
+            file,
+            status: 'pending' as const
+        }));
+
+        if (filesToAdd.length > 0) {
+            setFiles(prev => [...prev, ...filesToAdd]);
+        }
+    };
+
+    const removeFile = (index: number) => {
+        setFiles(prev => prev.filter((_, i) => i !== index));
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
         }
     };
 
@@ -39,12 +62,10 @@ export default function UploadPage() {
         e.preventDefault();
         setDragOver(false);
 
-        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-            setFile(e.dataTransfer.files[0]);
-            setStatus('idle');
-            setErrorMessage('');
+        if (e.dataTransfer.files) {
+            addFiles(Array.from(e.dataTransfer.files));
         }
-    }, []);
+    }, [files.length]);
 
     const handleDragOver = useCallback((e: React.DragEvent) => {
         e.preventDefault();
@@ -57,65 +78,88 @@ export default function UploadPage() {
     }, []);
 
     const handleUpload = async () => {
-        if (!file) return;
+        if (files.length === 0) return;
 
         setLoading(true);
-        setStatus('idle');
-        setErrorMessage('');
 
-        const formData = new FormData();
-        formData.append('file', file);
+        const updatedFiles = [...files];
 
+        for (let i = 0; i < updatedFiles.length; i++) {
+            if (updatedFiles[i].status !== 'pending') continue;
+
+            updatedFiles[i].status = 'processing';
+            setFiles([...updatedFiles]);
+
+            const formData = new FormData();
+            formData.append('file', updatedFiles[i].file);
+
+            try {
+                const response = await axios.post(apiUrl(`/api/extract?export_format=${exportFormat}`), formData, {
+                    headers: {
+                        'Content-Type': 'multipart/form-data',
+                    },
+                    timeout: 120000,
+                });
+
+                const documentId = response.data.document_id;
+                updatedFiles[i].status = 'success';
+                updatedFiles[i].downloadUrl = apiUrl(`/api/export/${exportFormat}/${documentId}`);
+            } catch (error: any) {
+                updatedFiles[i].status = 'error';
+                updatedFiles[i].error = error.response?.data?.detail || error.message || 'Failed to process';
+            }
+
+            setFiles([...updatedFiles]);
+        }
+
+        setLoading(false);
+    };
+
+    const downloadFile = async (url: string, filename: string) => {
         try {
-            const response = await axios.post(apiUrl(`/api/extract?export_format=${exportFormat}`), formData, {
-                headers: {
-                    'Content-Type': 'multipart/form-data',
-                },
-                timeout: 120000, // 2 minutes for large files
-            });
-
-            setStatus('success');
-
-            // Save download URL for the download button
-            const documentId = response.data.document_id;
-            if (documentId) {
-                const exportUrl = apiUrl(`/api/export/${exportFormat}/${documentId}`);
-                setDownloadUrl(exportUrl);
-            }
-
-            // Don't auto-redirect to history - stay on the page
-        } catch (error: any) {
-            console.error(error);
-            setStatus('error');
-
-            let msg = 'Failed to process document.';
-            if (error.response) {
-                // Server responded with a status code
-                msg = `Error (${error.response.status}): ${error.response.data?.detail || error.message}`;
-            } else if (error.request) {
-                // The request was made but no response was received
-                msg = 'No response from server. It might be a timeout (processing took too long).';
-            } else {
-                msg = error.message;
-            }
-            setErrorMessage(msg);
-        } finally {
-            setLoading(false);
+            const response = await fetch(url);
+            const blob = await response.blob();
+            const blobUrl = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = `${filename}.${exportFormat === 'jsonl' ? 'jsonl' : 'md'}`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(blobUrl);
+            document.body.removeChild(a);
+        } catch (error) {
+            console.error('Download failed:', error);
         }
     };
 
-    const getFileInfo = () => {
-        if (!file) return null;
+    const downloadAll = async () => {
+        const successFiles = files.filter(f => f.status === 'success' && f.downloadUrl);
+        for (const f of successFiles) {
+            await downloadFile(f.downloadUrl!, f.file.name.replace(/\.[^/.]+$/, ''));
+            await new Promise(resolve => setTimeout(resolve, 500)); // Small delay between downloads
+        }
+    };
+
+    const resetAll = () => {
+        setFiles([]);
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    };
+
+    const getFileInfo = (file: File) => {
         const format = SUPPORTED_FORMATS[file.type as keyof typeof SUPPORTED_FORMATS];
         return format || { label: 'File', icon: FileText, color: 'gray' };
     };
 
-    const fileInfo = getFileInfo();
+    const allCompleted = files.length > 0 && files.every(f => f.status === 'success' || f.status === 'error');
+    const hasSuccess = files.some(f => f.status === 'success');
+    const hasPending = files.some(f => f.status === 'pending');
 
     return (
         <div className="max-w-2xl mx-auto">
-            <h2 className="text-3xl font-bold mb-2">Upload Document</h2>
-            <p className="text-gray-500 mb-8">Upload financial documents for AI-powered distillation</p>
+            <h2 className="text-3xl font-bold mb-2">Upload Documents</h2>
+            <p className="text-gray-500 mb-8">Upload up to {MAX_FILES} financial documents for AI-powered distillation</p>
 
             <div
                 className={`bg-white p-12 rounded-xl shadow-sm border-2 border-dashed text-center transition-all
@@ -133,14 +177,15 @@ export default function UploadPage() {
                     </div>
                 </div>
 
-                <h3 className="text-xl font-semibold mb-2">Drag and drop your file here</h3>
+                <h3 className="text-xl font-semibold mb-2">Drag and drop your files here</h3>
                 <p className="text-gray-500 mb-2">Supported formats:</p>
-                <div className="flex flex-wrap justify-center gap-2 mb-8">
+                <div className="flex flex-wrap justify-center gap-2 mb-4">
                     <span className="px-3 py-1 bg-red-50 text-red-700 rounded-full text-sm font-medium">PDF</span>
                     <span className="px-3 py-1 bg-green-50 text-green-700 rounded-full text-sm font-medium">Excel</span>
                     <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm font-medium">CSV</span>
                     <span className="px-3 py-1 bg-purple-50 text-purple-700 rounded-full text-sm font-medium">Images</span>
                 </div>
+                <p className="text-sm text-gray-400 mb-6">Maximum {MAX_FILES} files at once • {files.length}/{MAX_FILES} selected</p>
 
                 <input
                     type="file"
@@ -149,119 +194,116 @@ export default function UploadPage() {
                     className="hidden"
                     id="file-upload"
                     accept=".pdf,.xlsx,.xls,.csv,image/*"
+                    multiple
                 />
-                {status !== 'success' && (
+                {files.length < MAX_FILES && !allCompleted && (
                     <label
                         htmlFor="file-upload"
                         className="inline-block px-6 py-3 bg-white border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors font-medium text-gray-700"
                     >
-                        Select File
+                        Select Files
                     </label>
                 )}
 
-                {file && fileInfo && status !== 'success' && (
-                    <div className="mt-6 p-4 bg-gray-50 rounded-lg flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                            <div className={`p-2 bg-${fileInfo.color}-100 rounded-lg`}>
-                                <fileInfo.icon className={`w-5 h-5 text-${fileInfo.color}-600`} />
-                            </div>
-                            <div className="text-left">
-                                <span className="font-medium text-gray-700 block">{file.name}</span>
-                                <span className="text-sm text-gray-500">
-                                    {fileInfo.label} • {(file.size / 1024 / 1024).toFixed(2)} MB
-                                </span>
-                            </div>
-                        </div>
-                        <button
-                            onClick={() => {
-                                setFile(null);
-                                setStatus('idle');
-                                setErrorMessage('');
-                                if (fileInputRef.current) {
-                                    fileInputRef.current.value = '';
-                                }
-                            }}
-                            className="p-1 hover:bg-gray-200 rounded-full transition-colors"
-                            title="Remove file"
-                        >
-                            <X className="w-5 h-5 text-gray-500" />
-                        </button>
+                {/* File List */}
+                {files.length > 0 && (
+                    <div className="mt-6 space-y-2">
+                        {files.map((fileResult, index) => {
+                            const fileInfo = getFileInfo(fileResult.file);
+                            return (
+                                <div key={index} className="p-3 bg-gray-50 rounded-lg flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`p-2 rounded-lg ${fileResult.status === 'success' ? 'bg-green-100' :
+                                                fileResult.status === 'error' ? 'bg-red-100' :
+                                                    fileResult.status === 'processing' ? 'bg-yellow-100' :
+                                                        `bg-${fileInfo.color}-100`
+                                            }`}>
+                                            {fileResult.status === 'success' ? (
+                                                <CheckCircle className="w-5 h-5 text-green-600" />
+                                            ) : fileResult.status === 'error' ? (
+                                                <AlertCircle className="w-5 h-5 text-red-600" />
+                                            ) : fileResult.status === 'processing' ? (
+                                                <Loader2 className="w-5 h-5 text-yellow-600 animate-spin" />
+                                            ) : (
+                                                <fileInfo.icon className={`w-5 h-5 text-${fileInfo.color}-600`} />
+                                            )}
+                                        </div>
+                                        <div className="text-left">
+                                            <span className="font-medium text-gray-700 block text-sm truncate max-w-[200px]">
+                                                {fileResult.file.name}
+                                            </span>
+                                            <span className="text-xs text-gray-500">
+                                                {fileResult.status === 'error' ? fileResult.error :
+                                                    fileResult.status === 'processing' ? 'Processing...' :
+                                                        fileResult.status === 'success' ? 'Complete' :
+                                                            `${(fileResult.file.size / 1024 / 1024).toFixed(2)} MB`}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        {fileResult.status === 'success' && fileResult.downloadUrl && (
+                                            <button
+                                                onClick={() => downloadFile(fileResult.downloadUrl!, fileResult.file.name.replace(/\.[^/.]+$/, ''))}
+                                                className="p-1 hover:bg-green-200 rounded-full transition-colors"
+                                                title="Download"
+                                            >
+                                                <Download className="w-4 h-4 text-green-600" />
+                                            </button>
+                                        )}
+                                        {fileResult.status === 'pending' && (
+                                            <button
+                                                onClick={() => removeFile(index)}
+                                                className="p-1 hover:bg-gray-200 rounded-full transition-colors"
+                                                title="Remove"
+                                            >
+                                                <X className="w-4 h-4 text-gray-500" />
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
                 )}
 
+                {/* Action Buttons */}
                 <div className="mt-8">
-                    {status === 'success' && downloadUrl ? (
-                        <button
-                            onClick={async () => {
-                                try {
-                                    const response = await fetch(downloadUrl);
-                                    const blob = await response.blob();
-                                    const url = window.URL.createObjectURL(blob);
-                                    const a = document.createElement('a');
-                                    a.href = url;
-                                    a.download = `document.${exportFormat === 'jsonl' ? 'jsonl' : 'md'}`;
-                                    document.body.appendChild(a);
-                                    a.click();
-                                    window.URL.revokeObjectURL(url);
-                                    document.body.removeChild(a);
-                                } catch (error) {
-                                    console.error('Download failed:', error);
-                                }
-                            }}
-                            className="w-full py-3 rounded-lg font-medium text-white transition-all flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 shadow-md"
-                        >
-                            <Download className="w-5 h-5" />
-                            Download {exportFormat.toUpperCase()} File
-                        </button>
+                    {allCompleted && hasSuccess ? (
+                        <div className="space-y-3">
+                            <button
+                                onClick={downloadAll}
+                                className="w-full py-3 rounded-lg font-medium text-white bg-green-600 hover:bg-green-700 shadow-md flex items-center justify-center gap-2"
+                            >
+                                <Download className="w-5 h-5" />
+                                Download All ({files.filter(f => f.status === 'success').length} files)
+                            </button>
+                            <button
+                                onClick={resetAll}
+                                className="w-full py-2 rounded-lg font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors"
+                            >
+                                Convert New Files
+                            </button>
+                        </div>
                     ) : (
                         <button
                             onClick={handleUpload}
-                            disabled={!file || loading}
+                            disabled={files.length === 0 || loading || !hasPending}
                             className={`w-full py-3 rounded-lg font-medium text-white transition-all flex items-center justify-center gap-2
-                                ${!file || loading ? 'bg-gray-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 shadow-md'}
+                                ${files.length === 0 || loading || !hasPending ? 'bg-gray-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 shadow-md'}
                             `}
                         >
                             {loading ? (
                                 <>
                                     <Loader2 className="w-5 h-5 animate-spin" />
-                                    Processing with AI...
+                                    Processing {files.filter(f => f.status === 'processing').length > 0 ?
+                                        `(${files.filter(f => f.status === 'success').length + 1}/${files.length})` : '...'}
                                 </>
                             ) : (
-                                'Start Distillation'
+                                `Start Distillation (${files.length} file${files.length > 1 ? 's' : ''})`
                             )}
                         </button>
                     )}
                 </div>
-
-                {status === 'success' && (
-                    <>
-                        <div className="mt-4 p-4 bg-green-50 text-green-700 rounded-lg flex items-center gap-2 justify-center">
-                            <CheckCircle className="w-5 h-5" />
-                            Distillation complete! Click the button above to download.
-                        </div>
-                        <button
-                            onClick={() => {
-                                setFile(null);
-                                setStatus('idle');
-                                setDownloadUrl(null);
-                                setErrorMessage('');
-                                if (fileInputRef.current) {
-                                    fileInputRef.current.value = '';
-                                }
-                            }}
-                            className="mt-3 w-full py-2 rounded-lg font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors"
-                        >
-                            Convert New File
-                        </button>
-                    </>
-                )}
-
-                {status === 'error' && (
-                    <div className="mt-4 p-4 bg-red-50 text-red-700 rounded-lg flex items-center gap-2 justify-center">
-                        <AlertCircle className="w-5 h-5" />
-                        {errorMessage}
-                    </div>
-                )}
             </div>
 
             {/* Export Format Selector */}
@@ -270,10 +312,11 @@ export default function UploadPage() {
                 <div className="grid grid-cols-2 gap-4">
                     <button
                         onClick={() => setExportFormat('jsonl')}
+                        disabled={loading}
                         className={`p-4 rounded-lg text-center transition-all border-2 ${exportFormat === 'jsonl'
                             ? 'bg-purple-100 border-purple-500 shadow-md'
                             : 'bg-purple-50 border-transparent hover:border-purple-300'
-                            }`}
+                            } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                         <h4 className={`font-semibold ${exportFormat === 'jsonl' ? 'text-purple-800' : 'text-purple-700'}`}>
                             JSONL
@@ -285,10 +328,11 @@ export default function UploadPage() {
                     </button>
                     <button
                         onClick={() => setExportFormat('markdown')}
+                        disabled={loading}
                         className={`p-4 rounded-lg text-center transition-all border-2 ${exportFormat === 'markdown'
                             ? 'bg-green-100 border-green-500 shadow-md'
                             : 'bg-green-50 border-transparent hover:border-green-300'
-                            }`}
+                            } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                         <h4 className={`font-semibold ${exportFormat === 'markdown' ? 'text-green-800' : 'text-green-700'}`}>
                             Markdown
