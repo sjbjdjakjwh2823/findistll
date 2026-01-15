@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { Upload, FileText, CheckCircle, AlertCircle, Loader2, FileSpreadsheet, Image, Download, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -24,6 +24,7 @@ export default function UploadPage() {
     const [dragOver, setDragOver] = useState(false);
     const [exportFormat, setExportFormat] = useState<'jsonl' | 'markdown' | 'parquet'>('jsonl');
     const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const router = useRouter();
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -143,6 +144,7 @@ export default function UploadPage() {
 
                 <input
                     type="file"
+                    ref={fileInputRef}
                     onChange={handleFileChange}
                     className="hidden"
                     id="file-upload"
@@ -171,7 +173,14 @@ export default function UploadPage() {
                             </div>
                         </div>
                         <button
-                            onClick={() => { setFile(null); setStatus('idle'); setErrorMessage(''); }}
+                            onClick={() => {
+                                setFile(null);
+                                setStatus('idle');
+                                setErrorMessage('');
+                                if (fileInputRef.current) {
+                                    fileInputRef.current.value = '';
+                                }
+                            }}
                             className="p-1 hover:bg-gray-200 rounded-full transition-colors"
                             title="Remove file"
                         >
@@ -221,6 +230,9 @@ export default function UploadPage() {
                                 setStatus('idle');
                                 setDownloadUrl(null);
                                 setErrorMessage('');
+                                if (fileInputRef.current) {
+                                    fileInputRef.current.value = '';
+                                }
                             }}
                             className="mt-3 w-full py-2 rounded-lg font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors"
                         >
