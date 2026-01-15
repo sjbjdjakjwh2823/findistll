@@ -9,3 +9,4 @@ openpyxl
 pyjwt
 httpx
 pydantic-settings
+cryptography
