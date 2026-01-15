@@ -7,12 +7,33 @@ load_dotenv()
 try:
     from api.app import app
 except Exception as e:
-    # If imports fail (common in serverless), create a dummy app to display the error
-    import traceback
-    from fastapi import FastAPI
-    from fastapi.responses import JSONResponse
+    # DEBUG: Deep inspection of the environment
+    import sys
+    import pkg_resources
     
-    error_msg = f"CRITICAL STARTUP ERROR:\n{traceback.format_exc()}"
+    debug_info = []
+    debug_info.append(f"Python Version: {sys.version}")
+    debug_info.append(f"Sys Path: {sys.path}")
+    
+    try:
+        installed = [f"{p.project_name}=={p.version}" for p in pkg_resources.working_set]
+        debug_info.append(f"Installed Packages: {', '.join(installed)}")
+    except Exception as e:
+        debug_info.append(f"Could not list packages: {e}")
+
+    try:
+        import google
+        debug_info.append(f"Google Package Path: {getattr(google, '__path__', 'No Path')}")
+        debug_info.append(f"Google Package File: {getattr(google, '__file__', 'No File')}")
+        debug_info.append(f"Google Dir: {dir(google)}")
+    except ImportError:
+        debug_info.append("Could not import google package")
+    except Exception as e:
+        debug_info.append(f"Error inspecting google package: {e}")
+        
+    debug_str = "\n".join(debug_info)
+    error_msg = f"CRITICAL STARTUP ERROR:\n{traceback.format_exc()}\n\nDEBUG INFO:\n{debug_str}"
+    
     print(error_msg)
     
     app = FastAPI()
@@ -21,5 +42,5 @@ except Exception as e:
     async def catch_all(path_name: str):
         return JSONResponse(
             status_code=500,
-            content={"detail": f"Server failed to start. Check logs or dependency installation.\n{error_msg}"}
+            content={"detail": "Server failed to start.", "error": error_msg}
         )
