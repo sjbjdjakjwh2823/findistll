@@ -7,12 +7,10 @@ Generates vector embeddings using Gemini API for:
 - Semantic clustering
 """
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from typing import List, Optional
 import os
-
-# Configure Gemini API at module load
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 
 class EmbeddingService:
@@ -22,7 +20,8 @@ class EmbeddingService:
     EMBEDDING_DIM = 768
     
     def __init__(self):
-        self.model = "models/text-embedding-004"
+        self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        self.model = "text-embedding-004"
     
     async def generate_embedding(self, text: str) -> List[float]:
         """
@@ -42,14 +41,14 @@ class EmbeddingService:
         if len(text) > max_chars:
             text = text[:max_chars]
         
-        # Old SDK call
-        response = genai.embed_content(
+        # New SDK call
+        response = self.client.models.embed_content(
             model=self.model,
-            content=text,
-            task_type="retrieval_document"
+            contents=text,
+            config=types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT")
         )
         
-        return response['embedding']
+        return response.embeddings[0].values
     
     async def generate_query_embedding(self, query: str) -> List[float]:
         """
@@ -59,13 +58,13 @@ class EmbeddingService:
         if not query or len(query.strip()) == 0:
             return [0.0] * self.EMBEDDING_DIM
         
-        response = genai.embed_content(
+        response = self.client.models.embed_content(
             model=self.model,
-            content=query,
-            task_type="retrieval_query"
+            contents=query,
+            config=types.EmbedContentConfig(task_type="RETRIEVAL_QUERY")
         )
         
-        return response['embedding']
+        return response.embeddings[0].values
     
     def create_document_text(self, data: dict) -> str:
         """
