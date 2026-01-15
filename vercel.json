@@ -17,5 +17,10 @@
             "source": "/api/:path*",
             "destination": "/api/index.py"
         }
-    ]
+    ],
+    "env": {
+        "VERCEL_SB_URL": "@vercel_sb_url",
+        "VERCEL_SB_KEY": "@vercel_sb_key",
+        "VERCEL_SB_JWT_SECRET": "@vercel_sb_jwt_secret"
+    }
 }
