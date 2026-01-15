@@ -25,10 +25,28 @@ class SupabaseAuth:
     """Supabase Authentication client."""
     
     def __init__(self):
-        # Load environment variables at runtime for Vercel compatibility
-        supabase_url = os.getenv("SUPABASE_URL", "")
-        supabase_anon_key = os.getenv("SUPABASE_ANON_KEY", "")
-        supabase_jwt_secret = os.getenv("SUPABASE_JWT_SECRET", "")
+        # DEBUG: Print all environment variables that contain SUPABASE
+        import os
+        supabase_vars = {k: v[:20] + "..." if len(v) > 20 else v for k, v in os.environ.items() if "SUPABASE" in k.upper()}
+        print(f"[AUTH DEBUG] All SUPABASE env vars: {supabase_vars}")
+        
+        # Load environment variables at runtime - try multiple names for Vercel compatibility
+        supabase_url = (
+            os.getenv("SUPABASE_URL") or 
+            os.getenv("NEXT_PUBLIC_SUPABASE_URL") or 
+            ""
+        )
+        supabase_anon_key = (
+            os.getenv("SUPABASE_ANON_KEY") or 
+            os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY") or 
+            os.getenv("SUPABASE_KEY") or
+            ""
+        )
+        supabase_jwt_secret = (
+            os.getenv("SUPABASE_JWT_SECRET") or 
+            os.getenv("SUPABASE_SERVICE_ROLE_KEY") or
+            ""
+        )
         
         # FALLBACK: If SUPABASE_URL is not set, try to extract from SUPABASE_DATABASE_URL
         if not supabase_url:
@@ -47,6 +65,7 @@ class SupabaseAuth:
         # DEBUG: Log environment variables
         print(f"[AUTH DEBUG] SUPABASE_URL: '{supabase_url}'")
         print(f"[AUTH DEBUG] SUPABASE_ANON_KEY present: {bool(supabase_anon_key)}")
+        print(f"[AUTH DEBUG] SUPABASE_ANON_KEY value (first 20): '{supabase_anon_key[:20] if supabase_anon_key else 'EMPTY'}'")
         
         if not supabase_url:
             print("[AUTH ERROR] SUPABASE_URL is not set and could not be extracted!")
