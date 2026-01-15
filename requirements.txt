@@ -2,7 +2,7 @@ fastapi
 uvicorn
 sqlalchemy
 asyncpg
-google-generativeai
+google-genai>=1.50.0
 google-auth
 setuptools
 python-multipart
