@@ -26,7 +26,13 @@ export default function LoginPage() {
             }
         } catch (err: any) {
             console.error('Auth error:', err);
-            setError(err.response?.data?.detail || 'Authentication failed. Please try again.');
+            // Try to extract specific error message
+            const detail = err.response?.data?.detail
+                || err.response?.data?.msg
+                || err.response?.data?.error_description
+                || err.message;
+
+            setError(detail ? `Error: ${detail}` : 'Authentication failed. Please check your connection.');
         } finally {
             setLoading(false);
         }
