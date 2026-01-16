@@ -259,6 +259,69 @@ class ScaleProcessor:
             return str(value)
     
     @classmethod
+    def normalize_to_billion(cls, value: Decimal, unit: str = "B") -> str:
+        """
+        수치를 Billion 단위로 정규화 (테이블 행 출력용)
+        
+        예: 111601000000 → "111.60B"
+        
+        공식: Value_std = Value_raw / 10^9 (Billion)
+        """
+        try:
+            abs_val = abs(value)
+            sign = "-" if value < 0 else ""
+            
+            if abs_val >= Decimal('1e12'):
+                # Trillion → 표시
+                normalized = float(value / Decimal('1e12'))
+                return f"{sign}{normalized:.2f}T"
+            elif abs_val >= Decimal('1e9'):
+                # Billion 정규화
+                normalized = float(value / Decimal('1e9'))
+                return f"{sign}{normalized:.2f}{unit}"
+            elif abs_val >= Decimal('1e6'):
+                # Million
+                normalized = float(value / Decimal('1e6'))
+                return f"{sign}{normalized:.2f}M"
+            else:
+                return f"{int(value):,}"
+        except:
+            return str(value)
+    
+    @staticmethod
+    def fix_label_typos(label: str) -> str:
+        """
+        레이블 오타 수정
+        
+        - 중복 문자 제거: "매출총이익익익" → "매출총이익"
+        - 연속 중복 패턴 정리
+        """
+        if not label:
+            return label
+        
+        # 1. 끝의 중복 문자 제거 (예: 이익익익 → 이익)
+        # 한글 중복 패턴
+        fixed = re.sub(r'(.{1,3})\1+$', r'\1', label)
+        
+        # 2. 연속 동일 단어 제거
+        fixed = re.sub(r'\b(\w+)\s+\1\b', r'\1', fixed)
+        
+        # 3. 특수 케이스 수정
+        typo_fixes = {
+            '매출총이익익': '매출총이익',
+            '영업이익익': '영업이익',
+            '당기순이익익': '당기순이익',
+            '자산총계계': '자산총계',
+            '부채총계계': '부채총계',
+        }
+        
+        for typo, correct in typo_fixes.items():
+            if typo in fixed:
+                fixed = fixed.replace(typo, correct)
+        
+        return fixed
+    
+    @classmethod
     def validate_financial_equation(
         cls,
         assets: Optional[Decimal],
@@ -771,7 +834,9 @@ class XBRLSemanticEngine:
             concept = self._build_concept_name(tag, namespace)
             
             # 시맨틱 라벨 적용 (기술 태그 → 인간 친화적 라벨)
-            label = self._apply_semantic_label(concept)
+            # 🔴 FIX: 오타 수정 적용 (이익익 → 이익)
+            raw_label = self._apply_semantic_label(concept)
+            label = ScaleProcessor.fix_label_typos(raw_label)
             
             # 🔴 FIX: 스케일 처리 - 새 API 사용 (3-tuple)
             standardized_value, scale_desc, is_valid = ScaleProcessor.standardize_value(
@@ -1137,12 +1202,20 @@ This is ranked #{i} by absolute value among all reported items.
         if not assets or not liabilities:
             return None
         
+        # 🔴 FIX: 재무 등식(Sanity Check) 검증
+        is_valid_eq, eq_msg = ScaleProcessor.validate_financial_equation(
+            assets.value, liabilities.value, equity.value if equity else None
+        )
+        
         debt_ratio = float(liabilities.value) / float(assets.value) * 100 if assets else 0
         equity_ratio = float(equity.value) / float(assets.value) * 100 if equity and assets else 0
         
         return {
             "question": f"Provide a comprehensive financial health assessment for {self.company_name or 'this company'}.",
             "response": f"""## Comprehensive Financial Health Assessment
+
+### 📊 Data Integrity Check (Sanity Check)
+{eq_msg}
 
 ### Key Metrics Summary
 | Metric | Value |
