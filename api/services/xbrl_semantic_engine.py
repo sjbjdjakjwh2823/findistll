@@ -784,48 +784,289 @@ class XBRLSemanticEngine:
     
     def _generate_reasoning_qa(self, facts: List[SemanticFact]) -> List[Dict[str, str]]:
         """
-        추론형 Q&A 생성 (CoT 포맷)
+        추론형 Q&A 생성 (CoT 포맷) - v2 확장판
         
-        단순 조회 질문 제외, 분석형 질문만 생성:
-        - 비율 분석
-        - 시계열 분석
-        - 재무 건전성 평가
+        🔴 FIX: 최소 50개 이상 Q&A 생성
+        - 비율 분석 (Ratio Analysis)
+        - 구성비 분석 (Composition %)  
+        - 상위 항목 분석 (Top-N Analysis)
+        - YoY 성장률 (Time Series)
         """
         qa_pairs = []
         
-        # 팩트를 딕셔너리로 변환
-        fact_dict = {}
-        for fact in facts:
-            key = f"{fact.label}_{fact.period}"
-            fact_dict[key] = fact
-            fact_dict[fact.label] = fact  # 라벨만으로도 접근 가능
+        # 1. 유연한 라벨 매칭으로 fact_dict 구축
+        fact_dict = self._build_flexible_fact_dict(facts)
         
-        # 1. 부채비율 Q&A
-        qa = self._generate_debt_ratio_qa(fact_dict)
-        if qa:
-            qa_pairs.append(qa)
+        # 2. 핵심 비율 분석 Q&A (5-10개)
+        qa_pairs.extend(self._generate_ratio_analysis_qa(fact_dict, facts))
         
-        # 2. 유동비율 Q&A
-        qa = self._generate_current_ratio_qa(fact_dict)
-        if qa:
-            qa_pairs.append(qa)
+        # 3. 자산 구성비 분석 Q&A (개별 항목별, 20개+)
+        qa_pairs.extend(self._generate_composition_qa(fact_dict, facts))
         
-        # 3. 매출총이익률 Q&A
-        qa = self._generate_gross_margin_qa(fact_dict)
-        if qa:
-            qa_pairs.append(qa)
+        # 4. 상위 20개 항목 분석 Q&A (20개)
+        qa_pairs.extend(self._generate_top_items_qa(facts[:20]))
         
-        # 4. ROE Q&A
-        qa = self._generate_roe_qa(fact_dict)
-        if qa:
-            qa_pairs.append(qa)
-        
-        # 5. 자산 구성 분석 Q&A
-        qa = self._generate_asset_composition_qa(fact_dict)
+        # 5. 재무 건전성 종합 평가 Q&A
+        qa = self._generate_financial_health_qa(fact_dict, facts)
         if qa:
             qa_pairs.append(qa)
         
         return qa_pairs
+    
+    def _build_flexible_fact_dict(self, facts: List[SemanticFact]) -> Dict:
+        """유연한 라벨/개념 매칭을 위한 복합 딕셔너리 구축"""
+        fact_dict = {}
+        
+        # 핵심 항목 별칭 정의 (다양한 태그명 매핑)
+        ALIASES = {
+            'total_assets': ['Assets', 'TotalAssets', 'AssetsTotal', '자산총계', 'assets'],
+            'total_liabilities': ['Liabilities', 'TotalLiabilities', 'LiabilitiesTotal', '부채총계', 'liabilities'],
+            'total_equity': ['Equity', 'StockholdersEquity', 'TotalEquity', '자본총계', 'equity', 'ShareholdersEquity'],
+            'current_assets': ['CurrentAssets', 'AssetsCurrent', '유동자산', 'currentassets'],
+            'current_liabilities': ['CurrentLiabilities', 'LiabilitiesCurrent', '유동부채', 'currentliabilities'],
+            'noncurrent_assets': ['NoncurrentAssets', 'AssetsNoncurrent', '비유동자산'],
+            'revenue': ['Revenue', 'Revenues', 'NetSales', 'Sales', '매출액', 'TotalRevenue', 'RevenueFromContractWithCustomerExcludingAssessedTax'],
+            'net_income': ['NetIncome', 'ProfitLoss', 'NetIncomeLoss', '당기순이익', 'NetEarnings'],
+            'gross_profit': ['GrossProfit', '매출총이익', 'GrossMargin'],
+            'operating_income': ['OperatingIncome', 'OperatingProfit', '영업이익', 'IncomeFromOperations'],
+            'cash': ['Cash', 'CashAndCashEquivalents', 'CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents', '현금및현금성자산'],
+        }
+        
+        for fact in facts:
+            # 원본 라벨/개념으로 저장
+            key = f"{fact.label}_{fact.period}"
+            fact_dict[key] = fact
+            fact_dict[fact.label] = fact
+            fact_dict[fact.concept] = fact
+            
+            # 개념명의 마지막 부분으로도 저장 (us-gaap:Assets -> Assets)
+            short_concept = fact.concept.split('_')[-1].split(':')[-1]
+            fact_dict[short_concept] = fact
+            fact_dict[short_concept.lower()] = fact
+            
+            # 별칭 매핑 체크
+            for alias_key, patterns in ALIASES.items():
+                for pattern in patterns:
+                    if pattern.lower() in short_concept.lower() or pattern.lower() == short_concept.lower():
+                        if alias_key not in fact_dict:  # 첫 매칭만
+                            fact_dict[alias_key] = fact
+                        break
+        
+        return fact_dict
+    
+    def _generate_ratio_analysis_qa(self, fact_dict: Dict, facts: List[SemanticFact]) -> List[Dict]:
+        """비율 분석 Q&A 생성 (여러 종류)"""
+        qa_list = []
+        
+        # 1. 부채비율 (Debt Ratio)
+        liabilities = fact_dict.get('total_liabilities')
+        equity = fact_dict.get('total_equity')
+        
+        if liabilities and equity and float(equity.value) != 0:
+            ratio = float(liabilities.value) / float(equity.value) * 100
+            qa_list.append({
+                "question": f"Calculate the Debt-to-Equity Ratio for {self.company_name or 'this company'} in {self.fiscal_year}.",
+                "response": f"""## Debt-to-Equity Ratio Analysis
+
+### Formula
+$$\\text{{Debt Ratio}} = \\frac{{\\text{{Total Liabilities}}}}{{\\text{{Total Equity}}}} \\times 100$$
+
+### Calculation
+- Total Liabilities: {ScaleProcessor.format_currency(liabilities.value)}
+- Total Equity: {ScaleProcessor.format_currency(equity.value)}
+
+$$\\text{{Debt Ratio}} = \\frac{{{float(liabilities.value):,.0f}}}{{{float(equity.value):,.0f}}} \\times 100 = {ratio:.2f}\\%$$
+
+### Result: **{ratio:.2f}%**
+
+### Interpretation
+{'⚠️ High leverage (>200%). Interest burden and debt repayment capacity require attention.' if ratio > 200 else '✅ Healthy leverage ratio. Financial structure is stable.' if ratio <= 100 else 'Moderate leverage. Within acceptable range but monitor closely.'}
+""",
+                "type": "ratio_analysis"
+            })
+        
+        # 2. 부채-자산 비율 (Debt-to-Assets)
+        assets = fact_dict.get('total_assets')
+        if liabilities and assets and float(assets.value) != 0:
+            ratio = float(liabilities.value) / float(assets.value) * 100
+            qa_list.append({
+                "question": f"What percentage of {self.company_name or 'the company'}'s total assets are financed by debt?",
+                "response": f"""## Debt-to-Assets Ratio
+
+### Formula
+$$\\text{{Debt-to-Assets}} = \\frac{{\\text{{Total Liabilities}}}}{{\\text{{Total Assets}}}} \\times 100$$
+
+### Calculation
+- Total Liabilities: {ScaleProcessor.format_currency(liabilities.value)}
+- Total Assets: {ScaleProcessor.format_currency(assets.value)}
+
+### Result: **{ratio:.2f}%**
+
+### Interpretation
+This means {ratio:.1f}% of the company's assets are financed through debt, while {100-ratio:.1f}% are financed through equity.
+""",
+                "type": "ratio_analysis"
+            })
+        
+        # 3. 유동비율 (Current Ratio)
+        current_assets = fact_dict.get('current_assets')
+        current_liabilities = fact_dict.get('current_liabilities')
+        
+        if current_assets and current_liabilities and float(current_liabilities.value) != 0:
+            ratio = float(current_assets.value) / float(current_liabilities.value)
+            qa_list.append({
+                "question": f"Evaluate the short-term liquidity position using the Current Ratio.",
+                "response": f"""## Current Ratio Analysis
+
+### Formula
+$$\\text{{Current Ratio}} = \\frac{{\\text{{Current Assets}}}}{{\\text{{Current Liabilities}}}}$$
+
+### Calculation
+- Current Assets: {ScaleProcessor.format_currency(current_assets.value)}
+- Current Liabilities: {ScaleProcessor.format_currency(current_liabilities.value)}
+
+### Result: **{ratio:.2f}x**
+
+### Interpretation
+{'✅ Strong liquidity (>2.0x). Company can easily cover short-term obligations.' if ratio >= 2.0 else '⚠️ Weak liquidity (<1.0x). May face difficulty meeting short-term obligations.' if ratio < 1.0 else 'Adequate liquidity. Can meet short-term obligations.'}
+""",
+                "type": "ratio_analysis"
+            })
+        
+        # 4. 자기자본비율 (Equity Ratio)
+        if equity and assets and float(assets.value) != 0:
+            ratio = float(equity.value) / float(assets.value) * 100
+            qa_list.append({
+                "question": f"What is the Equity Ratio and what does it indicate about financial stability?",
+                "response": f"""## Equity Ratio Analysis
+
+### Formula
+$$\\text{{Equity Ratio}} = \\frac{{\\text{{Total Equity}}}}{{\\text{{Total Assets}}}} \\times 100$$
+
+### Calculation
+- Total Equity: {ScaleProcessor.format_currency(equity.value)}
+- Total Assets: {ScaleProcessor.format_currency(assets.value)}
+
+### Result: **{ratio:.2f}%**
+
+### Interpretation
+An equity ratio of {ratio:.1f}% means shareholders own {ratio:.1f}% of total assets outright, indicating {'strong' if ratio > 50 else 'moderate' if ratio > 30 else 'lower'} financial independence.
+""",
+                "type": "ratio_analysis"
+            })
+        
+        # 5. 현금 비중
+        cash = fact_dict.get('cash')
+        if cash and assets and float(assets.value) != 0:
+            ratio = float(cash.value) / float(assets.value) * 100
+            qa_list.append({
+                "question": f"What percentage of total assets is held as cash and cash equivalents?",
+                "response": f"""## Cash Position Analysis
+
+### Calculation
+- Cash & Equivalents: {ScaleProcessor.format_currency(cash.value)}
+- Total Assets: {ScaleProcessor.format_currency(assets.value)}
+
+### Cash Ratio: **{ratio:.2f}%**
+
+### Interpretation
+The company maintains {ratio:.1f}% of assets in liquid form. {'High cash position provides flexibility for investments or acquisitions.' if ratio > 20 else 'Moderate cash position.' if ratio > 10 else 'Lower cash reserves; company may be investing aggressively or returning cash to shareholders.'}
+""",
+                "type": "ratio_analysis"
+            })
+        
+        return qa_list
+    
+    def _generate_composition_qa(self, fact_dict: Dict, facts: List[SemanticFact]) -> List[Dict]:
+        """개별 항목의 총자산 대비 구성비 Q&A 생성"""
+        qa_list = []
+        
+        total_assets = fact_dict.get('total_assets')
+        if not total_assets or float(total_assets.value) == 0:
+            return qa_list
+        
+        total_val = float(total_assets.value)
+        
+        # 자산 관련 항목들의 구성비 분석
+        asset_facts = [f for f in facts if 'asset' in f.label.lower() or 'asset' in f.concept.lower() 
+                       or '자산' in f.label]
+        
+        for fact in asset_facts[:15]:  # 상위 15개
+            if float(fact.value) > 0 and fact.label != '자산총계' and 'total' not in fact.label.lower():
+                ratio = float(fact.value) / total_val * 100
+                if ratio > 0.1:  # 0.1% 이상만
+                    qa_list.append({
+                        "question": f"What is the proportion of {fact.label} to total assets?",
+                        "response": f"""## Asset Composition: {fact.label}
+
+### Values
+- {fact.label}: {ScaleProcessor.format_currency(fact.value)}
+- Total Assets: {ScaleProcessor.format_currency(total_assets.value)}
+
+### Composition Ratio: **{ratio:.2f}%**
+
+This item represents {ratio:.2f}% of total assets ({self.fiscal_year}).
+""",
+                        "type": "composition_analysis"
+                    })
+        
+        return qa_list
+    
+    def _generate_top_items_qa(self, top_facts: List[SemanticFact]) -> List[Dict]:
+        """상위 N개 항목에 대한 개별 Q&A 생성"""
+        qa_list = []
+        
+        for i, fact in enumerate(top_facts, 1):
+            qa_list.append({
+                "question": f"What is the value of {fact.label} in the {self.fiscal_year} financial statements?",
+                "response": f"""## {fact.label}
+
+### Value: **{ScaleProcessor.format_currency(fact.value)}**
+
+### Details
+- Period: {fact.period}
+- Category: {fact.hierarchy}
+- Consolidated: {'Yes' if fact.is_consolidated else 'No'}
+
+This is ranked #{i} by absolute value among all reported items.
+""",
+                "type": "item_lookup"
+            })
+        
+        return qa_list
+    
+    def _generate_financial_health_qa(self, fact_dict: Dict, facts: List[SemanticFact]) -> Optional[Dict]:
+        """종합 재무 건전성 평가 Q&A"""
+        assets = fact_dict.get('total_assets')
+        liabilities = fact_dict.get('total_liabilities')
+        equity = fact_dict.get('total_equity')
+        
+        if not assets or not liabilities:
+            return None
+        
+        debt_ratio = float(liabilities.value) / float(assets.value) * 100 if assets else 0
+        equity_ratio = float(equity.value) / float(assets.value) * 100 if equity and assets else 0
+        
+        return {
+            "question": f"Provide a comprehensive financial health assessment for {self.company_name or 'this company'}.",
+            "response": f"""## Comprehensive Financial Health Assessment
+
+### Key Metrics Summary
+| Metric | Value |
+|--------|-------|
+| Total Assets | {ScaleProcessor.format_currency(assets.value)} |
+| Total Liabilities | {ScaleProcessor.format_currency(liabilities.value)} |
+| Total Equity | {ScaleProcessor.format_currency(equity.value) if equity else 'N/A'} |
+| Debt-to-Assets | {debt_ratio:.1f}% |
+| Equity Ratio | {equity_ratio:.1f}% |
+
+### Overall Assessment
+{'✅ **Strong Financial Position**: Low leverage with substantial equity buffer.' if debt_ratio < 50 else '⚠️ **Moderate Risk**: Higher leverage requires monitoring.' if debt_ratio < 70 else '❌ **High Risk**: Significant debt burden may impact financial flexibility.'}
+
+### Number of Items Analyzed: {len(facts)}
+""",
+            "type": "comprehensive_analysis"
+        }
     
     def _generate_debt_ratio_qa(self, facts: Dict) -> Optional[Dict[str, str]]:
         """부채비율 Q&A 생성"""
