@@ -757,6 +757,16 @@ class XBRLParser:
         """Build result from instance document parsing."""
         sorted_facts = sorted(self.facts, key=lambda f: f.order)
         
+        # Validate: check for numeric data
+        numeric_facts = [f for f in sorted_facts if self._is_numeric_value(f.value)]
+        if len(numeric_facts) == 0:
+            self.parse_log.append("⚠️ WARNING: No numeric data extracted")
+            return self._build_empty_data_error(
+                "수치 데이터가 추출되지 않았습니다. 파일 형식을 확인하세요."
+            )
+        
+        self.parse_log.append(f"✅ Extracted {len(numeric_facts)} numeric facts")
+        
         # Group by hierarchy
         tables_dict: Dict[str, List[Dict]] = defaultdict(list)
         for fact in sorted_facts:
@@ -852,6 +862,31 @@ class XBRLParser:
         
         return (f"XBRL 문서에서 {len(self.facts)}개 항목을 추출. "
                 f"기간: {', '.join(sorted(periods))}. 재무제표: {', '.join(hierarchies)}.")
+    
+    def _is_numeric_value(self, value: str) -> bool:
+        """Check if a value is numeric."""
+        if not value:
+            return False
+        clean = str(value).replace(',', '').replace(' ', '').replace('-', '').replace('.', '')
+        return clean.isdigit()
+    
+    def _build_empty_data_error(self, error_msg: str) -> Dict[str, Any]:
+        """Build error result for empty numeric data case."""
+        return {
+            "title": "XBRL 파싱 실패 - 수치 데이터 없음",
+            "summary": error_msg,
+            "tables": [],
+            "key_metrics": {},
+            "facts": [],
+            "parse_log": self.parse_log,
+            "metadata": {
+                "file_type": "xbrl-instance",
+                "taxonomy": self.taxonomy.taxonomy_type,
+                "fact_count": 0,
+                "error": error_msg,
+                "processed_by": "xbrl-parser-v2"
+            }
+        }
     
     def _extract_key_metrics(self) -> Dict[str, str]:
         """Extract key financial metrics."""

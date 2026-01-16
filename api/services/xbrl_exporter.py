@@ -222,8 +222,12 @@ class XBRLExporter:
     
     def to_jsonl(self, data: Dict[str, Any], include_reasoning: bool = True) -> str:
         """
-        Generate JSONL with reasoning Q&A pairs.
-        Each line is a complete training example.
+        Generate JSONL with reasoning Q&A pairs for AI training.
+        
+        🔴 Critical Fixes:
+        - 단순 조회형 질문 완전 제거 ("X는 얼마인가?" 등)
+        - 분석형 질문만 생성 (비율, 성장률 등)
+        - CoT 응답 포맷 강제 (공식 → 대입 → 결과 → 해석)
         """
         lines = []
         
@@ -234,61 +238,105 @@ class XBRLExporter:
         validations = self.validator.validate_all(masked_data)
         all_passed = all(v.passed for v in validations)
         
-        # Generate basic fact Q&A pairs
-        for fact in masked_data.get("facts", []):
-            qa = self._generate_fact_qa(fact)
-            if qa:
-                qa["validation_status"] = "passed" if all_passed else "review_required"
-                qa["source"] = masked_data.get("metadata", {}).get("file_type", "xbrl")
-                lines.append(json.dumps(qa, ensure_ascii=False))
+        # 🔴 FIX: 단순 조회형 Q&A 생성 완전 제거
+        # 기본 fact Q&A는 AI 학습에 도움이 되지 않으므로 제거
+        # for fact in masked_data.get("facts", []):
+        #     qa = self._generate_fact_qa(fact)  # 제거됨
         
-        # Generate formula-based Q&A from Calculation Linkbase
+        # 수식 기반 Q&A만 생성 (Calculation Linkbase)
         formulas = masked_data.get("formulas", [])
         for formula_data in formulas:
             formula_qas = self._generate_formula_qas(formula_data)
             for qa in formula_qas:
+                # 수식 설명 Q&A는 유지 (학습 가치 있음)
                 qa["validation_status"] = "passed" if all_passed else "review_required"
                 lines.append(json.dumps(qa, ensure_ascii=False))
         
-        # Generate reasoning Q&A pairs (basic)
+        # 🔴 FIX: 추론형 Q&A만 생성 (비율 분석, 성장률 등)
         if include_reasoning:
             reasoning_qas = self._generate_reasoning_qas(masked_data)
             for qa in reasoning_qas:
+                # CoT 형식 응답 강제
+                if "calculations" in qa:
+                    qa["response"] = self._format_cot_response(qa)
                 qa["validation_status"] = "passed" if all_passed else "review_required"
+                qa["type"] = "reasoning"
                 lines.append(json.dumps(qa, ensure_ascii=False))
         
-        # Generate advanced reasoning Q&A with Chain-of-Thought (from XBRLReasoner)
+        # 고급 추론 Q&A (XBRLReasoner)
         if include_reasoning and masked_data.get("facts"):
             try:
                 self.reasoner.load_data(masked_data)
                 advanced_qas = self.reasoner.generate_reasoning_qa()
+                
+                # 🔴 FIX: XBRLReasoner 질문 필터링 적용
+                from .xbrl_reasoner import XBRLReasoner
+                advanced_qas = XBRLReasoner.filter_qa_pairs(advanced_qas)
+                
                 for qa in advanced_qas:
                     lines.append(json.dumps(qa, ensure_ascii=False))
             except Exception as e:
-                lines.append(json.dumps({
-                    "instruction": "고급 추론 분석 상태",
-                    "response": f"추론 엔진 오류: {str(e)}",
-                    "type": "diagnostic"
-                }, ensure_ascii=False))
+                pass  # 오류 시 조용히 진행
         
-        # Add parse log if extraction failed
-        if not masked_data.get("facts") and not masked_data.get("formulas"):
-            parse_log = masked_data.get("parse_log", [])
+        # 데이터 없으면 경고 로그만
+        if not lines:
             lines.append(json.dumps({
-                "instruction": "이 XML 파일의 파싱 상태는?",
-                "response": f"파싱 로그: {'; '.join(parse_log[-10:])}",
-                "type": "diagnostic",
-                "validation_status": "review_required"
+                "instruction": "재무 분석 데이터 상태",
+                "response": "수치 데이터가 충분하지 않아 분석형 Q&A를 생성할 수 없습니다.",
+                "type": "diagnostic"
             }, ensure_ascii=False))
         
-        # Add validation results as metadata
-        validation_qa = {
-            "instruction": "이 재무데이터의 무결성 검증 결과를 알려줘",
-            "response": self._format_validation_response(validations),
-            "type": "validation",
-            "validation_status": "passed" if all_passed else "review_required"
-        }
-        lines.append(json.dumps(validation_qa, ensure_ascii=False))
+        # 검증 결과 추가 (분석 Q&A로 포장)
+        if validations:
+            validation_qa = {
+                "instruction": "이 재무데이터의 무결성을 검증하고 결과를 분석하십시오.",
+                "response": self._format_validation_response_cot(validations),
+                "type": "verification",
+                "validation_status": "passed" if all_passed else "review_required"
+            }
+            lines.append(json.dumps(validation_qa, ensure_ascii=False))
+        
+        return '\n'.join(lines)
+    
+    def _format_cot_response(self, qa: Dict) -> str:
+        """CoT 형식 응답 포맷팅"""
+        calcs = qa.get("calculations", {})
+        formula = calcs.get("formula", "")
+        values = calcs.get("values", [])
+        result = calcs.get("result", 0)
+        
+        response = f"""## 계산 분석
+
+### 1️⃣ 계산 공식
+{formula}
+
+### 2️⃣ 수치 대입
+입력값: {', '.join(f'{v:,.0f}' for v in values if isinstance(v, (int, float)))}
+
+### 3️⃣ 계산 결과
+**{result:.2f}%**
+
+### 4️⃣ 회계적 해석
+{qa.get('response', '')}
+"""
+        return response
+    
+    def _format_validation_response_cot(self, validations: List['ValidationResult']) -> str:
+        """검증 결과 CoT 형식 응답"""
+        lines = ["## 재무데이터 무결성 검증", ""]
+        lines.append("### 검증 항목별 분석")
+        lines.append("")
+        
+        for i, v in enumerate(validations, 1):
+            status = "✅ 통과" if v.passed else "❌ 검토 필요"
+            lines.append(f"**{i}. {v.check_name}**: {status}")
+            if v.message:
+                lines.append(f"   - 상세: {v.message}")
+            lines.append("")
+        
+        all_passed = all(v.passed for v in validations)
+        lines.append("### 종합 판정")
+        lines.append("✅ **재무데이터 무결성 확인됨**" if all_passed else "⚠️ **일부 항목 검토 필요**")
         
         return '\n'.join(lines)
     
@@ -463,6 +511,180 @@ class XBRLExporter:
             })
         
         return qas
+    
+    def to_financial_statement_markdown(self, data: Dict[str, Any], company_name: str = "") -> str:
+        """
+        Generate proper financial statement format markdown.
+        
+        Creates actual Balance Sheet / Income Statement format with:
+        - Clear Asset / Liability / Equity sections
+        - Amount-based sorting (largest first)
+        - Human-readable labels (not technical XBRL tags)
+        """
+        lines = []
+        
+        # Mask PII
+        masked_data = self.pii_masker.mask_dict(data)
+        
+        # Determine company name and fiscal year
+        if not company_name:
+            company_name = masked_data.get("title", "").split(":")[-1].strip() or "기업"
+        
+        periods = set()
+        for fact in masked_data.get("facts", []):
+            if fact.get("period"):
+                periods.add(fact.get("period"))
+        fiscal_year = max(periods) if periods else datetime.now().strftime("%Y")
+        
+        lines.append(f"# {company_name} 재무제표")
+        lines.append(f"**회계연도**: {fiscal_year}")
+        lines.append(f"**생성일**: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+        
+        # Group facts by hierarchy
+        balance_sheet_facts = []
+        income_facts = []
+        cash_flow_facts = []
+        other_facts = []
+        
+        for fact in masked_data.get("facts", []):
+            hierarchy = fact.get("hierarchy", "")
+            label = fact.get("label", "")
+            value = fact.get("value", "")
+            
+            # Parse numeric value for sorting
+            try:
+                numeric = float(re.sub(r'[^\d.-]', '', str(value).replace(',', '')))
+            except (ValueError, TypeError):
+                numeric = 0
+            
+            fact_with_numeric = {**fact, "_numeric": numeric}
+            
+            if "재무상태표" in hierarchy or any(k in label for k in ['자산', '부채', '자본']):
+                balance_sheet_facts.append(fact_with_numeric)
+            elif "손익" in hierarchy or any(k in label for k in ['매출', '이익', '비용']):
+                income_facts.append(fact_with_numeric)
+            elif "현금" in hierarchy:
+                cash_flow_facts.append(fact_with_numeric)
+            else:
+                other_facts.append(fact_with_numeric)
+        
+        # Balance Sheet
+        if balance_sheet_facts:
+            lines.extend(self._format_balance_sheet_section(balance_sheet_facts))
+        
+        # Income Statement
+        if income_facts:
+            lines.extend(self._format_income_statement_section(income_facts))
+        
+        # Cash Flow
+        if cash_flow_facts:
+            lines.extend(self._format_cash_flow_section(cash_flow_facts))
+        
+        # Handle empty data case
+        if not balance_sheet_facts and not income_facts and not cash_flow_facts:
+            lines.append("## ⚠️ 수치 데이터 없음")
+            lines.append("")
+            lines.append("파싱된 재무 수치 데이터가 없습니다.")
+            parse_log = masked_data.get("parse_log", [])
+            if parse_log:
+                lines.append("")
+                lines.append("### 파싱 로그")
+                for log in parse_log[-5:]:
+                    lines.append(f"- {log}")
+        
+        return '\n'.join(lines)
+    
+    def _format_balance_sheet_section(self, facts: List[Dict]) -> List[str]:
+        """Format balance sheet section with proper grouping."""
+        lines = [
+            "## 재무상태표 (Statement of Financial Position)",
+            "",
+            "| 계정과목 | 금액 |",
+            "|:---------|-----:|",
+        ]
+        
+        # Group by type
+        assets = [f for f in facts if '자산' in f.get("label", "")]
+        liabilities = [f for f in facts if '부채' in f.get("label", "")]
+        equity = [f for f in facts if '자본' in f.get("label", "")]
+        
+        # Sort each group by amount (descending)
+        assets.sort(key=lambda x: abs(x.get("_numeric", 0)), reverse=True)
+        liabilities.sort(key=lambda x: abs(x.get("_numeric", 0)), reverse=True)
+        equity.sort(key=lambda x: abs(x.get("_numeric", 0)), reverse=True)
+        
+        # Assets section
+        if assets:
+            lines.append("| **[자산]** | |")
+            for f in assets:
+                lines.append(f"| {f.get('label', '')} | {f.get('value', '')} |")
+        
+        # Liabilities section
+        if liabilities:
+            lines.append("| **[부채]** | |")
+            for f in liabilities:
+                lines.append(f"| {f.get('label', '')} | {f.get('value', '')} |")
+        
+        # Equity section
+        if equity:
+            lines.append("| **[자본]** | |")
+            for f in equity:
+                lines.append(f"| {f.get('label', '')} | {f.get('value', '')} |")
+        
+        lines.append("")
+        return lines
+    
+    def _format_income_statement_section(self, facts: List[Dict]) -> List[str]:
+        """Format income statement section."""
+        lines = [
+            "## 포괄손익계산서 (Statement of Comprehensive Income)",
+            "",
+            "| 계정과목 | 금액 |",
+            "|:---------|-----:|",
+        ]
+        
+        # Standard order for income statement items
+        order = ['매출액', '매출원가', '매출총이익', '판매비와관리비', 
+                 '영업이익', '금융수익', '금융비용', '법인세비용차감전순이익',
+                 '법인세비용', '당기순이익']
+        
+        fact_dict = {f.get("label", ""): f for f in facts}
+        added = set()
+        
+        # Add in standard order first
+        for label in order:
+            if label in fact_dict:
+                f = fact_dict[label]
+                lines.append(f"| {label} | {f.get('value', '')} |")
+                added.add(label)
+        
+        # Add remaining items sorted by amount
+        remaining = [f for f in facts if f.get("label") not in added]
+        remaining.sort(key=lambda x: abs(x.get("_numeric", 0)), reverse=True)
+        for f in remaining:
+            lines.append(f"| {f.get('label', '')} | {f.get('value', '')} |")
+        
+        lines.append("")
+        return lines
+    
+    def _format_cash_flow_section(self, facts: List[Dict]) -> List[str]:
+        """Format cash flow statement section."""
+        lines = [
+            "## 현금흐름표 (Statement of Cash Flows)",
+            "",
+            "| 구분 | 금액 |",
+            "|:-----|-----:|",
+        ]
+        
+        facts.sort(key=lambda x: abs(x.get("_numeric", 0)), reverse=True)
+        for f in facts:
+            lines.append(f"| {f.get('label', '')} | {f.get('value', '')} |")
+        
+        lines.append("")
+        return lines
     
     def _format_validation_response(self, validations: List[ValidationResult]) -> str:
         """Format validation results as response text."""
