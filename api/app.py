@@ -205,15 +205,20 @@ async def get_me(current_user: dict = Depends(require_auth)):
 @app.post("/api/extract")
 async def extract_document(
     file: UploadFile = File(...),
-    export_format: str = "jsonl",  # Default export format: jsonl, markdown, parquet
-    db: AsyncSession = Depends(get_db)
+    export_format: str = "jsonl",  # Default export format: jsonl, markdown, parquet, hdf5
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_auth)  # Require authentication
 ):
     """
     Extract and distill financial data from uploaded document.
     
     Supports: PDF, Excel (.xlsx), CSV, Images (PNG, JPEG, WebP)
+    Exports: JSONL, Markdown, Parquet, HDF5
     """
     try:
+        # Get user ID from authenticated user (Supabase uses 'sub' as user ID)
+        user_id_str = current_user.get("sub")
+        
         # 1. Read file
         file_content = await file.read()
         
@@ -231,11 +236,12 @@ async def extract_document(
         embed_text = embedder.create_document_text(normalized_data)
         embedding = await embedder.generate_embedding(embed_text)
         
-        # 5. Save to Database
+        # 5. Save to Database with user_id
         doc = Document(
             filename=file.filename,
             file_path=f"memory://{file.filename}",
-            file_type=file.content_type
+            file_type=file.content_type,
+            user_id=user_id_str  # Store user ID for personalization
         )
         db.add(doc)
         await db.commit()
@@ -254,7 +260,7 @@ async def extract_document(
             "success": True,
             "document_id": doc.id,
             "data": normalized_data,
-            "available_exports": ["jsonl", "markdown", "parquet"]
+            "available_exports": ["jsonl", "markdown", "parquet", "hdf5"]
         }
 
     except ValueError as e:
@@ -267,11 +273,17 @@ async def extract_document(
 
 
 @app.get("/api/history")
-async def get_history(db: AsyncSession = Depends(get_db)):
-    """Get extraction history with export options."""
+async def get_history(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_auth)  # Require authentication
+):
+    """Get extraction history with export options - filtered by current user."""
+    user_id = current_user.get("sub")
+    
     stmt = (
         select(Document, ExtractedResult)
         .join(ExtractedResult, Document.id == ExtractedResult.document_id)
+        .where(Document.user_id == user_id)  # Filter by user_id
         .order_by(desc(Document.upload_date))
     )
     result = await db.execute(stmt)
@@ -289,7 +301,8 @@ async def get_history(db: AsyncSession = Depends(get_db)):
             "exports": {
                 "jsonl": f"/api/export/jsonl/{doc.id}",
                 "markdown": f"/api/export/markdown/{doc.id}",
-                "parquet": f"/api/export/parquet/{doc.id}"
+                "parquet": f"/api/export/parquet/{doc.id}",
+                "hdf5": f"/api/export/hdf5/{doc.id}"
             }
         })
     
@@ -297,18 +310,25 @@ async def get_history(db: AsyncSession = Depends(get_db)):
 
 
 @app.get("/api/document/{document_id}")
-async def get_document(document_id: int, db: AsyncSession = Depends(get_db)):
-    """Get detailed extraction result for a specific document."""
+async def get_document(
+    document_id: int, 
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_auth)  # Require authentication
+):
+    """Get detailed extraction result for a specific document (owned by current user)."""
+    user_id = current_user.get("sub")
+    
     stmt = (
         select(Document, ExtractedResult)
         .join(ExtractedResult, Document.id == ExtractedResult.document_id)
         .where(Document.id == document_id)
+        .where(Document.user_id == user_id)  # Verify ownership
     )
     result = await db.execute(stmt)
     row = result.first()
     
     if not row:
-        raise HTTPException(status_code=404, detail="Document not found")
+        raise HTTPException(status_code=404, detail="Document not found or access denied")
     
     doc, res = row
     return {
@@ -319,7 +339,8 @@ async def get_document(document_id: int, db: AsyncSession = Depends(get_db)):
         "exports": {
             "jsonl": f"/api/export/jsonl/{doc.id}",
             "markdown": f"/api/export/markdown/{doc.id}",
-            "parquet": f"/api/export/parquet/{doc.id}"
+            "parquet": f"/api/export/parquet/{doc.id}",
+            "hdf5": f"/api/export/hdf5/{doc.id}"
         }
     }
 
@@ -386,6 +407,32 @@ async def export_parquet(document_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(
             status_code=501,
             detail=f"Parquet export is not available in this environment: {str(e)}"
+        )
+
+
+@app.get("/api/export/hdf5/{document_id}")
+async def export_hdf5(document_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Export document as HDF5 format for large-scale numerical data.
+    Uses float64 precision for financial data accuracy.
+    Ideal for AI/ML training pipelines and time-series analysis.
+    """
+    data = await _get_document_data(document_id, db)
+    
+    try:
+        hdf5_content = exporter.to_hdf5(data)
+        
+        return Response(
+            content=hdf5_content,
+            media_type="application/x-hdf5",
+            headers={
+                "Content-Disposition": f"attachment; filename=document_{document_id}.h5"
+            }
+        )
+    except (ImportError, RuntimeError) as e:
+        raise HTTPException(
+            status_code=501,
+            detail=f"HDF5 export is not available in this environment: {str(e)}"
         )
 
 

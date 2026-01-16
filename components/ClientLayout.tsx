@@ -2,7 +2,7 @@
 
 import { AuthProvider, useAuth } from '@/lib/auth';
 import Link from 'next/link';
-import { LayoutDashboard, Upload, History, FileText, LogOut, User } from 'lucide-react';
+import { Upload, History, FileText, LogOut, User } from 'lucide-react';
 import LoginPage from '@/components/LoginPage';
 
 function AppContent({ children }: { children: React.ReactNode }) {
@@ -34,10 +34,6 @@ function AppContent({ children }: { children: React.ReactNode }) {
                     </h1>
                 </div>
                 <nav className="p-4 space-y-2 flex-1">
-                    <Link href="/" className="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors">
-                        <LayoutDashboard className="w-5 h-5" />
-                        Dashboard
-                    </Link>
                     <Link href="/upload" className="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors">
                         <Upload className="w-5 h-5" />
                         Upload

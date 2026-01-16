@@ -21,8 +21,7 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    documents = relationship("Document", back_populates="user")
+    # Note: Documents are now linked via Supabase Auth user_id (UUID string)
 
 
 class Document(Base):
@@ -34,9 +33,9 @@ class Document(Base):
     file_path = Column(String, nullable=False)  # Can be empty/placeholder in serverless
     file_type = Column(String, nullable=True)  # MIME type of uploaded file
     upload_date = Column(DateTime(timezone=True), server_default=func.now())
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    # Supabase Auth uses UUID strings for user IDs
+    user_id = Column(String, nullable=True, index=True)
 
-    user = relationship("User", back_populates="documents")
     results = relationship("ExtractedResult", back_populates="document")
 
 

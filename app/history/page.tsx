@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { FileText, Calendar, ChevronRight, Download, FileJson, FileType, Database } from 'lucide-react';
+import { FileText, Calendar, ChevronRight, Download, FileJson, FileType, Database, HardDrive } from 'lucide-react';
 import { apiUrl } from '@/lib/api';
 
 interface ExportLinks {
     jsonl: string;
     markdown: string;
     parquet: string;
+    hdf5: string;
 }
 
 interface HistoryItem {
@@ -24,14 +25,25 @@ interface HistoryItem {
 export default function HistoryPage() {
     const [history, setHistory] = useState<HistoryItem[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
 
     useEffect(() => {
         const fetchHistory = async () => {
             try {
-                const res = await axios.get(apiUrl('/api/history'));
+                // Get auth token from localStorage
+                const token = localStorage.getItem('access_token');
+
+                const res = await axios.get(apiUrl('/api/history'), {
+                    headers: token ? { Authorization: `Bearer ${token}` } : {}
+                });
                 setHistory(res.data);
-            } catch (error) {
+            } catch (error: any) {
                 console.error('Failed to fetch history', error);
+                if (error.response?.status === 401) {
+                    setError('로그인이 필요합니다.');
+                } else {
+                    setError('히스토리를 불러오는데 실패했습니다.');
+                }
             } finally {
                 setLoading(false);
             }
@@ -60,6 +72,10 @@ export default function HistoryPage() {
             {loading ? (
                 <div className="flex justify-center py-12">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+            ) : error ? (
+                <div className="text-center py-12 text-red-500 bg-red-50 rounded-xl border border-red-200">
+                    <p>{error}</p>
                 </div>
             ) : (
                 <div className="grid gap-4">
@@ -92,7 +108,7 @@ export default function HistoryPage() {
                             <div className="mt-4 pt-4 border-t flex flex-wrap justify-between items-center gap-2">
                                 <span className="text-sm text-gray-500">{item.filename}</span>
 
-                                <div className="flex gap-2">
+                                <div className="flex flex-wrap gap-2">
                                     <button
                                         onClick={() => handleExport(item.exports.jsonl, 'jsonl')}
                                         className="flex items-center gap-1 px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg text-sm font-medium transition-colors"
@@ -117,6 +133,14 @@ export default function HistoryPage() {
                                         <Database className="w-4 h-4" />
                                         Parquet
                                     </button>
+                                    <button
+                                        onClick={() => handleExport(item.exports.hdf5, 'hdf5')}
+                                        className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-sm font-medium transition-colors"
+                                        title="HDF5 for AI/ML Training"
+                                    >
+                                        <HardDrive className="w-4 h-4" />
+                                        HDF5
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -133,3 +157,4 @@ export default function HistoryPage() {
         </div>
     );
 }
+
