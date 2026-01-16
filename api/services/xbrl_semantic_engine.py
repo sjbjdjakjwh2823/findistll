@@ -1510,12 +1510,18 @@ ROE {roe:.2f}%는 주주가 투자한 자본 100원당 {roe:.0f}원의 순이익
             }
             jsonl_lines.append(json.dumps(entry, ensure_ascii=False))
         
-        # 핵심 팩트 Q&A 추가
-        for fact in facts[:20]:  # 상위 20개만
+        # 핵심 팩트 Q&A 추가 (단순 조회 비중 축소: 상위 10개만)
+        for fact in facts[:10]:
+            # 오타 수정된 라벨 사용
+            label = self.scale_processor.fix_label_typos(fact.label)
+            
+            # 수치 정규화 (Billion 단위)
+            val_norm = self.scale_processor.normalize_to_billion(fact.value)
+            
             entry = {
-                "instruction": f"{self.company_name}의 {self.fiscal_year}년 {fact.label}은 얼마인가?",
+                "instruction": f"{self.company_name}의 {self.fiscal_year}년 {label}은 얼마인가?",
                 "input": "",
-                "output": f"{self.company_name}의 {self.fiscal_year}년 {fact.label}은 {self.scale_processor.format_currency(fact.value)}입니다.",
+                "output": f"{self.company_name}의 {self.fiscal_year}년 {label}은 {val_norm}입니다.",
                 "metadata": {
                     "company": self.company_name,
                     "fiscal_year": self.fiscal_year,
