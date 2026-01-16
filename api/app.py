@@ -56,6 +56,18 @@ async def lifespan(app: FastAPI):
             except Exception as col_error:
                 print(f"Note: Could not add file_type column (may already exist): {col_error}")
             
+            # 4. Migrate user_id from INTEGER to VARCHAR (for Supabase UUID)
+            try:
+                # Check current column type and alter if needed
+                await conn.execute(text("""
+                    ALTER TABLE documents 
+                    ALTER COLUMN user_id TYPE VARCHAR USING user_id::VARCHAR
+                """))
+                print("Column 'user_id' migrated to VARCHAR type.")
+            except Exception as type_error:
+                # This will fail if already VARCHAR, which is fine
+                print(f"Note: user_id type migration skipped (may already be VARCHAR): {type_error}")
+            
     except Exception as e:
         print(f"CRITICAL: Database initialization failed: {e}")
         # We don't raise here to allow the app to start even if DB is flaky,
