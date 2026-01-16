@@ -12,5 +12,7 @@ httpx
 pydantic-settings
 cryptography
 python-dotenv
+h5py
+numpy
 
-# Force rebuild trigger for Vercel cache invalidation 2026-01-15
+# Force rebuild trigger for Vercel cache invalidation 2026-01-16

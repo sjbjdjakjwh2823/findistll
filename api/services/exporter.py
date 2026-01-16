@@ -4,6 +4,8 @@ FinDistill Multi-Format Exporter
 Exports normalized financial data to:
 - JSONL: For LLM fine-tuning
 - Markdown: For RAG systems
+- Parquet: For analytics (columnar storage)
+- HDF5: For large-scale numerical/time-series data
 """
 
 import json
@@ -159,6 +161,88 @@ class DataExporter:
         except ImportError:
             raise RuntimeError("Parquet export not supported in serverless mode (requires pyarrow/pandas)")
 
+    def to_hdf5(self, data: Dict[str, Any]) -> bytes:
+        """
+        Convert to HDF5 format for large-scale numerical and time-series data.
+        Uses float64 precision for financial data accuracy.
+        
+        Warning: Requires h5py and numpy.
+        """
+        try:
+            import h5py
+            import numpy as np
+            import io
+            
+            buffer = io.BytesIO()
+            
+            with h5py.File(buffer, 'w') as f:
+                # Store metadata as attributes
+                meta_group = f.create_group("metadata")
+                meta_group.attrs["title"] = data.get("title", "Financial Document")
+                meta_group.attrs["summary"] = data.get("summary", "")
+                meta_group.attrs["created_at"] = datetime.now().isoformat()
+                
+                # Store key metrics
+                if "key_metrics" in data and data["key_metrics"]:
+                    metrics_group = f.create_group("key_metrics")
+                    for key, value in data["key_metrics"].items():
+                        # Try to convert to float64 for precision
+                        try:
+                            numeric_value = float(str(value).replace(",", "").replace("%", ""))
+                            metrics_group.create_dataset(
+                                key, 
+                                data=np.array([numeric_value], dtype=np.float64)
+                            )
+                        except (ValueError, TypeError):
+                            # Store as string if not numeric
+                            metrics_group.attrs[key] = str(value)
+                
+                # Store tables
+                tables_group = f.create_group("tables")
+                for i, table in enumerate(data.get("tables", [])):
+                    table_name = table.get("name", f"table_{i}")
+                    # Clean table name for HDF5 compatibility
+                    safe_name = "".join(c if c.isalnum() or c == "_" else "_" for c in table_name)
+                    
+                    table_group = tables_group.create_group(safe_name)
+                    headers = table.get("headers", [])
+                    rows = table.get("rows", [])
+                    
+                    # Store headers
+                    if headers:
+                        table_group.attrs["headers"] = json.dumps(headers, ensure_ascii=False)
+                    
+                    # Try to store as numeric array with float64 precision
+                    if rows:
+                        try:
+                            # Attempt to convert to numeric (for financial data)
+                            numeric_rows = []
+                            for row in rows:
+                                numeric_row = []
+                                for val in row:
+                                    try:
+                                        # Clean and convert to float64
+                                        clean_val = str(val).replace(",", "").replace("%", "").replace("$", "").replace("₩", "")
+                                        numeric_row.append(float(clean_val))
+                                    except (ValueError, TypeError):
+                                        numeric_row.append(float('nan'))
+                                numeric_rows.append(numeric_row)
+                            
+                            # Store as float64 array for precision
+                            table_group.create_dataset(
+                                "data",
+                                data=np.array(numeric_rows, dtype=np.float64),
+                                compression="gzip"
+                            )
+                        except Exception:
+                            # Fallback: store as JSON string
+                            table_group.attrs["data_json"] = json.dumps(rows, ensure_ascii=False)
+            
+            return buffer.getvalue()
+            
+        except ImportError:
+            raise RuntimeError("HDF5 export not supported (requires h5py/numpy). Install with: pip install h5py numpy")
+
     def _table_to_text(self, table: Dict[str, Any]) -> str:
         """Convert a table to readable text format."""
         lines = []
@@ -180,3 +264,4 @@ class DataExporter:
 
 # Singleton instance
 exporter = DataExporter()
+
