@@ -523,7 +523,26 @@ class XBRLParser:
         """Parse a linkbase document (calculation, presentation, label)."""
         self.parse_log.append("Detected linkbase document")
         
-        # Parse linkbase content
+        # Check if this is a label linkbase (contains labelLink or label elements)
+        is_label_linkbase = False
+        for elem in root.iter():
+            tag = elem.tag.split('}')[-1] if '}' in elem.tag else elem.tag
+            if tag in ('labelLink', 'labelArc') or (tag == 'label' and elem.text):
+                is_label_linkbase = True
+                break
+        
+        # Route to dedicated Label Linkbase parser
+        if is_label_linkbase:
+            self.parse_log.append("Detected label linkbase - using dedicated parser")
+            try:
+                from .label_linkbase_parser import LabelLinkbaseParser
+                label_parser = LabelLinkbaseParser()
+                content_bytes = ET.tostring(root, encoding='utf-8')
+                return label_parser.parse(content_bytes)
+            except ImportError:
+                self.parse_log.append("Label linkbase parser not available, using generic")
+        
+        # Parse linkbase content (calculation/presentation)
         content_bytes = ET.tostring(root, encoding='utf-8')
         self.linkbase.parse(content_bytes)
         
