@@ -233,12 +233,30 @@ class XBRLExporter:
                 qa["source"] = masked_data.get("metadata", {}).get("file_type", "xbrl")
                 lines.append(json.dumps(qa, ensure_ascii=False))
         
+        # Generate formula-based Q&A from Calculation Linkbase
+        formulas = masked_data.get("formulas", [])
+        for formula_data in formulas:
+            formula_qas = self._generate_formula_qas(formula_data)
+            for qa in formula_qas:
+                qa["validation_status"] = "passed" if all_passed else "review_required"
+                lines.append(json.dumps(qa, ensure_ascii=False))
+        
         # Generate reasoning Q&A pairs
         if include_reasoning:
             reasoning_qas = self._generate_reasoning_qas(masked_data)
             for qa in reasoning_qas:
                 qa["validation_status"] = "passed" if all_passed else "review_required"
                 lines.append(json.dumps(qa, ensure_ascii=False))
+        
+        # Add parse log if extraction failed
+        if not masked_data.get("facts") and not masked_data.get("formulas"):
+            parse_log = masked_data.get("parse_log", [])
+            lines.append(json.dumps({
+                "instruction": "이 XML 파일의 파싱 상태는?",
+                "response": f"파싱 로그: {'; '.join(parse_log[-10:])}",
+                "type": "diagnostic",
+                "validation_status": "review_required"
+            }, ensure_ascii=False))
         
         # Add validation results as metadata
         validation_qa = {
@@ -250,6 +268,53 @@ class XBRLExporter:
         lines.append(json.dumps(validation_qa, ensure_ascii=False))
         
         return '\n'.join(lines)
+    
+    def _generate_formula_qas(self, formula_data: Dict) -> List[Dict]:
+        """Generate Q&A pairs from calculation formulas."""
+        qas = []
+        
+        parent = formula_data.get("parent", "")
+        label = formula_data.get("label", parent)
+        formula = formula_data.get("formula", "")
+        components = formula_data.get("components", [])
+        
+        if not formula:
+            return qas
+        
+        # Q1: What are the sub-items?
+        child_labels = [c[0].split('_')[-1] for c, w in components] if components else []
+        qas.append({
+            "instruction": f"{label}의 하위 항목은 무엇인가?",
+            "response": f"{label}의 하위 항목: {', '.join(child_labels) if child_labels else '정보 없음'}",
+            "formula": formula,
+            "type": "hierarchy",
+        })
+        
+        # Q2: Which items should be subtracted?
+        subtract_items = [c[0].split('_')[-1] for c, w in components if w < 0]
+        if subtract_items:
+            qas.append({
+                "instruction": f"{label}을(를) 계산할 때 빼야 하는 항목이 있는가?",
+                "response": f"예, {', '.join(subtract_items)}을(를) 차감해야 합니다.",
+                "formula": formula,
+                "type": "calculation",
+            })
+        else:
+            qas.append({
+                "instruction": f"{label}을(를) 계산할 때 빼야 하는 항목이 있는가?",
+                "response": "아니요, 모든 하위 항목을 더합니다.",
+                "formula": formula,
+                "type": "calculation",
+            })
+        
+        # Q3: Formula explanation
+        qas.append({
+            "instruction": f"{label}의 계산 공식을 설명해줘.",
+            "response": f"계산 공식: {formula}",
+            "type": "formula",
+        })
+        
+        return qas
     
     def _generate_fact_qa(self, fact: Dict) -> Optional[Dict]:
         """Generate Q&A for a single fact."""
