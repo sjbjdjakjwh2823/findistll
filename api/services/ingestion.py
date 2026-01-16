@@ -2,16 +2,26 @@
 FinDistill File Ingestion Service
 
 Handles parsing of various file formats using Gemini API via HTTP.
-- PDF (with complex table extraction)
-- Excel (.xlsx, .xls)
-- CSV (with auto-detection)
-- Images (via Gemini multimodal)
+
+[Input Formats - Optimized Processing]
+- PDF (.pdf): Gemini multimodal for complex table extraction
+- Images (.jpg, .png, .tiff, .webp, .heic): Gemini OCR + structure understanding
+- Word (.docx): python-docx for text extraction + Gemini for summarization
+- HWP (.hwpx): XML extraction + Gemini for summarization  
+- Excel (.xlsx, .xls): openpyxl for structured data + Gemini for summary
+- CSV (.csv): Python csv module + Gemini for summary
+
+[Output Formats]
+- JSONL: For LLM fine-tuning (instruction-response pairs)
+- Markdown: For RAG systems (preserves document hierarchy)
 """
 
 import io
 import json
 import csv
 import base64
+import zipfile
+import xml.etree.ElementTree as ET
 from typing import Dict, Any, List, Optional
 import httpx
 import os
@@ -75,15 +85,31 @@ class GeminiClient:
 class FileIngestionService:
     """Service for ingesting and parsing various file formats."""
     
+    # Comprehensive file format support
     SUPPORTED_FORMATS = {
+        # PDF - Gemini multimodal for complex layout
         'application/pdf': 'pdf',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'excel',
-        'application/vnd.ms-excel': 'excel',
-        'text/csv': 'csv',
+        
+        # Images - Gemini OCR and structure recognition
         'image/png': 'image',
         'image/jpeg': 'image',
+        'image/tiff': 'image',
         'image/webp': 'image',
         'image/heic': 'image',
+        
+        # Word documents - python-docx extraction
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+        
+        # HWP (Korean word processor) - XML extraction from HWPX
+        'application/hwp+zip': 'hwpx',
+        'application/x-hwpx': 'hwpx',
+        
+        # Excel - openpyxl for structured data
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'excel',
+        'application/vnd.ms-excel': 'excel',
+        
+        # CSV - Python csv module
+        'text/csv': 'csv',
     }
 
     def __init__(self):
@@ -102,7 +128,131 @@ class FileIngestionService:
             return await self._process_csv(file_content, filename)
         elif file_type == 'excel':
             return await self._process_excel(file_content, filename)
+        elif file_type == 'docx':
+            return await self._process_docx(file_content, filename)
+        elif file_type == 'hwpx':
+            return await self._process_hwpx(file_content, filename)
         elif file_type in ('pdf', 'image'):
+            return await self._process_with_gemini(file_content, filename, mime_type)
+        else:
+            raise ValueError(f"Unsupported file type: {mime_type}")
+
+    async def _process_docx(self, content: bytes, filename: str) -> Dict[str, Any]:
+        """Process Word document using python-docx and Gemini."""
+        import docx
+        
+        doc = docx.Document(io.BytesIO(content))
+        full_text = []
+        
+        # Extract parsing structure
+        for para in doc.paragraphs:
+            if para.text.strip():
+                full_text.append(para.text)
+                
+        # Basic table extraction (heuristic)
+        tables_data = []
+        for table in doc.tables:
+            t_rows = []
+            for row in table.rows:
+                t_rows.append([cell.text.strip() for cell in row.cells])
+            if t_rows:
+                tables_data.append({
+                    "name": f"Table_{len(tables_data)+1}",
+                    "headers": t_rows[0],
+                    "rows": t_rows[1:]
+                })
+        
+        text_content = "\n".join(full_text)
+        
+        # Use Gemini to structure and analyze the extracted text
+        return await self._analyze_text_with_gemini(text_content, filename, "docx", tables_data)
+
+    async def _process_hwpx(self, content: bytes, filename: str) -> Dict[str, Any]:
+        """Process HWPX file by extracting text from XML."""
+        text_content = ""
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                # HWPX structure usually has content in Contents/section0.xml
+                # But we should search for all section XMLs
+                section_files = [f for f in zf.namelist() if f.startswith('Contents/section') and f.endswith('.xml')]
+                
+                for section_file in sorted(section_files):
+                    xml_data = zf.read(section_file)
+                    root = ET.fromstring(xml_data)
+                    
+                    # Extract text from <hp:t> tags (HWPX text tag)
+                    # Note: Namespace handling might be needed, but simple search often works
+                    # Let's try searching for all text nodes
+                    texts = [elem.text for elem in root.iter() if elem.text and elem.text.strip()]
+                    text_content += "\n".join(texts) + "\n\n"
+                    
+        except Exception as e:
+            print(f"Error parsing HWPX: {e}")
+            raise ValueError(f"Failed to parse HWPX file: {e}")
+
+        if not text_content:
+            text_content = "No extractable text found in HWPX file."
+            
+        return await self._analyze_text_with_gemini(text_content, filename, "hwpx")
+
+    async def _analyze_text_with_gemini(self, text: str, filename: str, file_type: str, pre_extracted_tables: List[Dict] = None) -> Dict[str, Any]:
+        """Helper to send text content to Gemini for structuring."""
+        prompt = f"""
+        Analyze the following text extracted from a {file_type} document ({filename}).
+        Extract structured financial data into JSON.
+        
+        Text Content:
+        {text[:30000]}  # Limit context window if necessary, though Gemini Flash has 1M window
+        
+        Requirements:
+        1. Identify the document title and provide a detailed summary.
+        2. Identify key financial metrics (revenue, profit, ratios).
+        3. If there are tables explicitly mentioned or structured in text, reconstruct them.
+        4. Output strictly in JSON.
+        
+        Output JSON format:
+        {{
+            "title": "Document Title",
+            "summary": "Detailed summary",
+            "tables": [
+                {{
+                    "name": "Table Name",
+                    "headers": ["Col1", "Col2"],
+                    "rows": [["Val1", "Val2"]]
+                }}
+            ],
+            "key_metrics": {{ "metric": "value" }},
+            "currency": "KRW/USD",
+            "date_range": "YYYY-MM-DD"
+        }}
+        """
+        
+        response_text = await self.gemini.generate_content(
+            [{"parts": [{"text": prompt}]}], 
+            "application/json"
+        )
+        
+        try:
+            result = json.loads(response_text)
+        except json.JSONDecodeError:
+            # Fallback if valid JSON isn't returned
+            result = {
+                "title": filename, 
+                "summary": "AI processing error", 
+                "tables": [], 
+                "key_metrics": {}
+            }
+            
+        # Merge pre-extracted tables if AI didn't find them but we did (e.g. from DOCX)
+        if pre_extracted_tables and not result.get("tables"):
+            result["tables"] = pre_extracted_tables
+            
+        result["metadata"] = {
+            "file_type": file_type,
+            "processed_by": "gemini-2.0-flash-text"
+        }
+        
+        return result        elif file_type in ('pdf', 'image'):
             return await self._process_with_gemini(file_content, filename, mime_type)
         else:
             raise ValueError(f"Unsupported file type: {mime_type}")
