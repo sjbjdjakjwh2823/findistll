@@ -409,12 +409,58 @@ class CoreFinancialConcepts:
     # 통합 매핑
     ALL_CONCEPTS = {**BALANCE_SHEET, **INCOME_STATEMENT, **CASH_FLOW}
     
+    # US-GAAP 확장 매핑 (복잡한 태그명을 영문 표준 라벨로)
+    US_GAAP_LABELS = {
+        "EquitySecuritiesFvNiCurrentAndNoncurrent": "Equity Securities (Fair Value)",
+        "AvailableForSaleSecuritiesDebtSecurities": "Available-for-Sale Debt Securities",
+        "MarketableSecuritiesCurrent": "Marketable Securities (Current)",
+        "MarketableSecuritiesNoncurrent": "Marketable Securities (Non-current)",
+        "AccountsReceivableNetCurrent": "Accounts Receivable, Net",
+        "InventoryNet": "Inventory, Net",
+        "PrepaidExpenseAndOtherAssetsCurrent": "Prepaid Expenses and Other Current Assets",
+        "PropertyPlantAndEquipmentNet": "Property, Plant and Equipment, Net",
+        "GoodwillAndIntangibleAssetsNet": "Goodwill and Intangible Assets",
+        "OtherAssetsNoncurrent": "Other Non-current Assets",
+        "AccountsPayableCurrent": "Accounts Payable",
+        "AccruedLiabilitiesCurrent": "Accrued Liabilities",
+        "DeferredRevenueCurrent": "Deferred Revenue (Current)",
+        "CommercialPaper": "Commercial Paper",
+        "LongTermDebtCurrent": "Long-term Debt (Current Portion)",
+        "LongTermDebtNoncurrent": "Long-term Debt",
+        "OtherLiabilitiesNoncurrent": "Other Non-current Liabilities",
+        "CommonStocksIncludingAdditionalPaidInCapital": "Common Stock and Additional Paid-in Capital",
+        "RetainedEarningsAccumulatedDeficit": "Retained Earnings (Accumulated Deficit)",
+        "AccumulatedOtherComprehensiveIncomeLossNetOfTax": "Accumulated Other Comprehensive Income (Loss)",
+        "StockholdersEquity": "Stockholders' Equity",
+        "LiabilitiesAndStockholdersEquity": "Total Liabilities and Stockholders' Equity",
+        "AssetsCurrent": "Current Assets",
+        "AssetsNoncurrent": "Non-current Assets",
+        "LiabilitiesCurrent": "Current Liabilities",
+        "LiabilitiesNoncurrent": "Non-current Liabilities",
+        "RevenueFromContractWithCustomerExcludingAssessedTax": "Net Sales",
+        "CostOfGoodsAndServicesSold": "Cost of Sales",
+        "ResearchAndDevelopmentExpense": "Research and Development",
+        "SellingGeneralAndAdministrativeExpense": "Selling, General and Administrative",
+        "OperatingIncomeLoss": "Operating Income",
+        "NonoperatingIncomeExpense": "Other Income (Expense), Net",
+        "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest": "Income Before Taxes",
+        "IncomeTaxExpenseBenefit": "Income Tax Expense",
+        "NetIncomeLoss": "Net Income",
+        "EarningsPerShareBasic": "Earnings Per Share (Basic)",
+        "EarningsPerShareDiluted": "Earnings Per Share (Diluted)",
+        "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents": "Cash and Cash Equivalents",
+    }
+    
     # 네임스페이스별 프리픽스
     NAMESPACE_PREFIXES = ['ifrs-full', 'us-gaap', 'dart', 'jppfs', 'edinet']
     
     @classmethod
     def get_label(cls, concept: str) -> str:
-        """개념에서 인간 친화적 라벨 추출"""
+        """
+        개념에서 인간 친화적 라벨 추출
+        
+        Enhanced: CamelCase 분리 및 US-GAAP 확장 매핑
+        """
         # 네임스페이스 제거
         clean = concept
         for prefix in cls.NAMESPACE_PREFIXES:
@@ -426,8 +472,20 @@ class CoreFinancialConcepts:
         if ':' in clean:
             clean = clean.split(':')[-1]
         
-        # 매핑된 라벨 반환
-        return cls.ALL_CONCEPTS.get(clean, clean)
+        # 1. US-GAAP 확장 매핑 확인
+        if clean in cls.US_GAAP_LABELS:
+            return cls.US_GAAP_LABELS[clean]
+        
+        # 2. 핵심 매핑 확인
+        if clean in cls.ALL_CONCEPTS:
+            return cls.ALL_CONCEPTS[clean]
+        
+        # 3. 폴백: CamelCase를 공백으로 분리
+        # EquitySecuritiesFvNi -> Equity Securities Fv Ni
+        readable = re.sub(r'([a-z])([A-Z])', r'\1 \2', clean)
+        readable = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1 \2', readable)
+        
+        return readable
     
     @classmethod
     def is_core_financial(cls, concept: str) -> bool:

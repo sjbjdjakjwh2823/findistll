@@ -660,22 +660,51 @@ class XBRLParser:
         self.facts.append(fact)
     
     def _standardize_value(self, value: str, unit_ref: str, decimals: str) -> str:
-        """Standardize numeric value to absolute units."""
+        """
+        Standardize numeric value to absolute units.
+        
+        🔴 FIX: Prevent double scaling (decimals + unit)
+        - Apply ONLY ONE scale: decimals OR unit, not both
+        - Add range validation to catch overflow
+        """
         clean = value.replace(',', '').replace(' ', '')
+        
+        # Filter out non-numeric values (URLs, dates, etc.)
+        if 'http' in clean.lower() or 'xsd' in clean.lower():
+            return value
         
         try:
             numeric = float(clean)
+            scale_applied = False
             
+            # 🔴 FIX: Apply decimals scale FIRST (one-time only)
             if decimals and decimals.lstrip('-').isdigit():
                 dec = int(decimals)
                 if dec < 0:
                     numeric *= (10 ** abs(dec))
+                    scale_applied = True
             
-            unit_text = self.units.get(unit_ref, '').lower()
-            for pattern, mult in self.UNIT_MULTIPLIERS.items():
-                if pattern in unit_text:
-                    numeric *= mult
-                    break
+            # 🔴 FIX: Apply unit scale ONLY if decimals not applied
+            if not scale_applied:
+                unit_text = self.units.get(unit_ref, '').lower()
+                for pattern, mult in self.UNIT_MULTIPLIERS.items():
+                    if pattern in unit_text:
+                        numeric *= mult
+                        break
+            
+            # 🔴 FIX: Range validation - cap at reasonable max
+            MAX_REASONABLE = 1e15  # 1 quadrillion
+            if abs(numeric) > MAX_REASONABLE:
+                # Likely overflow - return original scaled by decimals only if needed
+                try:
+                    fallback = float(clean)
+                    if decimals and decimals.lstrip('-').isdigit():
+                        dec = int(decimals)
+                        if dec < 0:
+                            fallback *= (10 ** abs(dec))
+                    return f"{int(fallback):,}" if abs(fallback) < MAX_REASONABLE else value
+                except:
+                    return value
             
             return f"{int(numeric):,}"
         except ValueError:
