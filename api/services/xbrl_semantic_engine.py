@@ -1296,10 +1296,10 @@ This is ranked #{i} by absolute value among all reported items.
                 turnover = float(cogs.value) / avg_inv
                 qa_list.append({
                     "question": f"{self.company_name}의 재고자산 회전율을 계산하고 재고 관리 효율성을 분석하십시오.",
-                    "response": f"""**1. 공식 정의**: 재고자산회전율 = 매출원가 / 평균 재고자산
+                    "response": f"""**1. 분석 정의**: 재고자산회전율 = 매출원가 / 평균 재고자산
 **2. 데이터 추출**: 매출원가 {self.scale_processor.format_currency(cogs.value)}, 평균 재고자산 {self.scale_processor.format_currency(Decimal(avg_inv))} ({avg_desc})
 **3. 계산 과정**: {float(cogs.value):,.0f} / {avg_inv:,.0f} = {turnover:.2f}회
-**4. 회계적 해석**: 재고자산이 연간 {turnover:.1f}회 회전하고 있습니다. {'✅ 회전율이 6회 이상으로 재고 관리 효율성이 우수합니다.' if turnover >= 6 else '⚠️ 회전율이 낮아 과잉 재고 보유 가능성이 있습니다.'}""",
+**4. 회계적 시사점**: 재고자산이 연간 {turnover:.1f}회 회전하고 있습니다. {'✅ 회전율이 6회 이상으로 재고 관리 효율성이 우수합니다.' if turnover >= 6 else '⚠️ 회전율이 낮아 과잉 재고 보유 가능성이 있습니다.'}""",
                     "type": "activity_analysis",
                     "context": f"매출원가: {self.scale_processor.format_currency(cogs.value)}, 평균 재고자산: {self.scale_processor.format_currency(Decimal(avg_inv))}"
                 })
@@ -1324,10 +1324,10 @@ This is ranked #{i} by absolute value among all reported items.
                 dso = 365 / turnover
                 qa_list.append({
                     "question": f"{self.company_name}의 매출채권 회수 기간(DSO)을 계산하고 현금화 속도를 평가하십시오.",
-                    "response": f"""**1. 공식 정의**: DSO = 365 / (매출액 / 평균 매출채권)
+                    "response": f"""**1. 분석 정의**: DSO = 365 / (매출액 / 평균 매출채권)
 **2. 데이터 추출**: 매출액 {self.scale_processor.format_currency(revenue.value)}, 평균 매출채권 {self.scale_processor.format_currency(Decimal(avg_recv))} ({avg_desc})
 **3. 계산 과정**: 365 / ({float(revenue.value):,.0f} / {avg_recv:,.0f}) = {dso:.1f}일
-**4. 회계적 해석**: 현금 회수까지 평균 {dso:.1f}일이 소요됩니다. {'✅ 45일 이내로 현금 회수 속도가 빠릅니다.' if dso <= 45 else '⚠️ 90일 이상으로 현금 흐름 관리가 필요합니다.' if dso >= 90 else '일반적인 수준(45~90일)입니다.'}""",
+**4. 회계적 시사점**: 현금 회수까지 평균 {dso:.1f}일이 소요됩니다. {'✅ 45일 이내로 현금 회수 속도가 빠릅니다.' if dso <= 45 else '⚠️ 90일 이상으로 현금 흐름 관리가 필요합니다.' if dso >= 90 else '일반적인 수준(45~90일)입니다.'}""",
                     "type": "activity_analysis",
                     "context": f"매출액: {self.scale_processor.format_currency(revenue.value)}, 평균 매출채권: {self.scale_processor.format_currency(Decimal(avg_recv))}"
                 })
@@ -1348,10 +1348,10 @@ This is ranked #{i} by absolute value among all reported items.
                 turnover = float(revenue.value) / avg_assets
                 qa_list.append({
                     "question": f"{self.company_name}의 총자산회전율을 계산하고 자산 운용 효율성을 분석하십시오.",
-                    "response": f"""**1. 공식 정의**: 총자산회전율 = 매출액 / 평균 총자산
+                    "response": f"""**1. 분석 정의**: 총자산회전율 = 매출액 / 평균 총자산
 **2. 데이터 추출**: 매출액 {self.scale_processor.format_currency(revenue.value)}, 평균 총자산 {self.scale_processor.format_currency(Decimal(avg_assets))} ({avg_desc})
 **3. 계산 과정**: {float(revenue.value):,.0f} / {avg_assets:,.0f} = {turnover:.2f}회
-**4. 회계적 해석**: 자산 1단위당 {turnover:.2f}단위의 매출을 창출하고 있습니다. {'✅ 자산 운용 효율이 높습니다.' if turnover >= 1.0 else '⚠️ 자산 대비 매출 창출력이 다소 낮습니다.'}""",
+**4. 회계적 시사점**: 자산 1단위당 {turnover:.2f}단위의 매출을 창출하고 있습니다. {'✅ 자산 운용 효율이 높습니다.' if turnover >= 1.0 else '⚠️ 자산 대비 매출 창출력이 다소 낮습니다.'}""",
                     "type": "activity_analysis",
                     "context": f"매출액: {self.scale_processor.format_currency(revenue.value)}, 평균 총자산: {self.scale_processor.format_currency(Decimal(avg_assets))}"
                 })
@@ -1372,10 +1372,10 @@ This is ranked #{i} by absolute value among all reported items.
             intensity = float(rnd.value) / float(revenue.value) * 100
             qa_list.append({
                 "question": f"{self.company_name}의 R&D 집약도를 분석하고 기술 투자 효율성을 평가하십시오.",
-                "response": f"""**1. 공식 정의**: R&D 집약도 = (연구개발비 / 매출액) × 100
+                "response": f"""**1. 분석 정의**: R&D 집약도 = (연구개발비 / 매출액) × 100
 **2. 데이터 추출**: 매출액 {self.scale_processor.format_currency(revenue.value)}, 연구개발비 {self.scale_processor.format_currency(rnd.value)}
 **3. 계산 과정**: ({float(rnd.value):,.0f} / {float(revenue.value):,.0f}) × 100 = {intensity:.2f}%
-**4. 회계적 해석**: 매출의 {intensity:.2f}%를 R&D에 투자하고 있습니다. {'✅ 기술 중심 기업으로서 적극적 투자가 이루어지고 있습니다.' if intensity >= 10 else '일반적인 수준의 투자입니다.'}""",
+**4. 회계적 시사점**: 매출의 {intensity:.2f}%를 R&D에 투자하고 있습니다. {'✅ 기술 중심 기업으로서 적극적 투자가 이루어지고 있습니다.' if intensity >= 10 else '일반적인 수준의 투자입니다.'}""",
                 "type": "efficiency_analysis",
                 "context": f"연구개발비: {self.scale_processor.format_currency(rnd.value)}, 매출액: {self.scale_processor.format_currency(revenue.value)}"
             })
@@ -1385,10 +1385,10 @@ This is ranked #{i} by absolute value among all reported items.
             margin = float(op_income.value) / float(revenue.value) * 100
             qa_list.append({
                 "question": f"{self.company_name}의 영업이익률을 계산하고 수익성을 분석하십시오.",
-                "response": f"""**1. 공식 정의**: 영업이익률 = (영업이익 / 매출액) × 100
+                "response": f"""**1. 분석 정의**: 영업이익률 = (영업이익 / 매출액) × 100
 **2. 데이터 추출**: 매출액 {self.scale_processor.format_currency(revenue.value)}, 영업이익 {self.scale_processor.format_currency(op_income.value)}
 **3. 계산 과정**: ({float(op_income.value):,.0f} / {float(revenue.value):,.0f}) × 100 = {margin:.2f}%
-**4. 회계적 해석**: 본업에서 {margin:.2f}%의 마진을 남기고 있습니다. {'✅ 10% 이상의 양호한 수익성을 보입니다.' if margin >= 10 else '⚠️ 수익성 개선 노력이 필요할 수 있습니다.'}""",
+**4. 회계적 시사점**: 본업에서 {margin:.2f}%의 마진을 남기고 있습니다. {'✅ 10% 이상의 양호한 수익성을 보입니다.' if margin >= 10 else '⚠️ 수익성 개선 노력이 필요할 수 있습니다.'}""",
                 "type": "efficiency_analysis",
                 "context": f"영업이익: {self.scale_processor.format_currency(op_income.value)}, 매출액: {self.scale_processor.format_currency(revenue.value)}"
             })
@@ -1398,10 +1398,10 @@ This is ranked #{i} by absolute value among all reported items.
             ratio = float(sga.value) / float(revenue.value) * 100
             qa_list.append({
                 "question": f"{self.company_name}의 판관비율(SG&A Efficiency)을 분석하십시오.",
-                "response": f"""**1. 공식 정의**: 판관비율 = (판매비와관리비 / 매출액) × 100
+                "response": f"""**1. 분석 정의**: 판관비율 = (판매비와관리비 / 매출액) × 100
 **2. 데이터 추출**: 매출액 {self.scale_processor.format_currency(revenue.value)}, 판매비와관리비 {self.scale_processor.format_currency(sga.value)}
 **3. 계산 과정**: ({float(sga.value):,.0f} / {float(revenue.value):,.0f}) × 100 = {ratio:.2f}%
-**4. 회계적 해석**: 매출의 {ratio:.2f}%가 운영 비용으로 지출되었습니다. {'✅ 비용 효율성이 높습니다.' if ratio <= 15 else '관리 비용 부담이 있는 편입니다.'}""",
+**4. 회계적 시사점**: 매출의 {ratio:.2f}%가 운영 비용으로 지출되었습니다. {'✅ 비용 효율성이 높습니다.' if ratio <= 15 else '관리 비용 부담이 있는 편입니다.'}""",
                 "type": "efficiency_analysis",
                 "context": f"판매비와관리비: {self.scale_processor.format_currency(sga.value)}, 매출액: {self.scale_processor.format_currency(revenue.value)}"
             })
@@ -1447,10 +1447,10 @@ This is ranked #{i} by absolute value among all reported items.
                 
                 qa_list.append({
                     "question": f"{self.company_name}의 {curr_year}년 {label} 전년 대비 성장률(YoY)을 분석하십시오.",
-                    "response": f"""**1. 공식 정의**: YoY 성장률 = (당기 - 전기) / 전기 × 100
+                    "response": f"""**1. 분석 정의**: YoY 성장률 = (당기 - 전기) / 전기 × 100
 **2. 데이터 추출**: 당기({curr_year}) {self.scale_processor.format_currency(curr.value)}, 전기({prev_year}) {self.scale_processor.format_currency(prev.value)}
 **3. 계산 과정**: ({float(curr.value):,.0f} - {float(prev.value):,.0f}) / {float(prev.value):,.0f} × 100 = {growth:+.2f}%
-**4. 회계적 해석**: {label}이(가) {abs(growth):.2f}% {'증가' if growth > 0 else '감소'}했습니다.{outlier_note} {'✅ 고성장세입니다.' if growth >= 10 else '안정적입니다.'}""",
+**4. 회계적 시사점**: {label}이(가) {abs(growth):.2f}% {'증가' if growth > 0 else '감소'}했습니다.{outlier_note} {'✅ 고성장세입니다.' if growth >= 10 else '안정적입니다.'}""",
                     "type": "trend_analysis",
                     "context": f"당기 {label}: {self.scale_processor.format_currency(curr.value)}, 전기 {label}: {self.scale_processor.format_currency(prev.value)}"
                 })
@@ -1469,10 +1469,10 @@ This is ranked #{i} by absolute value among all reported items.
         
         return {
             "question": f"{self.company_name}의 {self.fiscal_year}년 부채비율(Debt Ratio)을 계산하고 재무 건전성을 평가하십시오.",
-            "response": f"""**1. 공식 정의**: 부채비율 = (부채총계 / 자본총계) × 100
+            "response": f"""**1. 분석 정의**: 부채비율 = (부채총계 / 자본총계) × 100
 **2. 데이터 추출**: 부채총계 {self.scale_processor.format_currency(liabilities.value)}, 자본총계 {self.scale_processor.format_currency(equity.value)}
 **3. 계산 과정**: ({float(liabilities.value):,.0f} / {float(equity.value):,.0f}) × 100 = {ratio:.2f}%
-**4. 회계적 해석**: 부채비율이 {ratio:.2f}%입니다. {'⚠️ 200%를 초과하여 재무 레버리지가 높습니다.' if ratio > 200 else '✅ 200% 이하로 재무구조가 안정적입니다.' if ratio <= 200 else '부채비율이 100% 미만으로 매우 건전합니다.'}""",
+**4. 회계적 시사점**: 부채비율이 {ratio:.2f}%입니다. {'⚠️ 200%를 초과하여 재무 레버리지가 높습니다.' if ratio > 200 else '✅ 200% 이하로 재무구조가 안정적입니다.' if ratio <= 200 else '부채비율이 100% 미만으로 매우 건전합니다.'}""",
             "context": f"부채총계: {self.scale_processor.format_currency(liabilities.value)}, 자본총계: {self.scale_processor.format_currency(equity.value)}",
             "type": "ratio_analysis"
         }
@@ -1489,10 +1489,10 @@ This is ranked #{i} by absolute value among all reported items.
         
         return {
             "question": f"{self.company_name}의 단기 채무 상환 능력을 유동비율로 평가하십시오.",
-            "response": f"""**1. 공식 정의**: 유동비율 = (유동자산 / 유동부채) × 100
+            "response": f"""**1. 분석 정의**: 유동비율 = (유동자산 / 유동부채) × 100
 **2. 데이터 추출**: 유동자산 {self.scale_processor.format_currency(current_assets.value)}, 유동부채 {self.scale_processor.format_currency(current_liabilities.value)}
 **3. 계산 과정**: ({float(current_assets.value):,.0f} / {float(current_liabilities.value):,.0f}) × 100 = {ratio:.2f}%
-**4. 회계적 해석**: 유동비율이 {ratio:.2f}%입니다. {'✅ 200% 이상으로 지급능력이 우수합니다.' if ratio >= 200 else '⚠️ 100% 미만으로 단기 유동성 위험이 있습니다.' if ratio < 100 else '100%~200% 사이로 적정 수준입니다.'}""",
+**4. 회계적 시사점**: 유동비율이 {ratio:.2f}%입니다. {'✅ 200% 이상으로 지급능력이 우수합니다.' if ratio >= 200 else '⚠️ 100% 미만으로 단기 유동성 위험이 있습니다.' if ratio < 100 else '100%~200% 사이로 적정 수준입니다.'}""",
             "context": f"유동자산: {self.scale_processor.format_currency(current_assets.value)}, 유동부채: {self.scale_processor.format_currency(current_liabilities.value)}",
             "type": "ratio_analysis"
         }
@@ -1509,10 +1509,10 @@ This is ranked #{i} by absolute value among all reported items.
         
         return {
             "question": f"{self.company_name}의 매출총이익률을 분석하고 원가 관리 효율성을 평가하십시오.",
-            "response": f"""**1. 공식 정의**: 매출총이익률 = (매출총이익 / 매출액) × 100
+            "response": f"""**1. 분석 정의**: 매출총이익률 = (매출총이익 / 매출액) × 100
 **2. 데이터 추출**: 매출액 {self.scale_processor.format_currency(revenue.value)}, 매출총이익 {self.scale_processor.format_currency(gross_profit.value)}
 **3. 계산 과정**: ({float(gross_profit.value):,.0f} / {float(revenue.value):,.0f}) × 100 = {margin:.2f}%
-**4. 회계적 해석**: 매출의 {margin:.2f}%가 총이익으로 남습니다. {'원가 관리가 효율적입니다.' if margin > 30 else '원가 비율이 높습니다.'}""",
+**4. 회계적 시사점**: 매출의 {margin:.2f}%가 총이익으로 남습니다. {'원가 관리가 효율적입니다.' if margin > 30 else '원가 비율이 높습니다.'}""",
             "context": f"매출액: {self.scale_processor.format_currency(revenue.value)}, 매출총이익: {self.scale_processor.format_currency(gross_profit.value)}",
             "type": "ratio_analysis"
         }
@@ -1529,10 +1529,10 @@ This is ranked #{i} by absolute value among all reported items.
         
         return {
             "question": f"{self.company_name}의 자기자본이익률(ROE)을 계산하고 주주 가치 창출 능력을 평가하십시오.",
-            "response": f"""**1. 공식 정의**: ROE = (당기순이익 / 자기자본) × 100
+            "response": f"""**1. 분석 정의**: ROE = (당기순이익 / 자기자본) × 100
 **2. 데이터 추출**: 당기순이익 {self.scale_processor.format_currency(net_income.value)}, 자기자본 {self.scale_processor.format_currency(equity.value)}
 **3. 계산 과정**: ({float(net_income.value):,.0f} / {float(equity.value):,.0f}) × 100 = {roe:.2f}%
-**4. 회계적 해석**: ROE {roe:.2f}%를 기록했습니다. {'✅ 15% 이상으로 수익성이 우수합니다.' if roe >= 15 else '⚠️ 10% 미만으로 자본 효율성 개선이 필요합니다.' if roe < 10 else '양호한 수준입니다.'}""",
+**4. 회계적 시사점**: ROE {roe:.2f}%를 기록했습니다. {'✅ 15% 이상으로 수익성이 우수합니다.' if roe >= 15 else '⚠️ 10% 미만으로 자본 효율성 개선이 필요합니다.' if roe < 10 else '양호한 수준입니다.'}""",
             "context": f"당기순이익: {self.scale_processor.format_currency(net_income.value)}, 자기자본: {self.scale_processor.format_currency(equity.value)}",
             "type": "ratio_analysis"
         }
@@ -1696,8 +1696,8 @@ This is ranked #{i} by absolute value among all reported items.
             }
             jsonl_lines.append(json.dumps(entry, ensure_ascii=False))
         
-        # 핵심 팩트 Q&A 추가 (단순 조회 비중 축소: 상위 5개만 - 10% 미만)
-        for fact in facts[:5]:
+        # 핵심 팩트 Q&A 추가 (단순 조회 비중 축소: 상위 3개만 - 10% 미만)
+        for fact in facts[:3]:
             # 오타 수정된 라벨 사용
             label = self.scale_processor.fix_label_typos(fact.label)
             
