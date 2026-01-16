@@ -57,16 +57,45 @@ async def lifespan(app: FastAPI):
                 print(f"Note: Could not add file_type column (may already exist): {col_error}")
             
             # 4. Migrate user_id from INTEGER to VARCHAR (for Supabase UUID)
+            # This requires dropping any FK constraint first
             try:
-                # Check current column type and alter if needed
+                # First, drop the foreign key constraint if it exists
                 await conn.execute(text("""
-                    ALTER TABLE documents 
-                    ALTER COLUMN user_id TYPE VARCHAR USING user_id::VARCHAR
+                    DO $$
+                    BEGIN
+                        IF EXISTS (
+                            SELECT 1 FROM information_schema.table_constraints 
+                            WHERE constraint_name = 'documents_user_id_fkey' 
+                            AND table_name = 'documents'
+                        ) THEN
+                            ALTER TABLE documents DROP CONSTRAINT documents_user_id_fkey;
+                        END IF;
+                    END $$;
                 """))
-                print("Column 'user_id' migrated to VARCHAR type.")
+                print("FK constraint 'documents_user_id_fkey' dropped (if existed).")
+                
+                # Check if column is already VARCHAR
+                result = await conn.execute(text("""
+                    SELECT data_type FROM information_schema.columns 
+                    WHERE table_name = 'documents' AND column_name = 'user_id'
+                """))
+                row = result.fetchone()
+                
+                if row and row[0] != 'character varying':
+                    # Column is not VARCHAR, so alter it
+                    await conn.execute(text("""
+                        ALTER TABLE documents 
+                        ALTER COLUMN user_id TYPE VARCHAR(255) USING user_id::VARCHAR
+                    """))
+                    print("Column 'user_id' migrated from INTEGER to VARCHAR.")
+                else:
+                    print("Column 'user_id' is already VARCHAR type.")
+                    
             except Exception as type_error:
-                # This will fail if already VARCHAR, which is fine
-                print(f"Note: user_id type migration skipped (may already be VARCHAR): {type_error}")
+                print(f"ERROR during user_id migration: {type_error}")
+                # Re-raise to see the actual error
+                import traceback
+                traceback.print_exc()
             
     except Exception as e:
         print(f"CRITICAL: Database initialization failed: {e}")
