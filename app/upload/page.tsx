@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import axios from 'axios';
-import { Upload, FileText, CheckCircle, AlertCircle, Loader2, FileSpreadsheet, Image, Download, X, Database, HardDrive } from 'lucide-react';
+import { Upload, FileText, CheckCircle, AlertCircle, Loader2, FileSpreadsheet, Image, Download, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { apiUrl } from '@/lib/api';
 
@@ -25,7 +25,7 @@ interface FileResult {
 
 const MAX_FILES = 5;
 
-type ExportFormat = 'jsonl' | 'markdown' | 'parquet' | 'hdf5';
+type ExportFormat = 'jsonl' | 'markdown';
 
 export default function UploadPage() {
     const [files, setFiles] = useState<FileResult[]>([]);
@@ -142,8 +142,6 @@ export default function UploadPage() {
         switch (format) {
             case 'jsonl': return 'jsonl';
             case 'markdown': return 'md';
-            case 'parquet': return 'parquet';
-            case 'hdf5': return 'h5';
             default: return 'txt';
         }
     };
@@ -228,6 +226,8 @@ export default function UploadPage() {
                 <p className="text-gray-500 mb-2">Supported formats:</p>
                 <div className="flex flex-wrap justify-center gap-2 mb-4">
                     <span className="px-3 py-1 bg-red-50 text-red-700 rounded-full text-sm font-medium">PDF</span>
+                    <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-sm font-medium">Word</span>
+                    <span className="px-3 py-1 bg-cyan-50 text-cyan-700 rounded-full text-sm font-medium">HWP</span>
                     <span className="px-3 py-1 bg-green-50 text-green-700 rounded-full text-sm font-medium">Excel</span>
                     <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm font-medium">CSV</span>
                     <span className="px-3 py-1 bg-purple-50 text-purple-700 rounded-full text-sm font-medium">Images</span>
@@ -240,7 +240,7 @@ export default function UploadPage() {
                     onChange={handleFileChange}
                     className="hidden"
                     id="file-upload"
-                    accept=".pdf,.xlsx,.xls,.csv,image/*"
+                    accept=".pdf,.xlsx,.xls,.csv,.docx,.hwpx,.hwp,image/*"
                     multiple
                 />
                 {files.length < MAX_FILES && !allCompleted && (
@@ -356,7 +356,7 @@ export default function UploadPage() {
             {/* Export Format Selector */}
             <div className="mt-8">
                 <h3 className="text-lg font-semibold mb-3 text-gray-700">Select Export Format</h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 gap-4">
                     {/* JSONL */}
                     <button
                         onClick={() => setExportFormat('jsonl')}
@@ -366,12 +366,11 @@ export default function UploadPage() {
                             : 'bg-purple-50 border-transparent hover:border-purple-300'
                             } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
-                        <h4 className={`font-semibold ${exportFormat === 'jsonl' ? 'text-purple-800' : 'text-purple-700'}`}>
+                        <h4 className={`font-medium ${exportFormat === 'jsonl' ? 'text-purple-800' : 'text-purple-700'}`}>
                             JSONL
                         </h4>
-                        <p className="text-xs text-purple-600 mt-1">LLM Fine-tuning</p>
                         {exportFormat === 'jsonl' && (
-                            <span className="inline-block mt-2 px-2 py-0.5 bg-purple-500 text-white text-xs rounded-full">✓</span>
+                            <span className="inline-block mt-1 px-2 py-0.5 bg-purple-500 text-white text-xs rounded-full">✓</span>
                         )}
                     </button>
 
@@ -384,54 +383,11 @@ export default function UploadPage() {
                             : 'bg-green-50 border-transparent hover:border-green-300'
                             } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
-                        <h4 className={`font-semibold ${exportFormat === 'markdown' ? 'text-green-800' : 'text-green-700'}`}>
+                        <h4 className={`font-medium ${exportFormat === 'markdown' ? 'text-green-800' : 'text-green-700'}`}>
                             Markdown
                         </h4>
-                        <p className="text-xs text-green-600 mt-1">RAG Systems</p>
                         {exportFormat === 'markdown' && (
-                            <span className="inline-block mt-2 px-2 py-0.5 bg-green-500 text-white text-xs rounded-full">✓</span>
-                        )}
-                    </button>
-
-                    {/* Parquet */}
-                    <button
-                        onClick={() => setExportFormat('parquet')}
-                        disabled={loading}
-                        className={`p-4 rounded-lg text-center transition-all border-2 ${exportFormat === 'parquet'
-                            ? 'bg-orange-100 border-orange-500 shadow-md'
-                            : 'bg-orange-50 border-transparent hover:border-orange-300'
-                            } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    >
-                        <div className="flex justify-center mb-1">
-                            <Database className={`w-5 h-5 ${exportFormat === 'parquet' ? 'text-orange-700' : 'text-orange-600'}`} />
-                        </div>
-                        <h4 className={`font-semibold ${exportFormat === 'parquet' ? 'text-orange-800' : 'text-orange-700'}`}>
-                            Parquet
-                        </h4>
-                        <p className="text-xs text-orange-600 mt-1">Analytics</p>
-                        {exportFormat === 'parquet' && (
-                            <span className="inline-block mt-2 px-2 py-0.5 bg-orange-500 text-white text-xs rounded-full">✓</span>
-                        )}
-                    </button>
-
-                    {/* HDF5 */}
-                    <button
-                        onClick={() => setExportFormat('hdf5')}
-                        disabled={loading}
-                        className={`p-4 rounded-lg text-center transition-all border-2 ${exportFormat === 'hdf5'
-                            ? 'bg-blue-100 border-blue-500 shadow-md'
-                            : 'bg-blue-50 border-transparent hover:border-blue-300'
-                            } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    >
-                        <div className="flex justify-center mb-1">
-                            <HardDrive className={`w-5 h-5 ${exportFormat === 'hdf5' ? 'text-blue-700' : 'text-blue-600'}`} />
-                        </div>
-                        <h4 className={`font-semibold ${exportFormat === 'hdf5' ? 'text-blue-800' : 'text-blue-700'}`}>
-                            HDF5
-                        </h4>
-                        <p className="text-xs text-blue-600 mt-1">AI/ML Training</p>
-                        {exportFormat === 'hdf5' && (
-                            <span className="inline-block mt-2 px-2 py-0.5 bg-blue-500 text-white text-xs rounded-full">✓</span>
+                            <span className="inline-block mt-1 px-2 py-0.5 bg-green-500 text-white text-xs rounded-full">✓</span>
                         )}
                     </button>
                 </div>
