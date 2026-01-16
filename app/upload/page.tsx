@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import axios from 'axios';
-import { Upload, FileText, CheckCircle, AlertCircle, Loader2, FileSpreadsheet, Image, Download, X } from 'lucide-react';
+import { Upload, FileText, CheckCircle, AlertCircle, Loader2, FileSpreadsheet, Image, Download, X, Database, HardDrive } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { apiUrl } from '@/lib/api';
 
@@ -25,11 +25,14 @@ interface FileResult {
 
 const MAX_FILES = 5;
 
+type ExportFormat = 'jsonl' | 'markdown' | 'parquet' | 'hdf5';
+
 export default function UploadPage() {
     const [files, setFiles] = useState<FileResult[]>([]);
     const [loading, setLoading] = useState(false);
     const [dragOver, setDragOver] = useState(false);
-    const [exportFormat, setExportFormat] = useState<'jsonl' | 'markdown'>('jsonl');
+    const [exportFormat, setExportFormat] = useState<ExportFormat>('jsonl');
+    const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const router = useRouter();
 
@@ -81,6 +84,15 @@ export default function UploadPage() {
         if (files.length === 0) return;
 
         setLoading(true);
+        setToast(null);
+
+        // Get auth token
+        const token = localStorage.getItem('access_token');
+        if (!token) {
+            setToast({ message: '로그인이 필요합니다.', type: 'error' });
+            setLoading(false);
+            return;
+        }
 
         const updatedFiles = [...files];
 
@@ -97,6 +109,7 @@ export default function UploadPage() {
                 const response = await axios.post(apiUrl(`/api/extract?export_format=${exportFormat}`), formData, {
                     headers: {
                         'Content-Type': 'multipart/form-data',
+                        'Authorization': `Bearer ${token}`,
                     },
                     timeout: 120000,
                 });
@@ -106,29 +119,52 @@ export default function UploadPage() {
                 updatedFiles[i].downloadUrl = apiUrl(`/api/export/${exportFormat}/${documentId}`);
             } catch (error: any) {
                 updatedFiles[i].status = 'error';
-                updatedFiles[i].error = error.response?.data?.detail || error.message || 'Failed to process';
+                const errorMsg = error.response?.data?.detail || error.message || 'Failed to process';
+                updatedFiles[i].error = errorMsg;
+
+                // Show toast for conversion errors
+                setToast({ message: `변환 오류: ${errorMsg}`, type: 'error' });
             }
 
             setFiles([...updatedFiles]);
         }
 
         setLoading(false);
+
+        // Show success toast if any file succeeded
+        const successCount = updatedFiles.filter(f => f.status === 'success').length;
+        if (successCount > 0) {
+            setToast({ message: `${successCount}개 파일 변환 완료!`, type: 'success' });
+        }
+    };
+
+    const getFileExtension = (format: ExportFormat): string => {
+        switch (format) {
+            case 'jsonl': return 'jsonl';
+            case 'markdown': return 'md';
+            case 'parquet': return 'parquet';
+            case 'hdf5': return 'h5';
+            default: return 'txt';
+        }
     };
 
     const downloadFile = async (url: string, filename: string) => {
         try {
             const response = await fetch(url);
+            if (!response.ok) throw new Error('Download failed');
+
             const blob = await response.blob();
             const blobUrl = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = blobUrl;
-            a.download = `${filename}.${exportFormat === 'jsonl' ? 'jsonl' : 'md'}`;
+            a.download = `${filename}.${getFileExtension(exportFormat)}`;
             document.body.appendChild(a);
             a.click();
             window.URL.revokeObjectURL(blobUrl);
             document.body.removeChild(a);
-        } catch (error) {
+        } catch (error: any) {
             console.error('Download failed:', error);
+            setToast({ message: '다운로드 실패. 다시 시도해주세요.', type: 'error' });
         }
     };
 
@@ -214,9 +250,9 @@ export default function UploadPage() {
                                 <div key={index} className="p-3 bg-gray-50 rounded-lg flex items-center justify-between">
                                     <div className="flex items-center gap-3">
                                         <div className={`p-2 rounded-lg ${fileResult.status === 'success' ? 'bg-green-100' :
-                                                fileResult.status === 'error' ? 'bg-red-100' :
-                                                    fileResult.status === 'processing' ? 'bg-yellow-100' :
-                                                        `bg-${fileInfo.color}-100`
+                                            fileResult.status === 'error' ? 'bg-red-100' :
+                                                fileResult.status === 'processing' ? 'bg-yellow-100' :
+                                                    `bg-${fileInfo.color}-100`
                                             }`}>
                                             {fileResult.status === 'success' ? (
                                                 <CheckCircle className="w-5 h-5 text-green-600" />
@@ -309,7 +345,8 @@ export default function UploadPage() {
             {/* Export Format Selector */}
             <div className="mt-8">
                 <h3 className="text-lg font-semibold mb-3 text-gray-700">Select Export Format</h3>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {/* JSONL */}
                     <button
                         onClick={() => setExportFormat('jsonl')}
                         disabled={loading}
@@ -321,11 +358,13 @@ export default function UploadPage() {
                         <h4 className={`font-semibold ${exportFormat === 'jsonl' ? 'text-purple-800' : 'text-purple-700'}`}>
                             JSONL
                         </h4>
-                        <p className="text-sm text-purple-600">LLM Fine-tuning</p>
+                        <p className="text-xs text-purple-600 mt-1">LLM Fine-tuning</p>
                         {exportFormat === 'jsonl' && (
-                            <span className="inline-block mt-2 px-2 py-0.5 bg-purple-500 text-white text-xs rounded-full">Selected</span>
+                            <span className="inline-block mt-2 px-2 py-0.5 bg-purple-500 text-white text-xs rounded-full">✓</span>
                         )}
                     </button>
+
+                    {/* Markdown */}
                     <button
                         onClick={() => setExportFormat('markdown')}
                         disabled={loading}
@@ -337,13 +376,79 @@ export default function UploadPage() {
                         <h4 className={`font-semibold ${exportFormat === 'markdown' ? 'text-green-800' : 'text-green-700'}`}>
                             Markdown
                         </h4>
-                        <p className="text-sm text-green-600">RAG Systems</p>
+                        <p className="text-xs text-green-600 mt-1">RAG Systems</p>
                         {exportFormat === 'markdown' && (
-                            <span className="inline-block mt-2 px-2 py-0.5 bg-green-500 text-white text-xs rounded-full">Selected</span>
+                            <span className="inline-block mt-2 px-2 py-0.5 bg-green-500 text-white text-xs rounded-full">✓</span>
+                        )}
+                    </button>
+
+                    {/* Parquet */}
+                    <button
+                        onClick={() => setExportFormat('parquet')}
+                        disabled={loading}
+                        className={`p-4 rounded-lg text-center transition-all border-2 ${exportFormat === 'parquet'
+                            ? 'bg-orange-100 border-orange-500 shadow-md'
+                            : 'bg-orange-50 border-transparent hover:border-orange-300'
+                            } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                        <div className="flex justify-center mb-1">
+                            <Database className={`w-5 h-5 ${exportFormat === 'parquet' ? 'text-orange-700' : 'text-orange-600'}`} />
+                        </div>
+                        <h4 className={`font-semibold ${exportFormat === 'parquet' ? 'text-orange-800' : 'text-orange-700'}`}>
+                            Parquet
+                        </h4>
+                        <p className="text-xs text-orange-600 mt-1">Analytics</p>
+                        {exportFormat === 'parquet' && (
+                            <span className="inline-block mt-2 px-2 py-0.5 bg-orange-500 text-white text-xs rounded-full">✓</span>
+                        )}
+                    </button>
+
+                    {/* HDF5 */}
+                    <button
+                        onClick={() => setExportFormat('hdf5')}
+                        disabled={loading}
+                        className={`p-4 rounded-lg text-center transition-all border-2 ${exportFormat === 'hdf5'
+                            ? 'bg-blue-100 border-blue-500 shadow-md'
+                            : 'bg-blue-50 border-transparent hover:border-blue-300'
+                            } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                        <div className="flex justify-center mb-1">
+                            <HardDrive className={`w-5 h-5 ${exportFormat === 'hdf5' ? 'text-blue-700' : 'text-blue-600'}`} />
+                        </div>
+                        <h4 className={`font-semibold ${exportFormat === 'hdf5' ? 'text-blue-800' : 'text-blue-700'}`}>
+                            HDF5
+                        </h4>
+                        <p className="text-xs text-blue-600 mt-1">AI/ML Training</p>
+                        {exportFormat === 'hdf5' && (
+                            <span className="inline-block mt-2 px-2 py-0.5 bg-blue-500 text-white text-xs rounded-full">✓</span>
                         )}
                     </button>
                 </div>
             </div>
+
+            {/* Toast Notification */}
+            {toast && (
+                <div
+                    className={`fixed bottom-6 right-6 px-6 py-4 rounded-xl shadow-lg flex items-center gap-3 z-50 transition-all ${toast.type === 'success'
+                            ? 'bg-green-600 text-white'
+                            : 'bg-red-600 text-white'
+                        }`}
+                >
+                    {toast.type === 'success' ? (
+                        <CheckCircle className="w-5 h-5" />
+                    ) : (
+                        <AlertCircle className="w-5 h-5" />
+                    )}
+                    <span>{toast.message}</span>
+                    <button
+                        onClick={() => setToast(null)}
+                        className="ml-2 hover:opacity-75"
+                    >
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+            )}
         </div>
     );
 }
+

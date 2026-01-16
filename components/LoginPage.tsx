@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth';
 import { FileText, Mail, Lock, User, Loader2, ArrowRight, Sparkles } from 'lucide-react';
 
@@ -29,7 +29,17 @@ export default function LoginPage() {
     const [oauthLoading, setOauthLoading] = useState<'google' | 'github' | null>(null);
     const [error, setError] = useState('');
     const [successMessage, setSuccessMessage] = useState('');
+    const [rememberMe, setRememberMe] = useState(false);
     const { login, register, signInWithOAuth } = useAuth();
+
+    // Load saved email on mount
+    useEffect(() => {
+        const savedEmail = localStorage.getItem('remembered_email');
+        if (savedEmail) {
+            setEmail(savedEmail);
+            setRememberMe(true);
+        }
+    }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -40,6 +50,13 @@ export default function LoginPage() {
         try {
             if (isLogin) {
                 await login(email, password);
+
+                // Save email if Remember Me is checked (after successful login)
+                if (rememberMe) {
+                    localStorage.setItem('remembered_email', email);
+                } else {
+                    localStorage.removeItem('remembered_email');
+                }
             } else {
                 // Registration - don't auto-login, show success message
                 const result = await register(email, password, fullName);
@@ -63,6 +80,13 @@ export default function LoginPage() {
             }
         } catch (err: any) {
             console.error('Auth error:', err);
+
+            // Clear saved credentials on login failure
+            if (isLogin) {
+                localStorage.removeItem('remembered_email');
+                setRememberMe(false);
+            }
+
             const detail = err.response?.data?.detail
                 || err.response?.data?.msg
                 || err.response?.data?.error_description
@@ -241,6 +265,25 @@ export default function LoginPage() {
                                     />
                                 </div>
                             </div>
+
+                            {/* Remember Me - only shown in login mode */}
+                            {isLogin && (
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="checkbox"
+                                        id="rememberMe"
+                                        checked={rememberMe}
+                                        onChange={(e) => setRememberMe(e.target.checked)}
+                                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                    />
+                                    <label
+                                        htmlFor="rememberMe"
+                                        className="text-sm text-gray-600 cursor-pointer select-none"
+                                    >
+                                        로그인 유지 (이메일 기억하기)
+                                    </label>
+                                </div>
+                            )}
 
                             {successMessage && (
                                 <div className="p-3 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm">
