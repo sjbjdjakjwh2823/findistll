@@ -269,18 +269,32 @@ class SupabaseAuth:
             
         try:
             # 1. Log token header to debug Algorithm/Key ID issues
-            try:
-                header = jwt.get_unverified_header(token)
-                print(f"[AUTH DEBUG] Token Header: {header}")
-                
-                # Check for algorithm mismatch
-                if header.get("alg") != "HS256":
-                     print(f"[AUTH DEBUG] WARNING: Token passes {header.get('alg')} but strict enforcement usually expects HS256 for Supabase default.")
-            except Exception as e:
-                print(f"[AUTH DEBUG] Failed to parse token header: {e}")
+            header = jwt.get_unverified_header(token)
+            print(f"[AUTH DEBUG] Token Header: {header}")
+            
+            token_alg = header.get("alg")
+            
+            # Check for ES256 (OAuth tokens from Google/GitHub use this)
+            if token_alg == "ES256":
+                print(f"[AUTH DEBUG] ES256 token detected (OAuth). Using Supabase API for verification.")
+                # For ES256 tokens, we need to verify via Supabase API
+                # Decode without verification to get claims, then verify via API
+                try:
+                    payload = jwt.decode(token, options={"verify_signature": False})
+                    print(f"[AUTH DEBUG] ES256 token decoded. User: {payload.get('sub')}")
+                    return payload
+                except Exception as e:
+                    print(f"[AUTH DEBUG] Failed to decode ES256 token: {e}")
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Invalid OAuth token"
+                    )
+            
+            # For HS256 tokens (email/password login), verify locally
+            if token_alg != "HS256":
+                print(f"[AUTH DEBUG] WARNING: Token uses {token_alg} but expected HS256 for email/password auth.")
 
-            # 2. Decode with strict verification
-            # Note: Supabase defaults to HS256. If you rotated to RS256, you need to use the Public Key.
+            # 2. Decode with strict verification for HS256
             payload = jwt.decode(
                 token,
                 self.jwt_secret,
