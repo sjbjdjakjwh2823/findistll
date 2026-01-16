@@ -155,15 +155,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.log('[OAuth] Has ANON_KEY:', !!SUPABASE_ANON_KEY);
         console.log('[OAuth] Redirect to:', redirectTo);
 
+        // IMPORTANT: Validate environment variables
+        if (!SUPABASE_URL) {
+            console.error('[OAuth] ERROR: SUPABASE_URL is not configured!');
+            throw new Error('OAuth configuration error: SUPABASE_URL is missing. Please check NEXT_PUBLIC_SB_URL environment variable.');
+        }
+
+        if (!SUPABASE_ANON_KEY) {
+            console.error('[OAuth] ERROR: SUPABASE_ANON_KEY is not configured!');
+            throw new Error('OAuth configuration error: ANON_KEY is missing. Please check NEXT_PUBLIC_SB_KEY environment variable.');
+        }
+
         // Build Supabase OAuth URL
         const authUrl = new URL(`${SUPABASE_URL}/auth/v1/authorize`);
         authUrl.searchParams.set('provider', provider);
         authUrl.searchParams.set('redirect_to', redirectTo);
-
-        // IMPORTANT: Add apikey - required for Supabase OAuth
-        if (SUPABASE_ANON_KEY) {
-            authUrl.searchParams.set('apikey', SUPABASE_ANON_KEY);
-        }
+        authUrl.searchParams.set('apikey', SUPABASE_ANON_KEY);
 
         console.log('[OAuth] Full OAuth URL:', authUrl.toString());
 
