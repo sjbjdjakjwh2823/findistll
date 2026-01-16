@@ -76,60 +76,56 @@ class XBRLIntelligenceResult:
 
 
 # ============================================================
-# SCALE PROCESSOR (v2 - Fixed)
+# SCALE PROCESSOR (v3 - Self-Healing)
 # ============================================================
 
 class ScaleProcessor:
     """
-    수치 스케일 처리기 (v2)
+    수치 스케일 처리기 (v3) - Self-Healing Scale Logic
     
-    XBRL decimals 속성에 따른 정확한 단위 환산:
-    - decimals="-6": 백만 단위 (×10^6)
-    - decimals="-3": 천 단위 (×10^3)
-    - decimals="0": 정수 단위
+    🔴 지능형 수치 보정 (Self-Healing):
+    1. 원본 값이 이미 큰 절대값(≥10^6)이고 decimals가 음수면 곱셈 중단
+    2. 최종값이 10^15 초과 시 자동 역산(Reverse Scaling)
+    3. 모든 수치를 Billion($10^9) 또는 Million($10^6) 단위로 표준화
     
-    🔴 Critical Fixes:
-    - 중복 스케일 적용 방지 (decimals + unit 동시 적용 금지)
-    - 합리적 범위 검증 (trillion 초과 시 경고)
-    - URL/날짜 형식 자동 필터링
+    입력: 다양한 형식의 XBRL 수치
+    출력: 합리적 범위(~$1T)의 표준화된 수치
     """
     
-    # 합리적 재무 수치 범위 (단위: 절대값)
-    MAX_REASONABLE_VALUE = Decimal('1e15')  # 1천 조 (Apple 시총 이상)
-    MIN_REASONABLE_VALUE = Decimal('1')     # 1 이상
+    # 표준화 목표 단위
+    STANDARD_UNIT_BILLION = Decimal('1e9')   # $1B = 10^9
+    STANDARD_UNIT_MILLION = Decimal('1e6')   # $1M = 10^6
+    
+    # 합리적 재무 수치 범위
+    MAX_REASONABLE_VALUE = Decimal('1e13')   # 10조 (Apple 총자산 ~$400B의 10배)
+    MIN_REASONABLE_VALUE = Decimal('1')
+    
+    # 이중 곱셈 방지를 위한 원본값 임계치
+    RAW_VALUE_LARGE_THRESHOLD = Decimal('1e6')  # 원본이 100만 이상이면 이미 실제값
     
     # 잘못된 값 패턴 (URL, 날짜 등)
     INVALID_VALUE_PATTERNS = [
-        r'^https?://',           # URL
-        r'^http://',
+        r'^https?://',
         r'\.org/',
         r'\.xsd#',
-        r'^\d{4}-\d{2}-\d{2}$',  # 날짜 형식 YYYY-MM-DD
-        r'^\d{8}$',              # 날짜 형식 YYYYMMDD
-        r'^\d{8}\.\d$',          # 날짜 형식 YYYYMMDD.0
-        r'Member$',              # XBRL Member 태그
-        r'Axis$',                # XBRL Axis 태그
+        r'^\d{4}-\d{2}-\d{2}$',
+        r'^\d{8}$',
+        r'^\d{8}\.\d$',
+        r'Member$',
+        r'Axis$',
     ]
     
     @classmethod
     def is_valid_numeric_value(cls, raw_value: str) -> bool:
-        """
-        유효한 재무 수치 여부 확인
-        
-        URL, 날짜, XBRL 태그 등 비수치 데이터 필터링
-        """
+        """유효한 재무 수치 여부 확인"""
         if not raw_value:
             return False
         
-        # 패턴 체크
         for pattern in cls.INVALID_VALUE_PATTERNS:
             if re.search(pattern, raw_value, re.IGNORECASE):
                 return False
         
-        # 숫자 정리 후 체크
         clean = raw_value.replace(',', '').replace(' ', '').strip()
-        
-        # 음수 허용, 소수점 허용
         clean_for_check = clean.lstrip('-').replace('.', '', 1)
         
         if not clean_for_check:
@@ -146,89 +142,104 @@ class ScaleProcessor:
         apply_unit_scale: bool = True
     ) -> Tuple[Decimal, str, bool]:
         """
-        원시 값을 표준 단위로 변환
+        Self-Healing 수치 표준화
         
         Returns:
-            (표준화된 값, 표준화 설명, 유효성 여부)
+            (표준화된 값, 처리 설명, 유효성 여부)
         
-        🔴 Fix: decimals와 unit 스케일 중 하나만 적용
+        핵심 로직:
+        1. 원본값이 이미 크면(≥10^6) 스케일링 건너뛰기
+        2. 스케일링 후 범위 초과 시 역산(Reverse Scaling)
+        3. 표준 단위(Billion/Million)으로 정규화
         """
-        # 유효성 체크
         if not cls.is_valid_numeric_value(raw_value):
-            return Decimal('0'), f"Invalid value: {raw_value}", False
+            return Decimal('0'), f"Invalid: {raw_value}", False
         
-        # 숫자 정리
         clean_value = raw_value.replace(',', '').replace(' ', '').strip()
         
         try:
-            value = Decimal(clean_value)
+            original_value = Decimal(clean_value)
         except InvalidOperation:
             return Decimal('0'), f"Parse error: {raw_value}", False
         
-        scale_description = "원본"
-        scale_applied = False
+        value = original_value
+        description = "원본"
         
-        # 🔴 FIX: decimals 스케일 먼저 적용 (unit 스케일과 중복 방지)
-        if decimals is not None and not scale_applied:
+        # ═══════════════════════════════════════════════════════════
+        # STEP 1: 지능형 스케일링 판단 (Self-Healing Logic)
+        # ═══════════════════════════════════════════════════════════
+        abs_original = abs(original_value)
+        
+        # 원본값이 이미 크면 (≥10^6) 스케일 적용하지 않음
+        # (Workiva 등 일부 플랫폼은 이미 절대값으로 기록)
+        skip_scaling = abs_original >= cls.RAW_VALUE_LARGE_THRESHOLD
+        
+        if skip_scaling and decimals:
             try:
                 dec_int = int(decimals)
-                
                 if dec_int < 0:
-                    # 음수 decimals: 큰 단위 (예: -6 = 백만)
+                    # 원본이 크고 decimals도 음수면 이미 실제값 → 스케일링 건너뛰기
+                    logger.info(f"Self-Healing: Raw value {abs_original} already large, skipping decimals={decimals} scaling")
+                    description = f"Self-Heal: 원본 유지 (decimals={decimals} 무시)"
+            except ValueError:
+                pass
+        
+        # ═══════════════════════════════════════════════════════════
+        # STEP 2: 조건부 스케일링 (원본이 작을 때만)
+        # ═══════════════════════════════════════════════════════════
+        if not skip_scaling and decimals:
+            try:
+                dec_int = int(decimals)
+                if dec_int < 0:
                     multiplier = Decimal(10) ** abs(dec_int)
-                    value = value * multiplier
-                    scale_applied = True
+                    value = original_value * multiplier
                     
                     scale_map = {
                         -3: "천 단위 (×1,000)",
                         -6: "백만 단위 (×1,000,000)",
                         -9: "십억 단위 (×1,000,000,000)",
                     }
-                    scale_description = scale_map.get(dec_int, f"×10^{abs(dec_int)}")
-                    
+                    description = scale_map.get(dec_int, f"×10^{abs(dec_int)}")
             except ValueError:
                 pass
         
-        # 🔴 FIX: decimals가 적용되지 않은 경우에만 unit 스케일 적용
-        if apply_unit_scale and not scale_applied:
-            unit_lower = unit_ref.lower() if unit_ref else ""
-            
-            if '천원' in unit_lower or 'thousands' in unit_lower:
-                value = value * Decimal('1000')
-                scale_description = "천원 단위"
-                scale_applied = True
-            elif '백만원' in unit_lower or 'millions' in unit_lower:
-                value = value * Decimal('1000000')
-                scale_description = "백만원 단위"
-                scale_applied = True
-            elif '억원' in unit_lower:
-                value = value * Decimal('100000000')
-                scale_description = "억원 단위"
-                scale_applied = True
-        
-        # 🔴 FIX: 합리적 범위 검증
+        # ═══════════════════════════════════════════════════════════
+        # STEP 3: Self-Healing 역산 (Range Overflow 자동 보정)
+        # ═══════════════════════════════════════════════════════════
         abs_value = abs(value)
-        if abs_value > cls.MAX_REASONABLE_VALUE:
-            logger.warning(f"Value exceeds reasonable range: {value} (raw: {raw_value}, decimals: {decimals})")
-            # 스케일 오버플로우 감지 - 원래 값 반환
-            try:
-                original = Decimal(clean_value)
-                return original, f"Scale overflow, using raw: {raw_value}", True
-            except:
-                pass
         
-        return value, scale_description, True
+        if abs_value > cls.MAX_REASONABLE_VALUE:
+            # 값이 비현실적으로 크면 자동 역산
+            reverse_factors = [
+                (Decimal('1e12'), "역산 ÷10^12 (조→십억)"),
+                (Decimal('1e9'), "역산 ÷10^9 (십억→백만)"),
+                (Decimal('1e6'), "역산 ÷10^6 (백만→원)"),
+            ]
+            
+            for factor, desc in reverse_factors:
+                corrected = value / factor
+                if abs(corrected) <= cls.MAX_REASONABLE_VALUE and abs(corrected) >= cls.MIN_REASONABLE_VALUE:
+                    logger.warning(f"Self-Healing Reverse Scale: {value} → {corrected} ({desc})")
+                    value = corrected
+                    description = f"Self-Heal: {desc}"
+                    break
+            else:
+                # 여전히 범위 초과면 원본값 사용
+                logger.error(f"Self-Healing failed, using original: {original_value}")
+                value = original_value
+                description = "Self-Heal 실패 → 원본 사용"
+        
+        return value, description, True
     
     @staticmethod
     def format_currency(value: Decimal, currency: str = "USD") -> str:
-        """통화 포맷팅"""
+        """통화 포맷팅 (간소화된 단위 표시)"""
         try:
             abs_val = abs(value)
             sign = "-" if value < 0 else ""
             
-            # 간소화된 단위 표시
             if abs_val >= Decimal('1e12'):
-                formatted = f"{float(abs_val / Decimal('1e12')):.2f}조"
+                formatted = f"{float(abs_val / Decimal('1e12')):.2f}T"
             elif abs_val >= Decimal('1e9'):
                 formatted = f"{float(abs_val / Decimal('1e9')):.2f}B"
             elif abs_val >= Decimal('1e6'):
@@ -246,7 +257,31 @@ class ScaleProcessor:
                 return f"{sign}{formatted} {currency}"
         except:
             return str(value)
+    
+    @classmethod
+    def validate_financial_equation(
+        cls,
+        assets: Optional[Decimal],
+        liabilities: Optional[Decimal],
+        equity: Optional[Decimal]
+    ) -> Tuple[bool, str]:
+        """
+        재무등식 검증: Assets = Liabilities + Equity
+        
+        Returns:
+            (검증 통과 여부, 검증 메시지)
+        """
+        if not assets or not liabilities or not equity:
+            return True, "데이터 부족으로 검증 생략"
+        
+        expected = liabilities + equity
+        difference = abs(assets - expected)
+        tolerance = abs(assets) * Decimal('0.01')  # 1% 허용 오차
 
+        if difference <= tolerance:
+            return True, f"✅ 재무등식 검증 통과: Assets({cls.format_currency(assets)}) ≈ L+E({cls.format_currency(expected)})"
+        else:
+            return False, f"⚠️ 재무등식 불일치: Assets({cls.format_currency(assets)}) ≠ L+E({cls.format_currency(expected)}), 차이: {cls.format_currency(difference)}"
 
 # ============================================================
 # CONTEXT FILTER

@@ -661,30 +661,44 @@ class XBRLParser:
     
     def _standardize_value(self, value: str, unit_ref: str, decimals: str) -> str:
         """
-        Standardize numeric value to absolute units.
+        Self-Healing 수치 표준화 (v3)
         
-        🔴 FIX: Prevent double scaling (decimals + unit)
-        - Apply ONLY ONE scale: decimals OR unit, not both
-        - Add range validation to catch overflow
+        🔴 핵심 로직:
+        1. 원본값이 이미 크면(≥10^6) 스케일링 건너뛰기
+        2. 스케일링 후 범위 초과 시 자동 역산(Reverse Scaling)
         """
         clean = value.replace(',', '').replace(' ', '')
         
-        # Filter out non-numeric values (URLs, dates, etc.)
+        # Filter URLs, XSD refs
         if 'http' in clean.lower() or 'xsd' in clean.lower():
             return value
         
         try:
             numeric = float(clean)
-            scale_applied = False
+            original = numeric
             
-            # 🔴 FIX: Apply decimals scale FIRST (one-time only)
-            if decimals and decimals.lstrip('-').isdigit():
+            # ═════════════════════════════════════════════════════
+            # STEP 1: Self-Healing - 원본값이 크면 스케일링 건너뛰기
+            # ═════════════════════════════════════════════════════
+            RAW_VALUE_LARGE_THRESHOLD = 1e6  # 100만 이상은 이미 실제값
+            skip_scaling = abs(numeric) >= RAW_VALUE_LARGE_THRESHOLD
+            
+            if skip_scaling and decimals and decimals.lstrip('-').isdigit():
+                dec = int(decimals)
+                if dec < 0:
+                    # 원본이 크고 decimals도 음수 → 스케일링 건너뛰기
+                    return f"{int(numeric):,}"
+            
+            # ═════════════════════════════════════════════════════
+            # STEP 2: 조건부 스케일링 (원본이 작을 때만)
+            # ═════════════════════════════════════════════════════
+            scale_applied = False
+            if not skip_scaling and decimals and decimals.lstrip('-').isdigit():
                 dec = int(decimals)
                 if dec < 0:
                     numeric *= (10 ** abs(dec))
                     scale_applied = True
             
-            # 🔴 FIX: Apply unit scale ONLY if decimals not applied
             if not scale_applied:
                 unit_text = self.units.get(unit_ref, '').lower()
                 for pattern, mult in self.UNIT_MULTIPLIERS.items():
@@ -692,19 +706,21 @@ class XBRLParser:
                         numeric *= mult
                         break
             
-            # 🔴 FIX: Range validation - cap at reasonable max
-            MAX_REASONABLE = 1e15  # 1 quadrillion
+            # ═════════════════════════════════════════════════════
+            # STEP 3: Self-Healing 역산 (Overflow 자동 보정)
+            # ═════════════════════════════════════════════════════
+            MAX_REASONABLE = 1e13  # 10조 달러 (Apple 총자산의 10배)
+            
             if abs(numeric) > MAX_REASONABLE:
-                # Likely overflow - return original scaled by decimals only if needed
-                try:
-                    fallback = float(clean)
-                    if decimals and decimals.lstrip('-').isdigit():
-                        dec = int(decimals)
-                        if dec < 0:
-                            fallback *= (10 ** abs(dec))
-                    return f"{int(fallback):,}" if abs(fallback) < MAX_REASONABLE else value
-                except:
-                    return value
+                # 자동 역산 시도
+                for factor in [1e12, 1e9, 1e6]:
+                    corrected = numeric / factor
+                    if abs(corrected) <= MAX_REASONABLE and abs(corrected) >= 1:
+                        numeric = corrected
+                        break
+                else:
+                    # 여전히 범위 초과면 원본 사용
+                    numeric = original
             
             return f"{int(numeric):,}"
         except ValueError:
