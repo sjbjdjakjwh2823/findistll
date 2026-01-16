@@ -16,7 +16,7 @@ interface AuthContextType {
     token: string | null;
     loading: boolean;
     login: (email: string, password: string) => Promise<void>;
-    register: (email: string, password: string, fullName?: string) => Promise<void>;
+    register: (email: string, password: string, fullName?: string) => Promise<{ success: boolean; requiresEmailConfirmation: boolean }>;
     signInWithOAuth: (provider: 'google' | 'github') => Promise<void>;
     logout: () => void;
     isAuthenticated: boolean;
@@ -126,26 +126,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
     };
 
-    const register = async (email: string, password: string, fullName?: string) => {
+    const register = async (email: string, password: string, fullName?: string): Promise<{ success: boolean; requiresEmailConfirmation: boolean }> => {
         const response = await axios.post(apiUrl('/api/auth/register'), {
             email,
             password,
             full_name: fullName
         });
 
-        const { access_token, user: userData } = response.data;
-        if (access_token) {
-            localStorage.setItem('access_token', access_token);
-            setToken(access_token);
+        // Don't auto-login after registration
+        // Clear any tokens that might have been set
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        setToken(null);
+        setUser(null);
 
-            if (userData) {
-                setUser({
-                    id: userData.id,
-                    email: userData.email,
-                    role: userData.role
-                });
-            }
-        }
+        // Check if email confirmation is required
+        const userData = response.data.user;
+        const requiresEmailConfirmation = userData?.email_confirmed_at === null || userData?.confirmed_at === null;
+
+        return {
+            success: true,
+            requiresEmailConfirmation
+        };
     };
 
     const signInWithOAuth = async (provider: 'google' | 'github') => {

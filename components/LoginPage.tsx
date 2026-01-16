@@ -28,18 +28,38 @@ export default function LoginPage() {
     const [loading, setLoading] = useState(false);
     const [oauthLoading, setOauthLoading] = useState<'google' | 'github' | null>(null);
     const [error, setError] = useState('');
+    const [successMessage, setSuccessMessage] = useState('');
     const { login, register, signInWithOAuth } = useAuth();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         setError('');
+        setSuccessMessage('');
 
         try {
             if (isLogin) {
                 await login(email, password);
             } else {
-                await register(email, password, fullName);
+                // Registration - don't auto-login, show success message
+                const result = await register(email, password, fullName);
+
+                if (result.success) {
+                    // Clear form
+                    setEmail('');
+                    setPassword('');
+                    setFullName('');
+
+                    // Switch to login mode
+                    setIsLogin(true);
+
+                    // Show success message
+                    if (result.requiresEmailConfirmation) {
+                        setSuccessMessage('회원가입이 완료되었습니다! 이메일 인증 후 로그인해 주세요. 📧');
+                    } else {
+                        setSuccessMessage('회원가입이 완료되었습니다. 로그인을 진행해 주세요. ✅');
+                    }
+                }
             }
         } catch (err: any) {
             console.error('Auth error:', err);
@@ -222,6 +242,12 @@ export default function LoginPage() {
                                 </div>
                             </div>
 
+                            {successMessage && (
+                                <div className="p-3 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm">
+                                    {successMessage}
+                                </div>
+                            )}
+
                             {error && (
                                 <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm">
                                     {error}
@@ -252,6 +278,7 @@ export default function LoginPage() {
                                 onClick={() => {
                                     setIsLogin(!isLogin);
                                     setError('');
+                                    setSuccessMessage('');
                                 }}
                                 className="text-blue-600 hover:text-blue-700 font-medium transition-colors"
                             >
