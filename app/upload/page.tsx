@@ -150,8 +150,17 @@ export default function UploadPage() {
 
     const downloadFile = async (url: string, filename: string) => {
         try {
-            const response = await fetch(url);
-            if (!response.ok) throw new Error('Download failed');
+            const token = localStorage.getItem('access_token');
+
+            const response = await fetch(url, {
+                headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('Download error:', response.status, errorText);
+                throw new Error(`Download failed: ${response.status}`);
+            }
 
             const blob = await response.blob();
             const blobUrl = window.URL.createObjectURL(blob);
@@ -162,9 +171,11 @@ export default function UploadPage() {
             a.click();
             window.URL.revokeObjectURL(blobUrl);
             document.body.removeChild(a);
+
+            setToast({ message: '다운로드 완료!', type: 'success' });
         } catch (error: any) {
             console.error('Download failed:', error);
-            setToast({ message: '다운로드 실패. 다시 시도해주세요.', type: 'error' });
+            setToast({ message: `다운로드 실패: ${error.message}`, type: 'error' });
         }
     };
 
@@ -430,8 +441,8 @@ export default function UploadPage() {
             {toast && (
                 <div
                     className={`fixed bottom-6 right-6 px-6 py-4 rounded-xl shadow-lg flex items-center gap-3 z-50 transition-all ${toast.type === 'success'
-                            ? 'bg-green-600 text-white'
-                            : 'bg-red-600 text-white'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-red-600 text-white'
                         }`}
                 >
                     {toast.type === 'success' ? (
