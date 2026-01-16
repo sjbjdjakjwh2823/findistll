@@ -383,6 +383,9 @@ class FileIngestionService:
     
     def _build_financial_tables(self, facts: List[Dict]) -> List[Dict]:
         """팩트 리스트를 재무제표 테이블 형식으로 변환."""
+        from .xbrl_semantic_engine import ScaleProcessor
+        from decimal import Decimal, InvalidOperation
+
         # 재무상태표 항목
         balance_sheet = {
             "name": "재무상태표 (Statement of Financial Position)",
@@ -398,8 +401,24 @@ class FileIngestionService:
         }
         
         for fact in facts:
-            label = fact.get("label", "")
-            value = fact.get("value", "")
+            # 🔴 FIX: 레이블 오타 수정 및 영문 표준화
+            raw_label = fact.get("label", "")
+            label = ScaleProcessor.fix_label_typos(raw_label)
+            
+            # 🔴 FIX: 수치 정규화 (Billion/Million 단위)
+            raw_value = fact.get("value", "")
+            try:
+                clean_value = raw_value.replace(',', '').replace(' ', '')
+                if clean_value and clean_value != '-':
+                    decimal_value = Decimal(clean_value)
+                    # 테이블 행 데이터도 요약본과 동일하게 정규화
+                    std_value = ScaleProcessor.normalize_to_billion(decimal_value)
+                    value = std_value
+                else:
+                    value = raw_value
+            except (ValueError, InvalidOperation):
+                value = raw_value
+            
             period = fact.get("period", "")
             hierarchy = fact.get("hierarchy", "")
             
