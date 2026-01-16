@@ -586,11 +586,255 @@ class XBRLReasoner:
         else:
             return "ROE가 낮아 자본 대비 수익 창출 능력 개선이 필요합니다."
     
+    def generate_timeseries_qa(self, current_period: str = "2025", 
+                                prior_period: str = "2024") -> List[Dict]:
+        """Generate time-series comparison Q&A pairs."""
+        qas = []
+        
+        # Key metrics to compare
+        metrics_to_compare = [
+            ("Revenue", "매출액", "성장"),
+            ("NetIncome", "당기순이익", "증가"),
+            ("Assets", "총자산", "확대"),
+            ("Equity", "자본", "증가"),
+            ("OperatingProfit", "영업이익", "성장"),
+        ]
+        
+        for metric_name, kr_name, trend_word in metrics_to_compare:
+            growth_metric = self.metrics_engine.calc_yoy_growth(
+                metric_name, current_period, prior_period
+            )
+            
+            if growth_metric:
+                current_val = self.metrics_engine.get_value(metric_name, current_period)
+                prior_val = self.metrics_engine.get_value(metric_name, prior_period)
+                
+                if current_val and prior_val:
+                    trend = "증가" if growth_metric.value >= 0 else "감소"
+                    trend_analysis = self._analyze_trend(kr_name, growth_metric.value)
+                    
+                    qas.append({
+                        "instruction": f"전년 대비 {self.company_name}의 {kr_name} {trend_word}세가 어떻게 변화했는가?",
+                        "response": (
+                            f"{current_period}년 {kr_name}은 {current_val:,.0f}으로, "
+                            f"{prior_period}년 {prior_val:,.0f} 대비 "
+                            f"{abs(growth_metric.value):.1f}% {trend}했습니다. "
+                            f"{trend_analysis}"
+                        ),
+                        "reasoning_steps": (
+                            f"1단계: {prior_period}년 {kr_name} 확인 ({prior_val:,.0f}) -> "
+                            f"2단계: {current_period}년 {kr_name} 확인 ({current_val:,.0f}) -> "
+                            f"3단계: 증감률 계산 $$\\frac{{{current_val:,.0f} - {prior_val:,.0f}}}{{{prior_val:,.0f}}} \\times 100 = {growth_metric.value:.1f}\\%$$"
+                        ),
+                        "calculations": {
+                            "metric": kr_name,
+                            "current_value": current_val,
+                            "prior_value": prior_val,
+                            "change_amount": current_val - prior_val,
+                            "change_percent": growth_metric.value,
+                            "formula": growth_metric.formula
+                        },
+                        "context": [
+                            f"<{metric_name} period='{prior_period}'>{prior_val}</{metric_name}>",
+                            f"<{metric_name} period='{current_period}'>{current_val}</{metric_name}>"
+                        ],
+                        "verified": True,
+                        "type": "timeseries"
+                    })
+        
+        return qas
+    
+    def _analyze_trend(self, metric_name: str, growth_rate: float) -> str:
+        """Provide strategic analysis for growth trends."""
+        if metric_name in ["매출액", "영업이익"]:
+            if growth_rate >= 20:
+                return "고성장 국면으로 시장 점유율 확대 전략이 효과적입니다."
+            elif growth_rate >= 10:
+                return "안정적인 성장세를 유지하고 있습니다."
+            elif growth_rate >= 0:
+                return "성장 모멘텀이 다소 둔화되었으나 긍정적입니다."
+            elif growth_rate >= -10:
+                return "소폭 감소로 시장 환경 모니터링이 필요합니다."
+            else:
+                return "급격한 하락으로 전략적 대응이 시급합니다."
+        elif metric_name in ["당기순이익"]:
+            if growth_rate >= 0:
+                return "수익성이 개선되어 재무 건전성에 긍정적입니다."
+            else:
+                return "수익성 하락에 대한 원인 분석이 필요합니다."
+        else:
+            return "전년 대비 변화 추이를 지속 모니터링해야 합니다."
+    
+    def generate_verification_qa(self, period: str = "current") -> List[Dict]:
+        """Generate data integrity verification Q&A."""
+        qas = []
+        
+        # Balance Sheet Verification
+        assets = self.metrics_engine.get_value("Assets", period)
+        liabilities = self.metrics_engine.get_value("Liabilities", period)
+        equity = self.metrics_engine.get_value("Equity", period)
+        
+        if all([assets, liabilities, equity]):
+            expected = liabilities + equity
+            diff = abs(assets - expected)
+            is_valid = diff <= (assets * 0.01)
+            
+            qas.append({
+                "instruction": f"{self.company_name}의 재무상태표가 회계 등식(자산 = 부채 + 자본)을 충족하는지 검증하십시오.",
+                "response": (
+                    f"검증 결과: {'✅ 통과' if is_valid else '⚠️ 불일치'}\n\n"
+                    f"$$\\text{{총자산}} = \\text{{총부채}} + \\text{{자본}}$$\n\n"
+                    f"• 총자산: {assets:,.0f}\n"
+                    f"• 총부채 + 자본: {liabilities:,.0f} + {equity:,.0f} = {expected:,.0f}\n"
+                    f"• 차이: {diff:,.0f} ({'허용범위 1% 이내' if is_valid else '검토 필요'})"
+                ),
+                "reasoning_steps": (
+                    f"1단계: 총자산 확인 ({assets:,.0f}) -> "
+                    f"2단계: 총부채 확인 ({liabilities:,.0f}) -> "
+                    f"3단계: 자본 확인 ({equity:,.0f}) -> "
+                    f"4단계: 등식 검증 ({assets:,.0f} ≈ {expected:,.0f})"
+                ),
+                "calculations": {
+                    "assets": assets,
+                    "liabilities": liabilities,
+                    "equity": equity,
+                    "expected_sum": expected,
+                    "difference": diff,
+                    "tolerance_percent": 1.0,
+                    "formula": "$$\\text{Assets} = \\text{Liabilities} + \\text{Equity}$$"
+                },
+                "context": [
+                    self.metrics_engine.get_context("Assets"),
+                    self.metrics_engine.get_context("Liabilities"),
+                    self.metrics_engine.get_context("Equity")
+                ],
+                "verified": is_valid,
+                "type": "verification"
+            })
+        
+        # Gross Profit Verification
+        revenue = self.metrics_engine.get_value("Revenue", period)
+        cogs = self.metrics_engine.get_value("CostOfSales", period)
+        gross_profit = self.metrics_engine.get_value("GrossProfit", period)
+        
+        if all([revenue, cogs, gross_profit]):
+            expected_gp = revenue - cogs
+            diff = abs(gross_profit - expected_gp)
+            is_valid = diff <= (revenue * 0.01)
+            
+            qas.append({
+                "instruction": f"매출총이익이 올바르게 계산되었는지 검증하십시오.",
+                "response": (
+                    f"검증 결과: {'✅ 통과' if is_valid else '⚠️ 불일치'}\n\n"
+                    f"$$\\text{{매출총이익}} = \\text{{매출액}} - \\text{{매출원가}}$$\n\n"
+                    f"• 매출액: {revenue:,.0f}\n"
+                    f"• 매출원가: {cogs:,.0f}\n"
+                    f"• 계산된 매출총이익: {expected_gp:,.0f}\n"
+                    f"• 보고된 매출총이익: {gross_profit:,.0f}"
+                ),
+                "reasoning_steps": (
+                    f"1단계: 매출액 확인 -> 2단계: 매출원가 확인 -> "
+                    f"3단계: 차감 계산 -> 4단계: 보고값과 비교"
+                ),
+                "calculations": {
+                    "revenue": revenue,
+                    "cost_of_sales": cogs,
+                    "calculated_gross_profit": expected_gp,
+                    "reported_gross_profit": gross_profit,
+                    "formula": "$$\\text{Gross Profit} = \\text{Revenue} - \\text{COGS}$$"
+                },
+                "context": [
+                    self.metrics_engine.get_context("Revenue"),
+                    self.metrics_engine.get_context("CostOfSales"),
+                    self.metrics_engine.get_context("GrossProfit")
+                ],
+                "verified": is_valid,
+                "type": "verification"
+            })
+        
+        return qas
+    
+    def calc_operating_profit_margin(self, period: str = "current") -> Optional[Dict]:
+        """Generate Operating Profit Margin Q&A."""
+        revenue = self.metrics_engine.get_value("Revenue", period)
+        operating = self.metrics_engine.get_value("OperatingProfit", period)
+        
+        if not revenue or not operating or revenue == 0:
+            return None
+        
+        margin = (operating / revenue) * 100
+        
+        analysis = (
+            "영업효율이 우수합니다." if margin >= 15 else
+            "양호한 영업효율을 보이고 있습니다." if margin >= 10 else
+            "영업효율 개선이 필요합니다."
+        )
+        
+        return {
+            "instruction": f"{self.company_name}의 영업이익률(Operating Profit Margin)을 분석하십시오.",
+            "response": (
+                f"{period}년 기준 영업이익률은 {margin:.1f}%로 산출됩니다. "
+                f"$$\\text{{영업이익률}} = \\frac{{{operating:,.0f}}}{{{revenue:,.0f}}} \\times 100 = {margin:.1f}\\%$$ "
+                f"{analysis}"
+            ),
+            "reasoning_steps": (
+                f"1단계: 매출액(Net Sales) 확인 ({revenue:,.0f}) -> "
+                f"2단계: 영업이익(Operating Income) 확인 ({operating:,.0f}) -> "
+                f"3단계: 나눗셈 실행 ({operating:,.0f} ÷ {revenue:,.0f} × 100)"
+            ),
+            "calculations": {
+                "name": "영업이익률",
+                "revenue": revenue,
+                "operating_profit": operating,
+                "margin_percent": margin,
+                "formula": "$$\\text{Operating Profit Margin} = \\frac{\\text{Operating Income}}{\\text{Net Sales}} \\times 100$$"
+            },
+            "context": [
+                self.metrics_engine.get_context("Revenue"),
+                self.metrics_engine.get_context("OperatingProfit")
+            ],
+            "verified": True,
+            "type": "reasoning"
+        }
+    
+    def generate_all_qa(self, current_period: str = "2025", 
+                        prior_period: str = "2024") -> List[Dict]:
+        """Generate all types of Q&A pairs: reasoning, timeseries, verification."""
+        all_qas = []
+        
+        # 1. Basic reasoning Q&A (existing)
+        all_qas.extend(self.generate_reasoning_qa(current_period))
+        
+        # 2. Operating Profit Margin
+        opm_qa = self.calc_operating_profit_margin(current_period)
+        if opm_qa:
+            all_qas.append(opm_qa)
+        
+        # 3. Time-series comparison
+        all_qas.extend(self.generate_timeseries_qa(current_period, prior_period))
+        
+        # 4. Data verification
+        all_qas.extend(self.generate_verification_qa(current_period))
+        
+        return all_qas
+    
     def to_jsonl(self, parsed_data: Dict[str, Any], period: str = "current") -> str:
-        """Generate JSONL output with reasoning Q&A pairs."""
+        """Generate JSONL output with all Q&A pairs."""
         self.load_data(parsed_data)
         
-        qas = self.generate_reasoning_qa(period)
+        # Try to detect periods from data
+        periods = set()
+        for fact in parsed_data.get("facts", []):
+            p = fact.get("period")
+            if p and p.isdigit():
+                periods.add(p)
+        
+        sorted_periods = sorted(periods, reverse=True)
+        current = sorted_periods[0] if sorted_periods else "current"
+        prior = sorted_periods[1] if len(sorted_periods) > 1 else str(int(current) - 1) if current.isdigit() else "prior"
+        
+        # Generate all Q&A types
+        qas = self.generate_all_qa(current, prior)
         
         lines = []
         for qa in qas:
