@@ -252,10 +252,7 @@ class FileIngestionService:
             "processed_by": "gemini-2.0-flash-text"
         }
         
-        return result        elif file_type in ('pdf', 'image'):
-            return await self._process_with_gemini(file_content, filename, mime_type)
-        else:
-            raise ValueError(f"Unsupported file type: {mime_type}")
+        return result
     
     async def _process_csv(self, content: bytes, filename: str) -> Dict[str, Any]:
         """Process CSV file using standard csv module."""
