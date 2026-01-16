@@ -195,6 +195,13 @@ class SupabaseAuth:
     async def login(self, email: str, password: str) -> TokenResponse:
         """Login user with Supabase Auth."""
         self._check_config()
+        
+        # Debug: Log what we're sending (mask password)
+        print(f"[AUTH DEBUG] Login attempt for email: {email}")
+        print(f"[AUTH DEBUG] Password length: {len(password) if password else 0}")
+        print(f"[AUTH DEBUG] Auth URL: {self.auth_url}/token?grant_type=password")
+        print(f"[AUTH DEBUG] Has anon_key: {bool(self.anon_key)}")
+        
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{self.auth_url}/token?grant_type=password",
@@ -206,6 +213,11 @@ class SupabaseAuth:
                 timeout=30.0
             )
             
+            # Debug: Log full response for 400 errors
+            print(f"[AUTH DEBUG] Response status: {response.status_code}")
+            if response.status_code != 200:
+                print(f"[AUTH DEBUG] Response body: {response.text}")
+            
             if response.status_code == 200:
                 data = response.json()
                 return TokenResponse(
@@ -216,9 +228,11 @@ class SupabaseAuth:
                 )
             elif response.status_code == 400:
                 error = response.json()
+                error_msg = error.get("error_description", error.get("msg", error.get("message", "Invalid login credentials")))
+                print(f"[AUTH DEBUG] Login 400 error from Supabase: {error}")
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail=error.get("error_description", "Invalid login credentials")
+                    detail=error_msg
                 )
             else:
                 raise HTTPException(
