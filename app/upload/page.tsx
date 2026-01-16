@@ -230,6 +230,7 @@ export default function UploadPage() {
                     <span className="px-3 py-1 bg-cyan-50 text-cyan-700 rounded-full text-sm font-medium">HWP</span>
                     <span className="px-3 py-1 bg-green-50 text-green-700 rounded-full text-sm font-medium">Excel</span>
                     <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm font-medium">CSV</span>
+                    <span className="px-3 py-1 bg-amber-50 text-amber-700 rounded-full text-sm font-medium">XBRL</span>
                     <span className="px-3 py-1 bg-purple-50 text-purple-700 rounded-full text-sm font-medium">Images</span>
                 </div>
                 <p className="text-sm text-gray-400 mb-6">Maximum {MAX_FILES} files at once • {files.length}/{MAX_FILES} selected</p>
@@ -240,7 +241,7 @@ export default function UploadPage() {
                     onChange={handleFileChange}
                     className="hidden"
                     id="file-upload"
-                    accept=".pdf,.xlsx,.xls,.csv,.docx,.hwpx,.hwp,image/*"
+                    accept=".pdf,.xlsx,.xls,.csv,.docx,.hwpx,.hwp,.xml,.xbrl,image/*"
                     multiple
                 />
                 {files.length < MAX_FILES && !allCompleted && (
