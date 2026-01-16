@@ -14,5 +14,6 @@ cryptography
 python-dotenv
 h5py
 numpy
+python-docx
 
 # Force rebuild trigger for Vercel cache invalidation 2026-01-16
