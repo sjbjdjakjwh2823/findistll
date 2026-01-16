@@ -299,9 +299,9 @@ class ScaleProcessor:
         if not label:
             return label
         
-        # 1. 끝의 중복 문자 제거 (예: 이익익익 → 이익)
-        # 한글 중복 패턴
-        fixed = re.sub(r'(.{1,3})\1+$', r'\1', label)
+        # 1. 끝의 중복 문자 제거 (v7.0 Specific Regex)
+        # "익|계|금|액|용|비|성|합" 등의 접미사가 반복되는 경우 하나로 축소
+        fixed = re.sub(r'(익|계|금|액|용|비|성|합)\1+', r'\1', label)
         
         # 2. 연속 동일 단어 제거
         fixed = re.sub(r'\b(\w+)\s+\1\b', r'\1', fixed)
@@ -1007,6 +1007,7 @@ class XBRLSemanticEngine:
             'receivables': ['AccountsReceivable', 'TradeReceivables', 'AccountsReceivableNetCurrent', '매출채권'],
             'cogs': ['CostOfGoodsAndServicesSold', 'CostOfRevenue', 'CostOfSales', '매출원가'],
             'rnd_expenses': ['ResearchAndDevelopmentExpense', 'ResearchAndDevelopment', 'ResearchAndDevelopmentExpenseExcludingAmortization', 'RndExpenese', '경상연구개발비'],
+            'sga_expenses': ['SellingGeneralAndAdministrativeExpense', 'SellingGeneralAndAdministrative', 'SGA', '판관비', '판매비와관리비'],
         }
         
         for fact in facts:
@@ -1350,30 +1351,57 @@ $$\\text{{DSO}} = \\frac{{365}}{{{turnover:.2f}}} = {dso:.1f}\\text{{일}}$$
         return qa_list
 
     def _generate_efficiency_qa(self, fact_dict: Dict, facts: List[SemanticFact]) -> List[Dict]:
-        """효율성 분석 Q&A (R&D 효율성 등) - v6.0"""
+        """효율성 분석 Q&A (R&D 효율성, 판관비율 등) - v7.0"""
         qa_list = []
         
         revenue = fact_dict.get('revenue')
         rnd = fact_dict.get('rnd_expenses')
+        sga = fact_dict.get('sga_expenses')
         
+        # 1. R&D Intensity
         if revenue and rnd and float(revenue.value) > 0:
             intensity = float(rnd.value) / float(revenue.value) * 100
             qa_list.append({
                 "question": f"{self.company_name}의 R&D 투자 집중도를 분석하십시오.",
                 "response": f"""## R&D 투자 집중도 (R&D Intensity) 분석
 
-### 계산 공식
+### 1. 공식 정의
 $$\\text{{R&D 집중도}} = \\frac{{\\text{{연구개발비}}}}{{\\text{{매출액}}}} \\times 100$$
 
-### 수치 대입
+### 2. 추출 수치
 - 연구개발비: {self.scale_processor.format_currency(rnd.value)}
 - 매출액: {self.scale_processor.format_currency(revenue.value)}
 
+### 3. 계산 과정
 $$\\text{{집중도}} = \\frac{{{float(rnd.value):,.0f}}}{{{float(revenue.value):,.0f}}} \\times 100 = {intensity:.2f}\\%$$
 
-### 회계적 해석
+### 4. 최종 해석
 매출액의 {intensity:.2f}%를 연구개발에 재투자하고 있습니다.
 {'✅ 기술 중심 기업으로서 공격적인 R&D 투자를 진행하고 있습니다.' if intensity >= 10 else '일반적인 수준의 연구개발 투자를 유지하고 있습니다.'}
+""",
+                "type": "efficiency_analysis"
+            })
+            
+        # 2. SG&A Efficiency (판관비율)
+        if revenue and sga and float(revenue.value) > 0:
+            ratio = float(sga.value) / float(revenue.value) * 100
+            qa_list.append({
+                "question": f"{self.company_name}의 판관비율(SG&A Efficiency)을 계산하고 운영 효율성을 분석하십시오.",
+                "response": f"""## 판관비 효율성 (SG&A Ratio) 분석
+
+### 1. 공식 정의
+$$\\text{{판관비율}} = \\frac{{\\text{{판매비와관리비}}}}{{\\text{{매출액}}}} \\times 100$$
+
+### 2. 추출 수치
+- 판매비와관리비: {self.scale_processor.format_currency(sga.value)}
+- 매출액: {self.scale_processor.format_currency(revenue.value)}
+
+### 3. 계산 과정
+$$\\text{{비율}} = \\frac{{{float(sga.value):,.0f}}}{{{float(revenue.value):,.0f}}} \\times 100 = {ratio:.2f}\\%$$
+
+### 4. 최종 해석
+매출액의 {ratio:.2f}%가 판매 및 관리 활동에 지출되었습니다.
+{'✅ 15% 이하로 매우 효율적인 비용 구조를 가지고 있습니다.' if ratio <= 15 else '⚠️ 30% 이상으로 운영 비용 부담이 높은 편입니다. 비용 절감 노력이 필요할 수 있습니다.' if ratio >= 30 else '일반적인 수준(15~30%)의 운영 효율성을 보이고 있습니다.'}
 """,
                 "type": "efficiency_analysis"
             })
