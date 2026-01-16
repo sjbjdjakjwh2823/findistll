@@ -968,11 +968,26 @@ class XBRLSemanticEngine:
         qa = self._generate_financial_health_qa(fact_dict, facts)
         if qa:
             qa_pairs.append(qa)
+            
+        # 6. 활동성 분석 Q&A (v6.0)
+        qa_pairs.extend(self._generate_activity_analysis_qa(fact_dict, facts))
+        
+        # 7. 효율성 분석 Q&A (v6.0)
+        qa_pairs.extend(self._generate_efficiency_qa(fact_dict, facts))
+        
+        # 8. 추세 분석 Q&A (v6.0 - YoY)
+        qa_pairs.extend(self._generate_trend_analysis_qa(facts))
         
         return qa_pairs
     
-    def _build_flexible_fact_dict(self, facts: List[SemanticFact]) -> Dict:
-        """유연한 라벨/개념 매칭을 위한 복합 딕셔너리 구축"""
+    def _build_flexible_fact_dict(self, facts: List[SemanticFact], target_period: str = None) -> Dict:
+        """
+        유연한 라벨/개념 매칭을 위한 복합 딕셔너리 구축
+        
+        Args:
+            facts: 팩트 리스트
+            target_period: 특정 기간(예: "2024") 데이터만 필터링 (None이면 모두)
+        """
         fact_dict = {}
         
         # 핵심 항목 별칭 정의 (다양한 태그명 매핑)
@@ -988,9 +1003,17 @@ class XBRLSemanticEngine:
             'gross_profit': ['GrossProfit', '매출총이익', 'GrossMargin'],
             'operating_income': ['OperatingIncome', 'OperatingProfit', '영업이익', 'IncomeFromOperations'],
             'cash': ['Cash', 'CashAndCashEquivalents', 'CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents', '현금및현금성자산'],
+            'inventory': ['Inventory', 'Inventories', 'InventoryNet', '재고자산'],
+            'receivables': ['AccountsReceivable', 'TradeReceivables', 'AccountsReceivableNetCurrent', '매출채권'],
+            'cogs': ['CostOfGoodsAndServicesSold', 'CostOfRevenue', 'CostOfSales', '매출원가'],
+            'rnd_expenses': ['ResearchAndDevelopmentExpense', 'ResearchAndDevelopment', 'ResearchAndDevelopmentExpenseExcludingAmortization', 'RndExpenese', '경상연구개발비'],
         }
         
         for fact in facts:
+            # 기간 필터링
+            if target_period and fact.period != target_period:
+                continue
+
             # 원본 라벨/개념으로 저장
             key = f"{fact.label}_{fact.period}"
             fact_dict[key] = fact
@@ -1233,6 +1256,183 @@ This is ranked #{i} by absolute value among all reported items.
 """,
             "type": "comprehensive_analysis"
         }
+    
+    def _generate_activity_analysis_qa(self, fact_dict: Dict, facts: List[SemanticFact]) -> List[Dict]:
+        """활동성 분석 Q&A (재고자산회전율, 매출채권회전율) - v6.0"""
+        qa_list = []
+        
+        # 전년도 데이터 로드 (평균값 계산용)
+        try:
+            current_year = int(self.fiscal_year)
+            prior_year = str(current_year - 1)
+            py_fact_dict = self._build_flexible_fact_dict(facts, target_period=prior_year)
+        except:
+            py_fact_dict = {}
+        
+        # 1. 재고자산회전율 (Inventory Turnover)
+        cogs = fact_dict.get('cogs')
+        inventory = fact_dict.get('inventory')
+        
+        if cogs and inventory:
+            py_inventory = py_fact_dict.get('inventory')
+            
+            # 평균 재고자산 계산 (Fallback: 기초 데이터 없으면 기말 값 사용)
+            inv_val = float(inventory.value)
+            if py_inventory:
+                avg_inv = (inv_val + float(py_inventory.value)) / 2
+                avg_desc = f"(기초 {self.scale_processor.format_currency(py_inventory.value)} + 기말 {self.scale_processor.format_currency(inventory.value)}) / 2"
+            else:
+                avg_inv = inv_val
+                avg_desc = f"기말 잔액 {self.scale_processor.format_currency(inventory.value)} (기초 데이터 부재로 대체)"
+            
+            if avg_inv > 0:
+                turnover = float(cogs.value) / avg_inv
+                qa_list.append({
+                    "question": f"{self.company_name}의 재고자산 회전율을 계산하고 재고 관리 효율성을 분석하십시오.",
+                    "response": f"""## 재고자산 회전율 (Inventory Turnover) 분석
+
+### 계산 공식
+$$\\text{{재고자산회전율}} = \\frac{{\\text{{매출원가}}}}{{\\text{{평균 재고자산}}}}$$
+
+### 수치 대입
+- 매출원가: {self.scale_processor.format_currency(cogs.value)}
+- 평균 재고자산: {avg_desc} = {self.scale_processor.format_currency(Decimal(avg_inv))}
+
+$$\\text{{회전율}} = \\frac{{{float(cogs.value):,.0f}}}{{{avg_inv:,.0f}}} = {turnover:.2f}\\text{{회}}$$
+
+### 회계적 해석
+재고자산이 연간 {turnover:.1f}회 회전하고 있습니다. 
+{'✅ 회전율이 높아 재고 관리 효율성이 우수하고 진부화 위험이 낮습니다.' if turnover >= 6 else '⚠️ 회전율이 낮아 과잉 재고 보유 가능성이 있으므로 관리가 필요합니다.'}
+""",
+                    "type": "activity_analysis"
+                })
+
+        # 2. 매출채권회전율 (Receivables Turnover)
+        revenue = fact_dict.get('revenue')
+        receivables = fact_dict.get('receivables')
+        
+        if revenue and receivables:
+            py_recv = py_fact_dict.get('receivables')
+            
+            curr_recv_val = float(receivables.value)
+            if py_recv:
+                avg_recv = (curr_recv_val + float(py_recv.value)) / 2
+                avg_desc = f"(기초 {self.scale_processor.format_currency(py_recv.value)} + 기말 {self.scale_processor.format_currency(receivables.value)}) / 2"
+            else:
+                avg_recv = curr_recv_val
+                avg_desc = f"기말 잔액 {self.scale_processor.format_currency(receivables.value)} (기초 데이터 부재로 대체)"
+                
+            if avg_recv > 0:
+                turnover = float(revenue.value) / avg_recv
+                dso = 365 / turnover
+                qa_list.append({
+                    "question": f"{self.company_name}의 매출채권 회수 기간(DSO)을 계산하고 현금화 속도를 평가하십시오.",
+                    "response": f"""## 매출채권 활동성 분석
+
+### 계산 공식
+1. $$\\text{{매출채권회전율}} = \\frac{{\\text{{매출액}}}}{{\\text{{평균 매출채권}}}}$$
+2. $$\\text{{매출채권회수기간(DSO)}} = \\frac{{365}}{{\\text{{매출채권회전율}}}}$$
+
+### 수치 대입
+- 매출액: {self.scale_processor.format_currency(revenue.value)}
+- 평균 매출채권: {avg_desc} = {self.scale_processor.format_currency(Decimal(avg_recv))}
+
+$$\\text{{회전율}} = \\frac{{{float(revenue.value):,.0f}}}{{{avg_recv:,.0f}}} = {turnover:.2f}\\text{{회}}$$
+$$\\text{{DSO}} = \\frac{{365}}{{{turnover:.2f}}} = {dso:.1f}\\text{{일}}$$
+
+### 회계적 해석
+매출 발생 후 현금 회수까지 평균 {dso:.1f}일이 소요됩니다.
+{'✅ 45일 이내로 현금 회수 속도가 매우 빠릅니다.' if dso <= 45 else '⚠️ 90일 이상 소요되어 현금 흐름 관리에 주의가 필요합니다.' if dso >= 90 else '일반적인 수준(45~90일)의 회수 기간입니다.'}
+""",
+                    "type": "activity_analysis"
+                })
+        
+        return qa_list
+
+    def _generate_efficiency_qa(self, fact_dict: Dict, facts: List[SemanticFact]) -> List[Dict]:
+        """효율성 분석 Q&A (R&D 효율성 등) - v6.0"""
+        qa_list = []
+        
+        revenue = fact_dict.get('revenue')
+        rnd = fact_dict.get('rnd_expenses')
+        
+        if revenue and rnd and float(revenue.value) > 0:
+            intensity = float(rnd.value) / float(revenue.value) * 100
+            qa_list.append({
+                "question": f"{self.company_name}의 R&D 투자 집중도를 분석하십시오.",
+                "response": f"""## R&D 투자 집중도 (R&D Intensity) 분석
+
+### 계산 공식
+$$\\text{{R&D 집중도}} = \\frac{{\\text{{연구개발비}}}}{{\\text{{매출액}}}} \\times 100$$
+
+### 수치 대입
+- 연구개발비: {self.scale_processor.format_currency(rnd.value)}
+- 매출액: {self.scale_processor.format_currency(revenue.value)}
+
+$$\\text{{집중도}} = \\frac{{{float(rnd.value):,.0f}}}{{{float(revenue.value):,.0f}}} \\times 100 = {intensity:.2f}\\%$$
+
+### 회계적 해석
+매출액의 {intensity:.2f}%를 연구개발에 재투자하고 있습니다.
+{'✅ 기술 중심 기업으로서 공격적인 R&D 투자를 진행하고 있습니다.' if intensity >= 10 else '일반적인 수준의 연구개발 투자를 유지하고 있습니다.'}
+""",
+                "type": "efficiency_analysis"
+            })
+            
+        return qa_list
+
+    def _generate_trend_analysis_qa(self, facts: List[SemanticFact]) -> List[Dict]:
+        """시계열 추세 분석 Q&A (YoY Growth) - v6.0"""
+        qa_list = []
+        
+        try:
+            curr_year = str(self.fiscal_year)
+            prev_year = str(int(self.fiscal_year) - 1)
+        except:
+            return []
+            
+        curr_dict = self._build_flexible_fact_dict(facts, target_period=curr_year)
+        prev_dict = self._build_flexible_fact_dict(facts, target_period=prev_year)
+        
+        targets = [
+            ('revenue', '매출액'),
+            ('operating_income', '영업이익'),
+            ('net_income', '당기순이익'),
+            ('total_assets', '자산총계')
+        ]
+        
+        for key, label in targets:
+            curr = curr_dict.get(key)
+            prev = prev_dict.get(key)
+            
+            if curr and prev and float(prev.value) != 0:
+                growth = (float(curr.value) - float(prev.value)) / float(prev.value) * 100
+                
+                # Outlier Detection (1,000% 초과)
+                is_outlier = abs(growth) > 1000
+                outlier_note = "\\n\\n⚠️ **Note**: 비정상적으로 높은 증감률(>1,000%)이 감지되었습니다. 합병, 회계기준 변경 등의 특이 사유가 있는지 확인이 필요합니다." if is_outlier else ""
+                
+                qa_list.append({
+                    "question": f"{self.company_name}의 {curr_year}년 {label} 전년 대비 성장률(YoY)을 분석하십시오.",
+                    "response": f"""## {label} YoY 성장률 분석
+
+### 계산 공식
+$$\\text{{YoY Growth}} = \\frac{{\\text{{당기}} - \\text{{전기}}}}{{\\text{{전기}}}} \\times 100$$
+
+### 수치 대입
+- 당기({curr_year}): {self.scale_processor.format_currency(curr.value)}
+- 전기({prev_year}): {self.scale_processor.format_currency(prev.value)}
+
+### 계산 결과
+$$\\text{{성장률}} = \\frac{{{float(curr.value):,.0f} - {float(prev.value):,.0f}}}{{{float(prev.value):,.0f}}} \\times 100 = {growth:+.2f}\\%$$
+
+### 회계적 해석
+{label}이(가) 전년 대비 **{abs(growth):.2f}% {'증가' if growth > 0 else '감소'}**했습니다.
+{'✅ 두 자릿수 이상의 고성장을 기록했습니다.' if growth >= 10 else '⚠️ 역성장을 기록하여 성장 동력 점검이 필요합니다.' if growth < 0 else '안정적인 성장세를 유지하고 있습니다.'}{outlier_note}
+""",
+                    "type": "trend_analysis"
+                })
+        
+        return qa_list
     
     def _generate_debt_ratio_qa(self, facts: Dict) -> Optional[Dict[str, str]]:
         """부채비율 Q&A 생성"""
