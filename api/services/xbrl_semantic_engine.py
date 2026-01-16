@@ -291,41 +291,51 @@ class ScaleProcessor:
     @staticmethod
     def fix_label_typos(label: str) -> str:
         """
-        레이블 오타 수정
-        
-        - 중복 문자 제거: "매출총이익익익" → "매출총이익"
-        - 연속 중복 패턴 정리
+        레이블 오타 수정 (v9.0 Integrity Check)
+        - Regex Destruction: ([익계금액용비성합료원가세등항목표서])\\1+
+        - Hard-Coded Mapping: English -> Korean Standard
+        - Double-Pass Verification: Logic check for suffix redundancy
         """
         if not label:
-            return label
+            return ""
         
-        # 1. 끝의 중복 문자 제거 (v7.0 Enhanced Regex)
-        # "익|계|금|액|용|비|성|합|료|원|가|세|등" 등의 접미사가 반복되는 경우 하나로 축소
-        fixed = re.sub(r'([익계금액용비성합료원가세등])\1+', r'\1', label)
+        # 공백 제거
+        fixed = label.strip()
+        
+        # 1. 정규표현식 기반 접미사 중복 파괴 (Regex-Based Destruction)
+        # "익|계|금|액|용|비|성|합|료|원|가|세|등|항|목|표|서" 등
+        pattern = r'([익계금액용비성합료원가세등항목표서])\1+'
+        fixed = re.sub(pattern, r'\1', fixed)
         
         # 2. 연속 동일 단어 제거
         fixed = re.sub(r'\b(\w+)\s+\1\b', r'\1', fixed)
         
-        # 3. 특수 케이스 수정
+        # 3. 표준 재무 용어 강제 매핑 (Hard-Coded Mapping)
         typo_fixes = {
-            '매출총이익익': '매출총이익',
-            '영업이익익': '영업이익',
-            '당기순이익익': '당기순이익',
-            '자산총계계': '자산총계',
-            '부채총계계': '부채총계',
-            # Hard-Coded Semantic Mapping (English to Korean Standard)
-            'GrossProfit': '매출총이익',
-            'TotalAssets': '자산총계',
-            'OperatingIncome': '영업이익',
-            'NetIncome': '당기순이익',
-            'TotalLiabilities': '부채총계',
+            # Typos
+            '매출총이익익': '매출총이익', '영업이익익': '영업이익', '당기순이익익': '당기순이익',
+            '자산총계계': '자산총계', '부채총계계': '부채총계', '자본총계계': '자본총계',
+            # English -> Standard Korean
+            'GrossProfit': '매출총이익', 'TotalAssets': '자산총계',
+            'OperatingIncome': '영업이익', 'NetIncome': '당기순이익',
+            'TotalLiabilities': '부채총계', 'StockholdersEquity': '자본총계', 'TotalEquity': '자본총계',
+            'Revenues': '매출액', 'Revenue': '매출액'
         }
         
         for typo, correct in typo_fixes.items():
             if typo in fixed:
                 fixed = fixed.replace(typo, correct)
+                
+        # 4. 이중 검증 및 사후 세척 (Double-Pass Verification)
+        # 마지막 글자와 앞 글자가 동일한지 확인 (Safeguard)
+        target_suffixes = "익계금액용비성합료원가세등항목표서"
+        if len(fixed) >= 2:
+            last_char = fixed[-1]
+            prev_char = fixed[-2]
+            if last_char == prev_char and last_char in target_suffixes:
+                fixed = fixed[:-1]
         
-        return fixed
+        return fixed.strip()
     
     @classmethod
     def validate_financial_equation(
