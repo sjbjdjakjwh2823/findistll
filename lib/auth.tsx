@@ -27,6 +27,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 // Supabase URL for OAuth - loaded from environment variables
 // NEXT_PUBLIC_ prefix required for client-side access in Next.js
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SB_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SB_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -149,10 +150,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             ? `${window.location.origin}/`
             : '';
 
+        console.log('[OAuth] Starting OAuth flow for:', provider);
+        console.log('[OAuth] SUPABASE_URL:', SUPABASE_URL);
+        console.log('[OAuth] Has ANON_KEY:', !!SUPABASE_ANON_KEY);
+        console.log('[OAuth] Redirect to:', redirectTo);
+
         // Build Supabase OAuth URL
         const authUrl = new URL(`${SUPABASE_URL}/auth/v1/authorize`);
         authUrl.searchParams.set('provider', provider);
         authUrl.searchParams.set('redirect_to', redirectTo);
+
+        // IMPORTANT: Add apikey - required for Supabase OAuth
+        if (SUPABASE_ANON_KEY) {
+            authUrl.searchParams.set('apikey', SUPABASE_ANON_KEY);
+        }
+
+        console.log('[OAuth] Full OAuth URL:', authUrl.toString());
 
         // Redirect to OAuth provider
         window.location.href = authUrl.toString();
