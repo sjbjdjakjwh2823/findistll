@@ -1259,7 +1259,7 @@ This is ranked #{i} by absolute value among all reported items.
         }
     
     def _generate_activity_analysis_qa(self, fact_dict: Dict, facts: List[SemanticFact]) -> List[Dict]:
-        """활동성 분석 Q&A (재고자산회전율, 매출채권회전율) - v6.0"""
+        """활동성 분석 Q&A (재고자산회전율, 매출채권회전율) - v7.0"""
         qa_list = []
         
         # 전년도 데이터 로드 (평균값 계산용)
@@ -1277,7 +1277,7 @@ This is ranked #{i} by absolute value among all reported items.
         if cogs and inventory:
             py_inventory = py_fact_dict.get('inventory')
             
-            # 평균 재고자산 계산 (Fallback: 기초 데이터 없으면 기말 값 사용)
+            # 평균 재고자산 계산 (Fallback)
             inv_val = float(inventory.value)
             if py_inventory:
                 avg_inv = (inv_val + float(py_inventory.value)) / 2
@@ -1292,20 +1292,22 @@ This is ranked #{i} by absolute value among all reported items.
                     "question": f"{self.company_name}의 재고자산 회전율을 계산하고 재고 관리 효율성을 분석하십시오.",
                     "response": f"""## 재고자산 회전율 (Inventory Turnover) 분석
 
-### 계산 공식
+### 1. 공식 정의
 $$\\text{{재고자산회전율}} = \\frac{{\\text{{매출원가}}}}{{\\text{{평균 재고자산}}}}$$
 
-### 수치 대입
+### 2. 추출 수치
 - 매출원가: {self.scale_processor.format_currency(cogs.value)}
 - 평균 재고자산: {avg_desc} = {self.scale_processor.format_currency(Decimal(avg_inv))}
 
+### 3. 계산 과정
 $$\\text{{회전율}} = \\frac{{{float(cogs.value):,.0f}}}{{{avg_inv:,.0f}}} = {turnover:.2f}\\text{{회}}$$
 
-### 회계적 해석
+### 4. 최종 해석
 재고자산이 연간 {turnover:.1f}회 회전하고 있습니다. 
 {'✅ 회전율이 높아 재고 관리 효율성이 우수하고 진부화 위험이 낮습니다.' if turnover >= 6 else '⚠️ 회전율이 낮아 과잉 재고 보유 가능성이 있으므로 관리가 필요합니다.'}
 """,
-                    "type": "activity_analysis"
+                    "type": "activity_analysis",
+                    "context": f"매출원가: {self.scale_processor.format_currency(cogs.value)}, 평균 재고자산: {self.scale_processor.format_currency(Decimal(avg_inv))}"
                 })
 
         # 2. 매출채권회전율 (Receivables Turnover)
@@ -1330,22 +1332,24 @@ $$\\text{{회전율}} = \\frac{{{float(cogs.value):,.0f}}}{{{avg_inv:,.0f}}} = {
                     "question": f"{self.company_name}의 매출채권 회수 기간(DSO)을 계산하고 현금화 속도를 평가하십시오.",
                     "response": f"""## 매출채권 활동성 분석
 
-### 계산 공식
+### 1. 공식 정의
 1. $$\\text{{매출채권회전율}} = \\frac{{\\text{{매출액}}}}{{\\text{{평균 매출채권}}}}$$
 2. $$\\text{{매출채권회수기간(DSO)}} = \\frac{{365}}{{\\text{{매출채권회전율}}}}$$
 
-### 수치 대입
+### 2. 추출 수치
 - 매출액: {self.scale_processor.format_currency(revenue.value)}
 - 평균 매출채권: {avg_desc} = {self.scale_processor.format_currency(Decimal(avg_recv))}
 
+### 3. 계산 과정
 $$\\text{{회전율}} = \\frac{{{float(revenue.value):,.0f}}}{{{avg_recv:,.0f}}} = {turnover:.2f}\\text{{회}}$$
 $$\\text{{DSO}} = \\frac{{365}}{{{turnover:.2f}}} = {dso:.1f}\\text{{일}}$$
 
-### 회계적 해석
+### 4. 최종 해석
 매출 발생 후 현금 회수까지 평균 {dso:.1f}일이 소요됩니다.
 {'✅ 45일 이내로 현금 회수 속도가 매우 빠릅니다.' if dso <= 45 else '⚠️ 90일 이상 소요되어 현금 흐름 관리에 주의가 필요합니다.' if dso >= 90 else '일반적인 수준(45~90일)의 회수 기간입니다.'}
 """,
-                    "type": "activity_analysis"
+                    "type": "activity_analysis",
+                    "context": f"매출액: {self.scale_processor.format_currency(revenue.value)}, 평균 매출채권: {self.scale_processor.format_currency(Decimal(avg_recv))}"
                 })
         
         return qa_list
@@ -1379,7 +1383,8 @@ $$\\text{{집중도}} = \\frac{{{float(rnd.value):,.0f}}}{{{float(revenue.value)
 매출액의 {intensity:.2f}%를 연구개발에 재투자하고 있습니다.
 {'✅ 기술 중심 기업으로서 공격적인 R&D 투자를 진행하고 있습니다.' if intensity >= 10 else '일반적인 수준의 연구개발 투자를 유지하고 있습니다.'}
 """,
-                "type": "efficiency_analysis"
+                "type": "efficiency_analysis",
+                "context": f"연구개발비: {self.scale_processor.format_currency(rnd.value)}, 매출액: {self.scale_processor.format_currency(revenue.value)}"
             })
             
         # 2. SG&A Efficiency (판관비율)
@@ -1403,13 +1408,14 @@ $$\\text{{비율}} = \\frac{{{float(sga.value):,.0f}}}{{{float(revenue.value):,.
 매출액의 {ratio:.2f}%가 판매 및 관리 활동에 지출되었습니다.
 {'✅ 15% 이하로 매우 효율적인 비용 구조를 가지고 있습니다.' if ratio <= 15 else '⚠️ 30% 이상으로 운영 비용 부담이 높은 편입니다. 비용 절감 노력이 필요할 수 있습니다.' if ratio >= 30 else '일반적인 수준(15~30%)의 운영 효율성을 보이고 있습니다.'}
 """,
-                "type": "efficiency_analysis"
+                "type": "efficiency_analysis",
+                "context": f"판매비와관리비: {self.scale_processor.format_currency(sga.value)}, 매출액: {self.scale_processor.format_currency(revenue.value)}"
             })
             
         return qa_list
 
     def _generate_trend_analysis_qa(self, facts: List[SemanticFact]) -> List[Dict]:
-        """시계열 추세 분석 Q&A (YoY Growth) - v6.0"""
+        """시계열 추세 분석 Q&A (YoY Growth) - v7.0"""
         qa_list = []
         
         try:
@@ -1443,21 +1449,22 @@ $$\\text{{비율}} = \\frac{{{float(sga.value):,.0f}}}{{{float(revenue.value):,.
                     "question": f"{self.company_name}의 {curr_year}년 {label} 전년 대비 성장률(YoY)을 분석하십시오.",
                     "response": f"""## {label} YoY 성장률 분석
 
-### 계산 공식
+### 1. 공식 정의
 $$\\text{{YoY Growth}} = \\frac{{\\text{{당기}} - \\text{{전기}}}}{{\\text{{전기}}}} \\times 100$$
 
-### 수치 대입
+### 2. 추출 수치
 - 당기({curr_year}): {self.scale_processor.format_currency(curr.value)}
 - 전기({prev_year}): {self.scale_processor.format_currency(prev.value)}
 
-### 계산 결과
+### 3. 계산 과정
 $$\\text{{성장률}} = \\frac{{{float(curr.value):,.0f} - {float(prev.value):,.0f}}}{{{float(prev.value):,.0f}}} \\times 100 = {growth:+.2f}\\%$$
 
-### 회계적 해석
+### 4. 최종 해석
 {label}이(가) 전년 대비 **{abs(growth):.2f}% {'증가' if growth > 0 else '감소'}**했습니다.
 {'✅ 두 자릿수 이상의 고성장을 기록했습니다.' if growth >= 10 else '⚠️ 역성장을 기록하여 성장 동력 점검이 필요합니다.' if growth < 0 else '안정적인 성장세를 유지하고 있습니다.'}{outlier_note}
 """,
-                    "type": "trend_analysis"
+                    "type": "trend_analysis",
+                    "context": f"당기 {label}: {self.scale_processor.format_currency(curr.value)}, 전기 {label}: {self.scale_processor.format_currency(prev.value)}"
                 })
         
         return qa_list
@@ -1738,8 +1745,8 @@ ROE {roe:.2f}%는 주주가 투자한 자본 100원당 {roe:.0f}원의 순이익
             }
             jsonl_lines.append(json.dumps(entry, ensure_ascii=False))
         
-        # 핵심 팩트 Q&A 추가 (단순 조회 비중 축소: 상위 10개만)
-        for fact in facts[:10]:
+        # 핵심 팩트 Q&A 추가 (단순 조회 비중 축소: 상위 8개만)
+        for fact in facts[:8]:
             # 오타 수정된 라벨 사용
             label = self.scale_processor.fix_label_typos(fact.label)
             
