@@ -26,8 +26,12 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // Supabase URL for OAuth - loaded from environment variables
 // NEXT_PUBLIC_ prefix required for client-side access in Next.js
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SB_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SB_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SB_URL
+    || process.env.NEXT_PUBLIC_SUPABASE_URL
+    || 'https://nnuixqxmalttautcqckt.supabase.co';  // Fallback for debugging
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SB_KEY
+    || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    || 'REDACTED_JWT';  // Fallback for debugging
 
 
 export function AuthProvider({ children }: { children: ReactNode }) {
