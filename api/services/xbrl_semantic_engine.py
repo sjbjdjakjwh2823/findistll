@@ -291,51 +291,59 @@ class ScaleProcessor:
     @staticmethod
     def fix_label_typos(label: str) -> str:
         """
-        레이블 오타 수정 (v9.0 Integrity Check)
-        - Regex Destruction: ([익계금액용비성합료원가세등항목표서])\\1+
-        - Hard-Coded Mapping: English -> Korean Standard
-        - Double-Pass Verification: Logic check for suffix redundancy
+        Fix Label Typos & Translate to English (v10.0 Global Standard)
+        
+        1. Translation: Korean -> US-GAAP English
+        2. Deduplication: English suffix cleanup (e.g., "Profitfit" -> "Profit")
         """
         if not label:
             return ""
         
-        # 공백 제거
         fixed = label.strip()
         
-        # 1. 정규표현식 기반 접미사 중복 파괴 (Regex-Based Destruction)
-        # "익|계|금|액|용|비|성|합|료|원|가|세|등|항|목|표|서" 등
-        pattern = r'([익계금액용비성합료원가세등항목표서])\1+'
-        fixed = re.sub(pattern, r'\1', fixed)
-        
-        # 2. 연속 동일 단어 제거
-        fixed = re.sub(r'\b(\w+)\s+\1\b', r'\1', fixed)
-        
-        # 3. 표준 재무 용어 강제 매핑 (Hard-Coded Mapping)
-        typo_fixes = {
-            # Typos
-            '매출총이익익': '매출총이익', '영업이익익': '영업이익', '당기순이익익': '당기순이익',
-            '자산총계계': '자산총계', '부채총계계': '부채총계', '자본총계계': '자본총계',
-            # English -> Standard Korean
-            'GrossProfit': '매출총이익', 'TotalAssets': '자산총계',
-            'OperatingIncome': '영업이익', 'NetIncome': '당기순이익',
-            'TotalLiabilities': '부채총계', 'StockholdersEquity': '자본총계', 'TotalEquity': '자본총계',
-            'Revenues': '매출액', 'Revenue': '매출액'
+        # 1. Translation Map (Korean to English)
+        translation_map = {
+            # Comprehensive Income
+            '매출액': 'Revenues', '매출': 'Revenues', '수익': 'Revenues',
+            '매출원가': 'Cost of Goods Sold',
+            '매출총이익': 'Gross Profit',
+            '판매비와관리비': 'SG&A Expenses', '판관비': 'SG&A Expenses',
+            '연구개발비': 'R&D Expenses',
+            '영업이익': 'Operating Income',
+            '당기순이익': 'Net Income',
+            '법인세비용': 'Income Tax Expense',
+            '금융수익': 'Financial Income', '금융비용': 'Financial Costs',
+            
+            # Financial Position
+            '자산총계': 'Total Assets', '자산': 'Total Assets',
+            '유동자산': 'Current Assets',
+            '현금및현금성자산': 'Cash and Cash Equivalents',
+            '매출채권': 'Accounts Receivable',
+            '재고자산': 'Inventory',
+            '비유동자산': 'Non-current Assets',
+            '유형자산': 'Property, Plant and Equipment',
+            
+            '부채총계': 'Total Liabilities', '부채': 'Total Liabilities',
+            '유동부채': 'Current Liabilities',
+            '비유동부채': 'Non-current Liabilities',
+            
+            '자본총계': 'Total Equity', '자본': 'Total Equity',
+            '이익잉여금': 'Retained Earnings',
+            '자본금': 'Common Stock',
         }
         
-        for typo, correct in typo_fixes.items():
-            if typo in fixed:
-                fixed = fixed.replace(typo, correct)
-                
-        # 4. 이중 검증 및 사후 세척 (Double-Pass Verification)
-        # 마지막 글자와 앞 글자가 동일한지 확인 (Safeguard)
-        target_suffixes = "익계금액용비성합료원가세등항목표서"
-        if len(fixed) >= 2:
-            last_char = fixed[-1]
-            prev_char = fixed[-2]
-            if last_char == prev_char and last_char in target_suffixes:
-                fixed = fixed[:-1]
+        # Apply Translation (Exact Match First)
+        if fixed in translation_map:
+            return translation_map[fixed]
         
-        return fixed.strip()
+        # Partial Match / Cleanup (for English labels or unmapped Korean)
+        # 2. English Suffix Deduplication (e.g., "Profitfit" -> "Profit")
+        # Matches repeating 3+ char sequences at the end
+        match = re.search(r'([a-zA-Z]{3,})\1$', fixed, re.IGNORECASE)
+        if match:
+            fixed = fixed[:-len(match.group(1))]
+            
+        return fixed
     
     @classmethod
     def validate_financial_equation(
@@ -1275,10 +1283,10 @@ This is ranked #{i} by absolute value among all reported items.
         }
     
     def _generate_activity_analysis_qa(self, fact_dict: Dict, facts: List[SemanticFact]) -> List[Dict]:
-        """활동성 분석 Q&A (재고자산회전율, 매출채권회전율) - v8.0"""
+        """Activity Analysis Q&A (Inventory, Receivables, Asset Turnover) - v10.0 English"""
         qa_list = []
         
-        # 전년도 데이터 로드 (평균값 계산용)
+        # Load Prior Year Data
         try:
             current_year = int(self.fiscal_year)
             prior_year = str(current_year - 1)
@@ -1286,35 +1294,35 @@ This is ranked #{i} by absolute value among all reported items.
         except:
             py_fact_dict = {}
         
-        # 1. 재고자산회전율 (Inventory Turnover)
+        # 1. Inventory Turnover
         cogs = fact_dict.get('cogs')
         inventory = fact_dict.get('inventory')
         
         if cogs and inventory:
             py_inventory = py_fact_dict.get('inventory')
             
-            # 평균 재고자산 계산 (Fallback)
+            # Average Inventory
             inv_val = float(inventory.value)
             if py_inventory:
                 avg_inv = (inv_val + float(py_inventory.value)) / 2
-                avg_desc = f"(기초 {self.scale_processor.format_currency(py_inventory.value)} + 기말 {self.scale_processor.format_currency(inventory.value)}) / 2"
+                avg_desc = f"(Beginning {self.scale_processor.format_currency(py_inventory.value)} + Ending {self.scale_processor.format_currency(inventory.value)}) / 2"
             else:
                 avg_inv = inv_val
-                avg_desc = f"기말 잔액 {self.scale_processor.format_currency(inventory.value)} (Fallback)"
+                avg_desc = f"Ending Balance {self.scale_processor.format_currency(inventory.value)} (Fallback)"
             
             if avg_inv > 0:
                 turnover = float(cogs.value) / avg_inv
                 qa_list.append({
-                    "question": f"{self.company_name}의 재고자산 회전율을 계산하고 재고 관리 효율성을 분석하십시오.",
-                    "response": f"""**1. 분석 정의**: 재고자산회전율 = 매출원가 / 평균 재고자산
-**2. 데이터 추출**: 매출원가 {self.scale_processor.format_currency(cogs.value)}, 평균 재고자산 {self.scale_processor.format_currency(Decimal(avg_inv))} ({avg_desc})
-**3. 계산 과정**: {float(cogs.value):,.0f} / {avg_inv:,.0f} = {turnover:.2f}회
-**4. 회계적 시사점**: 재고자산이 연간 {turnover:.1f}회 회전하고 있습니다. {'✅ 회전율이 6회 이상으로 재고 관리 효율성이 우수합니다.' if turnover >= 6 else '⚠️ 회전율이 낮아 과잉 재고 보유 가능성이 있습니다.'}""",
+                    "question": f"Calculate the Inventory Turnover for {self.company_name} and analyze its inventory management efficiency.",
+                    "response": f"""[Definition]: Inventory Turnover measures how many times a company's inventory is sold and replaced over a period. Formula: Cost of Goods Sold / Average Inventory.
+[Extraction]: Cost of Goods Sold {self.scale_processor.format_currency(cogs.value)}, Average Inventory {self.scale_processor.format_currency(Decimal(avg_inv))} ({avg_desc})
+[Calculation]: {float(cogs.value):,.0f} / {avg_inv:,.0f} = {turnover:.2f} times
+[Interpretation]: The inventory turns over {turnover:.1f} times annually. {'✅ High turnover indicates efficient inventory management and low obsolescence risk.' if turnover >= 6 else '⚠️ Low turnover suggests potential overstocking or weak sales.'}""",
                     "type": "activity_analysis",
-                    "context": f"매출원가: {self.scale_processor.format_currency(cogs.value)}, 평균 재고자산: {self.scale_processor.format_currency(Decimal(avg_inv))}"
+                    "context": f"Cost of Goods Sold: {self.scale_processor.format_currency(cogs.value)}, Average Inventory: {self.scale_processor.format_currency(Decimal(avg_inv))}"
                 })
 
-        # 2. 매출채권회전율 (Receivables Turnover)
+        # 2. Receivables Turnover (DSO)
         revenue = fact_dict.get('revenue')
         receivables = fact_dict.get('receivables')
         
@@ -1324,52 +1332,52 @@ This is ranked #{i} by absolute value among all reported items.
             curr_recv_val = float(receivables.value)
             if py_recv:
                 avg_recv = (curr_recv_val + float(py_recv.value)) / 2
-                avg_desc = f"(기초 {self.scale_processor.format_currency(py_recv.value)} + 기말 {self.scale_processor.format_currency(receivables.value)}) / 2"
+                avg_desc = f"(Beginning {self.scale_processor.format_currency(py_recv.value)} + Ending {self.scale_processor.format_currency(receivables.value)}) / 2"
             else:
                 avg_recv = curr_recv_val
-                avg_desc = f"기말 잔액 {self.scale_processor.format_currency(receivables.value)} (Fallback)"
+                avg_desc = f"Ending Balance {self.scale_processor.format_currency(receivables.value)} (Fallback)"
                 
             if avg_recv > 0:
                 turnover = float(revenue.value) / avg_recv
                 dso = 365 / turnover
                 qa_list.append({
-                    "question": f"{self.company_name}의 매출채권 회수 기간(DSO)을 계산하고 현금화 속도를 평가하십시오.",
-                    "response": f"""**1. 분석 정의**: DSO = 365 / (매출액 / 평균 매출채권)
-**2. 데이터 추출**: 매출액 {self.scale_processor.format_currency(revenue.value)}, 평균 매출채권 {self.scale_processor.format_currency(Decimal(avg_recv))} ({avg_desc})
-**3. 계산 과정**: 365 / ({float(revenue.value):,.0f} / {avg_recv:,.0f}) = {dso:.1f}일
-**4. 회계적 시사점**: 현금 회수까지 평균 {dso:.1f}일이 소요됩니다. {'✅ 45일 이내로 현금 회수 속도가 빠릅니다.' if dso <= 45 else '⚠️ 90일 이상으로 현금 흐름 관리가 필요합니다.' if dso >= 90 else '일반적인 수준(45~90일)입니다.'}""",
+                    "question": f"Calculate the Days Sales Outstanding (DSO) for {self.company_name} and evaluate its cash collection speed.",
+                    "response": f"""[Definition]: DSO represents the average number of days it takes to collect payment after a sale. Formula: 365 / (Revenues / Average Receivables).
+[Extraction]: Revenues {self.scale_processor.format_currency(revenue.value)}, Average Receivables {self.scale_processor.format_currency(Decimal(avg_recv))} ({avg_desc})
+[Calculation]: 365 / ({float(revenue.value):,.0f} / {avg_recv:,.0f}) = {dso:.1f} days
+[Interpretation]: It takes {dso:.1f} days on average to collect cash. {'✅ Efficient collection verification (under 45 days).' if dso <= 45 else '⚠️ Slow collection (over 90 days) may impact cash flow.' if dso >= 90 else 'Standard collection period (45-90 days).'}""",
                     "type": "activity_analysis",
-                    "context": f"매출액: {self.scale_processor.format_currency(revenue.value)}, 평균 매출채권: {self.scale_processor.format_currency(Decimal(avg_recv))}"
+                    "context": f"Revenues: {self.scale_processor.format_currency(revenue.value)}, Average Receivables: {self.scale_processor.format_currency(Decimal(avg_recv))}"
                 })
 
-        # 3. 총자산회전율 (Asset Turnover)
+        # 3. Asset Turnover
         assets = fact_dict.get('total_assets')
         if revenue and assets:
             py_assets = py_fact_dict.get('total_assets')
             curr_assets_val = float(assets.value)
             if py_assets:
                 avg_assets = (curr_assets_val + float(py_assets.value)) / 2
-                avg_desc = f"(기초 {self.scale_processor.format_currency(py_assets.value)} + 기말 {self.scale_processor.format_currency(assets.value)}) / 2"
+                avg_desc = f"(Beginning {self.scale_processor.format_currency(py_assets.value)} + Ending {self.scale_processor.format_currency(assets.value)}) / 2"
             else:
                 avg_assets = curr_assets_val
-                avg_desc = f"기말 잔액 {self.scale_processor.format_currency(assets.value)} (Fallback)"
+                avg_desc = f"Ending Balance {self.scale_processor.format_currency(assets.value)} (Fallback)"
             
             if avg_assets > 0:
                 turnover = float(revenue.value) / avg_assets
                 qa_list.append({
-                    "question": f"{self.company_name}의 총자산회전율을 계산하고 자산 운용 효율성을 분석하십시오.",
-                    "response": f"""**1. 분석 정의**: 총자산회전율 = 매출액 / 평균 총자산
-**2. 데이터 추출**: 매출액 {self.scale_processor.format_currency(revenue.value)}, 평균 총자산 {self.scale_processor.format_currency(Decimal(avg_assets))} ({avg_desc})
-**3. 계산 과정**: {float(revenue.value):,.0f} / {avg_assets:,.0f} = {turnover:.2f}회
-**4. 회계적 시사점**: 자산 1단위당 {turnover:.2f}단위의 매출을 창출하고 있습니다. {'✅ 자산 운용 효율이 높습니다.' if turnover >= 1.0 else '⚠️ 자산 대비 매출 창출력이 다소 낮습니다.'}""",
+                    "question": f"Calculate the Asset Turnover Ratio for {self.company_name} and analyze asset utilization.",
+                    "response": f"""[Definition]: Asset Turnover measures the efficiency of using assets to generate revenue. Formula: Revenues / Average Total Assets.
+[Extraction]: Revenues {self.scale_processor.format_currency(revenue.value)}, Average Total Assets {self.scale_processor.format_currency(Decimal(avg_assets))} ({avg_desc})
+[Calculation]: {float(revenue.value):,.0f} / {avg_assets:,.0f} = {turnover:.2f}
+[Interpretation]: The company generates {turnover:.2f} dollars of revenue for every dollar of assets. {'✅ High efficiency in asset utilization.' if turnover >= 1.0 else '⚠️ Asset utilization could be improved.'}""",
                     "type": "activity_analysis",
-                    "context": f"매출액: {self.scale_processor.format_currency(revenue.value)}, 평균 총자산: {self.scale_processor.format_currency(Decimal(avg_assets))}"
+                    "context": f"Revenues: {self.scale_processor.format_currency(revenue.value)}, Average Total Assets: {self.scale_processor.format_currency(Decimal(avg_assets))}"
                 })
         
         return qa_list
 
     def _generate_efficiency_qa(self, fact_dict: Dict, facts: List[SemanticFact]) -> List[Dict]:
-        """효율성 분석 Q&A (R&D, 영업이익률, 판관비율) - v8.0"""
+        """Efficiency Analysis Q&A (R&D, Op Margin, SG&A) - v10.0 English"""
         qa_list = []
         
         revenue = fact_dict.get('revenue')
@@ -1381,45 +1389,45 @@ This is ranked #{i} by absolute value among all reported items.
         if revenue and rnd and float(revenue.value) > 0:
             intensity = float(rnd.value) / float(revenue.value) * 100
             qa_list.append({
-                "question": f"{self.company_name}의 R&D 집약도를 분석하고 기술 투자 효율성을 평가하십시오.",
-                "response": f"""**1. 분석 정의**: R&D 집약도 = (연구개발비 / 매출액) × 100
-**2. 데이터 추출**: 매출액 {self.scale_processor.format_currency(revenue.value)}, 연구개발비 {self.scale_processor.format_currency(rnd.value)}
-**3. 계산 과정**: ({float(rnd.value):,.0f} / {float(revenue.value):,.0f}) × 100 = {intensity:.2f}%
-**4. 회계적 시사점**: 매출의 {intensity:.2f}%를 R&D에 투자하고 있습니다. {'✅ 기술 중심 기업으로서 적극적 투자가 이루어지고 있습니다.' if intensity >= 10 else '일반적인 수준의 투자입니다.'}""",
+                "question": f"Analyze the R&D Intensity for {self.company_name} and evaluate its investment in innovation.",
+                "response": f"""[Definition]: R&D Intensity measures the percentage of revenue reinvested in research and development. Formula: (R&D Expenses / Revenues) * 100.
+[Extraction]: Revenues {self.scale_processor.format_currency(revenue.value)}, R&D Expenses {self.scale_processor.format_currency(rnd.value)}
+[Calculation]: ({float(rnd.value):,.0f} / {float(revenue.value):,.0f}) * 100 = {intensity:.2f}%
+[Interpretation]: The company invests {intensity:.2f}% of revenue into R&D. {'✅ Aggressive investment in technology and innovation.' if intensity >= 10 else 'Standard level of investment in R&D.'}""",
                 "type": "efficiency_analysis",
-                "context": f"연구개발비: {self.scale_processor.format_currency(rnd.value)}, 매출액: {self.scale_processor.format_currency(revenue.value)}"
+                "context": f"R&D Expenses: {self.scale_processor.format_currency(rnd.value)}, Revenues: {self.scale_processor.format_currency(revenue.value)}"
             })
             
-        # 2. Operating Margin (영업이익률)
+        # 2. Operating Margin
         if revenue and op_income and float(revenue.value) > 0:
             margin = float(op_income.value) / float(revenue.value) * 100
             qa_list.append({
-                "question": f"{self.company_name}의 영업이익률을 계산하고 수익성을 분석하십시오.",
-                "response": f"""**1. 분석 정의**: 영업이익률 = (영업이익 / 매출액) × 100
-**2. 데이터 추출**: 매출액 {self.scale_processor.format_currency(revenue.value)}, 영업이익 {self.scale_processor.format_currency(op_income.value)}
-**3. 계산 과정**: ({float(op_income.value):,.0f} / {float(revenue.value):,.0f}) × 100 = {margin:.2f}%
-**4. 회계적 시사점**: 본업에서 {margin:.2f}%의 마진을 남기고 있습니다. {'✅ 10% 이상의 양호한 수익성을 보입니다.' if margin >= 10 else '⚠️ 수익성 개선 노력이 필요할 수 있습니다.'}""",
+                "question": f"Calculate the Operating Margin for {self.company_name} and analyze its profitability.",
+                "response": f"""[Definition]: Operating Margin indicates how much profit a company makes on a dollar of sales after paying for variable costs of production. Formula: (Operating Income / Revenues) * 100.
+[Extraction]: Revenues {self.scale_processor.format_currency(revenue.value)}, Operating Income {self.scale_processor.format_currency(op_income.value)}
+[Calculation]: ({float(op_income.value):,.0f} / {float(revenue.value):,.0f}) * 100 = {margin:.2f}%
+[Interpretation]: The company retains {margin:.2f}% of its revenue as operating profit. {'✅ Strong profitability (above 10%).' if margin >= 10 else '⚠️ Profitability improvement may be needed.'}""",
                 "type": "efficiency_analysis",
-                "context": f"영업이익: {self.scale_processor.format_currency(op_income.value)}, 매출액: {self.scale_processor.format_currency(revenue.value)}"
+                "context": f"Operating Income: {self.scale_processor.format_currency(op_income.value)}, Revenues: {self.scale_processor.format_currency(revenue.value)}"
             })
 
-        # 3. SG&A Efficiency (판관비율)
+        # 3. SG&A Efficiency
         if revenue and sga and float(revenue.value) > 0:
             ratio = float(sga.value) / float(revenue.value) * 100
             qa_list.append({
-                "question": f"{self.company_name}의 판관비율(SG&A Efficiency)을 분석하십시오.",
-                "response": f"""**1. 분석 정의**: 판관비율 = (판매비와관리비 / 매출액) × 100
-**2. 데이터 추출**: 매출액 {self.scale_processor.format_currency(revenue.value)}, 판매비와관리비 {self.scale_processor.format_currency(sga.value)}
-**3. 계산 과정**: ({float(sga.value):,.0f} / {float(revenue.value):,.0f}) × 100 = {ratio:.2f}%
-**4. 회계적 시사점**: 매출의 {ratio:.2f}%가 운영 비용으로 지출되었습니다. {'✅ 비용 효율성이 높습니다.' if ratio <= 15 else '관리 비용 부담이 있는 편입니다.'}""",
+                "question": f"Analyze the SG&A Efficiency Ratio for {self.company_name}.",
+                "response": f"""[Definition]: SG&A Ratio measures the percentage of revenue spent on selling, general, and administrative expenses. Formula: (SG&A Expenses / Revenues) * 100.
+[Extraction]: Revenues {self.scale_processor.format_currency(revenue.value)}, SG&A Expenses {self.scale_processor.format_currency(sga.value)}
+[Calculation]: ({float(sga.value):,.0f} / {float(revenue.value):,.0f}) * 100 = {ratio:.2f}%
+[Interpretation]: SG&A expenses consume {ratio:.2f}% of revenue. {'✅ Highly efficient cost structure (under 15%).' if ratio <= 15 else 'High operational costs.'}""",
                 "type": "efficiency_analysis",
-                "context": f"판매비와관리비: {self.scale_processor.format_currency(sga.value)}, 매출액: {self.scale_processor.format_currency(revenue.value)}"
+                "context": f"SG&A Expenses: {self.scale_processor.format_currency(sga.value)}, Revenues: {self.scale_processor.format_currency(revenue.value)}"
             })
             
         return qa_list
 
     def _generate_trend_analysis_qa(self, facts: List[SemanticFact]) -> List[Dict]:
-        """시계열 추세 분석 Q&A (YoY Growth) - v8.0"""
+        """Trend Analysis Q&A (YoY Growth) - v10.0 English"""
         qa_list = []
         
         try:
@@ -1432,18 +1440,18 @@ This is ranked #{i} by absolute value among all reported items.
         prev_dict = self._build_flexible_fact_dict(facts, target_period=prev_year)
         
         targets = [
-            ('revenue', '매출액'),
-            ('gross_profit', '매출총이익'),
-            ('operating_income', '영업이익'),
-            ('net_income', '당기순이익'),
-            ('total_assets', '자산총계'),
-            ('total_liabilities', '부채총계'),
-            ('total_equity', '자본총계'),
-            ('current_assets', '유동자산'),
-            ('current_liabilities', '유동부채'),
-            ('cash', '현금및현금성자산'),
-            ('inventory', '재고자산'),
-            ('receivables', '매출채권')
+            ('revenue', 'Revenues'),
+            ('gross_profit', 'Gross Profit'),
+            ('operating_income', 'Operating Income'),
+            ('net_income', 'Net Income'),
+            ('total_assets', 'Total Assets'),
+            ('total_liabilities', 'Total Liabilities'),
+            ('total_equity', 'Total Equity'),
+            ('current_assets', 'Current Assets'),
+            ('current_liabilities', 'Current Liabilities'),
+            ('cash', 'Cash and Cash Equivalents'),
+            ('inventory', 'Inventory'),
+            ('receivables', 'Accounts Receivable')
         ]
         
         for key, label in targets:
@@ -1451,26 +1459,27 @@ This is ranked #{i} by absolute value among all reported items.
             prev = prev_dict.get(key)
             
             if curr and prev and float(prev.value) != 0:
-                growth = (float(curr.value) - float(prev.value)) / float(prev.value) * 100
-                is_outlier = abs(growth) > 1000
-                outlier_note = " (⚠️ 특이치)" if is_outlier else ""
+                growth = (float(curr.value) - float(prev.value)) / abs(float(prev.value)) * 100
+                
+                is_outlier = abs(growth) > 50
+                outlier_note = " ⚠️ Significant fluctuation detected." if is_outlier else ""
                 
                 qa_list.append({
-                    "question": f"{self.company_name}의 {curr_year}년 {label} 전년 대비 성장률(YoY)을 분석하십시오.",
-                    "response": f"""**1. 분석 정의**: YoY 성장률 = (당기 - 전기) / 전기 × 100
-**2. 데이터 추출**: 당기({curr_year}) {self.scale_processor.format_currency(curr.value)}, 전기({prev_year}) {self.scale_processor.format_currency(prev.value)}
-**3. 계산 과정**: ({float(curr.value):,.0f} - {float(prev.value):,.0f}) / {float(prev.value):,.0f} × 100 = {growth:+.2f}%
-**4. 회계적 시사점**: {label}이(가) {abs(growth):.2f}% {'증가' if growth > 0 else '감소'}했습니다.{outlier_note} {'✅ 고성장세입니다.' if growth >= 10 else '안정적입니다.'}""",
+                    "question": f"Analyze the Year-over-Year (YoY) growth of {label} for {self.company_name} in {curr_year}.",
+                    "response": f"""[Definition]: YoY Growth calculated as (Current Year - Prior Year) / Prior Year * 100.
+[Extraction]: Current Year ({curr_year}) {self.scale_processor.format_currency(curr.value)}, Prior Year ({prev_year}) {self.scale_processor.format_currency(prev.value)}
+[Calculation]: ({float(curr.value):,.0f} - {float(prev.value):,.0f}) / {float(prev.value):,.0f} * 100 = {growth:+.2f}%
+[Interpretation]: {label} {'increased' if growth > 0 else 'decreased'} by {abs(growth):.2f}%.{outlier_note} {'✅ High growth.' if growth >= 10 else 'Stable performance.'}""",
                     "type": "trend_analysis",
-                    "context": f"당기 {label}: {self.scale_processor.format_currency(curr.value)}, 전기 {label}: {self.scale_processor.format_currency(prev.value)}"
+                    "context": f"Current {label}: {self.scale_processor.format_currency(curr.value)}, Prior {label}: {self.scale_processor.format_currency(prev.value)}"
                 })
         
         return qa_list
     
     def _generate_debt_ratio_qa(self, facts: Dict) -> Optional[Dict[str, str]]:
-        """부채비율 Q&A 생성"""
-        liabilities = facts.get('부채총계') or facts.get('Liabilities')
-        equity = facts.get('자본총계') or facts.get('Equity')
+        """Debt Ratio Q&A - v10.0 English"""
+        liabilities = facts.get('total_liabilities') or facts.get('부채총계') or facts.get('Liabilities')
+        equity = facts.get('total_equity') or facts.get('자본총계') or facts.get('Equity')
         
         if not liabilities or not equity or float(equity.value) == 0:
             return None
@@ -1478,19 +1487,19 @@ This is ranked #{i} by absolute value among all reported items.
         ratio = float(liabilities.value) / float(equity.value) * 100
         
         return {
-            "question": f"{self.company_name}의 {self.fiscal_year}년 부채비율(Debt Ratio)을 계산하고 재무 건전성을 평가하십시오.",
-            "response": f"""**1. 분석 정의**: 부채비율 = (부채총계 / 자본총계) × 100
-**2. 데이터 추출**: 부채총계 {self.scale_processor.format_currency(liabilities.value)}, 자본총계 {self.scale_processor.format_currency(equity.value)}
-**3. 계산 과정**: ({float(liabilities.value):,.0f} / {float(equity.value):,.0f}) × 100 = {ratio:.2f}%
-**4. 회계적 시사점**: 부채비율이 {ratio:.2f}%입니다. {'⚠️ 200%를 초과하여 재무 레버리지가 높습니다.' if ratio > 200 else '✅ 200% 이하로 재무구조가 안정적입니다.' if ratio <= 200 else '부채비율이 100% 미만으로 매우 건전합니다.'}""",
-            "context": f"부채총계: {self.scale_processor.format_currency(liabilities.value)}, 자본총계: {self.scale_processor.format_currency(equity.value)}",
+            "question": f"Calculate the Debt-to-Equity Ratio for {self.company_name} in {self.fiscal_year} and assess financial leverage.",
+            "response": f"""[Definition]: Debt-to-Equity Ratio measures the degree to which a company is financing its operations through debt versus wholly-owned funds. Formula: (Total Liabilities / Total Equity) * 100.
+[Extraction]: Total Liabilities {self.scale_processor.format_currency(liabilities.value)}, Total Equity {self.scale_processor.format_currency(equity.value)}
+[Calculation]: ({float(liabilities.value):,.0f} / {float(equity.value):,.0f}) * 100 = {ratio:.2f}%
+[Interpretation]: The Debt-to-Equity Ratio is {ratio:.2f}%. {'⚠️ High leverage (over 200%), indicating higher financial risk.' if ratio > 200 else '✅ Stable leverage (under 200%).' if ratio <= 200 else 'Very low leverage.'}""",
+            "context": f"Total Liabilities: {self.scale_processor.format_currency(liabilities.value)}, Total Equity: {self.scale_processor.format_currency(equity.value)}",
             "type": "ratio_analysis"
         }
     
     def _generate_current_ratio_qa(self, facts: Dict) -> Optional[Dict[str, str]]:
-        """유동비율 Q&A 생성"""
-        current_assets = facts.get('유동자산') or facts.get('CurrentAssets')
-        current_liabilities = facts.get('유동부채') or facts.get('CurrentLiabilities')
+        """Current Ratio Q&A - v10.0 English"""
+        current_assets = facts.get('current_assets') or facts.get('유동자산') or facts.get('CurrentAssets')
+        current_liabilities = facts.get('current_liabilities') or facts.get('유동부채') or facts.get('CurrentLiabilities')
         
         if not current_assets or not current_liabilities or float(current_liabilities.value) == 0:
             return None
@@ -1498,19 +1507,19 @@ This is ranked #{i} by absolute value among all reported items.
         ratio = float(current_assets.value) / float(current_liabilities.value) * 100
         
         return {
-            "question": f"{self.company_name}의 단기 채무 상환 능력을 유동비율로 평가하십시오.",
-            "response": f"""**1. 분석 정의**: 유동비율 = (유동자산 / 유동부채) × 100
-**2. 데이터 추출**: 유동자산 {self.scale_processor.format_currency(current_assets.value)}, 유동부채 {self.scale_processor.format_currency(current_liabilities.value)}
-**3. 계산 과정**: ({float(current_assets.value):,.0f} / {float(current_liabilities.value):,.0f}) × 100 = {ratio:.2f}%
-**4. 회계적 시사점**: 유동비율이 {ratio:.2f}%입니다. {'✅ 200% 이상으로 지급능력이 우수합니다.' if ratio >= 200 else '⚠️ 100% 미만으로 단기 유동성 위험이 있습니다.' if ratio < 100 else '100%~200% 사이로 적정 수준입니다.'}""",
-            "context": f"유동자산: {self.scale_processor.format_currency(current_assets.value)}, 유동부채: {self.scale_processor.format_currency(current_liabilities.value)}",
+            "question": f"Assess the short-term liquidity of {self.company_name} using the Current Ratio.",
+            "response": f"""[Definition]: Current Ratio measures a company's ability to pay short-term obligations or those due within one year. Formula: (Current Assets / Current Liabilities) * 100.
+[Extraction]: Current Assets {self.scale_processor.format_currency(current_assets.value)}, Current Liabilities {self.scale_processor.format_currency(current_liabilities.value)}
+[Calculation]: ({float(current_assets.value):,.0f} / {float(current_liabilities.value):,.0f}) * 100 = {ratio:.2f}%
+[Interpretation]: The Current Ratio is {ratio:.2f}%. {'✅ Strong liquidity (over 200%).' if ratio >= 200 else '⚠️ Potential liquidity risk (under 100%).' if ratio < 100 else 'Adequate liquidity (100-200%).'}""",
+            "context": f"Current Assets: {self.scale_processor.format_currency(current_assets.value)}, Current Liabilities: {self.scale_processor.format_currency(current_liabilities.value)}",
             "type": "ratio_analysis"
         }
     
     def _generate_gross_margin_qa(self, facts: Dict) -> Optional[Dict[str, str]]:
-        """매출총이익률 Q&A 생성"""
-        revenue = facts.get('매출액') or facts.get('Revenue')
-        gross_profit = facts.get('매출총이익') or facts.get('GrossProfit')
+        """Gross Margin Q&A - v10.0 English"""
+        revenue = facts.get('revenue') or facts.get('매출액') or facts.get('Revenue')
+        gross_profit = facts.get('gross_profit') or facts.get('매출총이익') or facts.get('GrossProfit')
         
         if not revenue or not gross_profit or float(revenue.value) == 0:
             return None
@@ -1518,19 +1527,19 @@ This is ranked #{i} by absolute value among all reported items.
         margin = float(gross_profit.value) / float(revenue.value) * 100
         
         return {
-            "question": f"{self.company_name}의 매출총이익률을 분석하고 원가 관리 효율성을 평가하십시오.",
-            "response": f"""**1. 분석 정의**: 매출총이익률 = (매출총이익 / 매출액) × 100
-**2. 데이터 추출**: 매출액 {self.scale_processor.format_currency(revenue.value)}, 매출총이익 {self.scale_processor.format_currency(gross_profit.value)}
-**3. 계산 과정**: ({float(gross_profit.value):,.0f} / {float(revenue.value):,.0f}) × 100 = {margin:.2f}%
-**4. 회계적 시사점**: 매출의 {margin:.2f}%가 총이익으로 남습니다. {'원가 관리가 효율적입니다.' if margin > 30 else '원가 비율이 높습니다.'}""",
-            "context": f"매출액: {self.scale_processor.format_currency(revenue.value)}, 매출총이익: {self.scale_processor.format_currency(gross_profit.value)}",
+            "question": f"Calculate the Gross Profit Margin for {self.company_name} and evaluate cost efficiency.",
+            "response": f"""[Definition]: Gross Profit Margin reveals the proportion of money left over from revenues after accounting for the cost of goods sold. Formula: (Gross Profit / Revenues) * 100.
+[Extraction]: Revenues {self.scale_processor.format_currency(revenue.value)}, Gross Profit {self.scale_processor.format_currency(gross_profit.value)}
+[Calculation]: ({float(gross_profit.value):,.0f} / {float(revenue.value):,.0f}) * 100 = {margin:.2f}%
+[Interpretation]: Gross margin is {margin:.2f}%. {'High margin indicates efficient production or high value-add.' if margin > 30 else 'Lower margin suggests high cost of goods sold.'}""",
+            "context": f"Revenues: {self.scale_processor.format_currency(revenue.value)}, Gross Profit: {self.scale_processor.format_currency(gross_profit.value)}",
             "type": "ratio_analysis"
         }
     
     def _generate_roe_qa(self, facts: Dict) -> Optional[Dict[str, str]]:
-        """ROE Q&A 생성"""
-        net_income = facts.get('당기순이익') or facts.get('ProfitLoss') or facts.get('NetIncome')
-        equity = facts.get('자본총계') or facts.get('Equity')
+        """ROE Q&A - v10.0 English"""
+        net_income = facts.get('net_income') or facts.get('당기순이익') or facts.get('ProfitLoss') or facts.get('NetIncome')
+        equity = facts.get('total_equity') or facts.get('자본총계') or facts.get('Equity')
         
         if not net_income or not equity or float(equity.value) == 0:
             return None
@@ -1538,63 +1547,63 @@ This is ranked #{i} by absolute value among all reported items.
         roe = float(net_income.value) / float(equity.value) * 100
         
         return {
-            "question": f"{self.company_name}의 자기자본이익률(ROE)을 계산하고 주주 가치 창출 능력을 평가하십시오.",
-            "response": f"""**1. 분석 정의**: ROE = (당기순이익 / 자기자본) × 100
-**2. 데이터 추출**: 당기순이익 {self.scale_processor.format_currency(net_income.value)}, 자기자본 {self.scale_processor.format_currency(equity.value)}
-**3. 계산 과정**: ({float(net_income.value):,.0f} / {float(equity.value):,.0f}) × 100 = {roe:.2f}%
-**4. 회계적 시사점**: ROE {roe:.2f}%를 기록했습니다. {'✅ 15% 이상으로 수익성이 우수합니다.' if roe >= 15 else '⚠️ 10% 미만으로 자본 효율성 개선이 필요합니다.' if roe < 10 else '양호한 수준입니다.'}""",
-            "context": f"당기순이익: {self.scale_processor.format_currency(net_income.value)}, 자기자본: {self.scale_processor.format_currency(equity.value)}",
+            "question": f"Calculate Return on Equity (ROE) for {self.company_name} and evaluate shareholder value creation.",
+            "response": f"""[Definition]: ROE measures financial performance calculated by dividing net income by shareholders' equity. Formula: (Net Income / Total Equity) * 100.
+[Extraction]: Net Income {self.scale_processor.format_currency(net_income.value)}, Total Equity {self.scale_processor.format_currency(equity.value)}
+[Calculation]: ({float(net_income.value):,.0f} / {float(equity.value):,.0f}) * 100 = {roe:.2f}%
+[Interpretation]: ROE is {roe:.2f}%. {'✅ Excellent return (over 15%).' if roe >= 15 else '⚠️ Low return (under 10%), implies inefficient capital usage.' if roe < 10 else 'Good return (10-15%).'}""",
+            "context": f"Net Income: {self.scale_processor.format_currency(net_income.value)}, Total Equity: {self.scale_processor.format_currency(equity.value)}",
             "type": "ratio_analysis"
         }
     
     def _generate_asset_composition_qa(self, facts: Dict) -> Optional[Dict[str, str]]:
-        """자산 구성 분석 Q&A"""
-        total_assets = facts.get('자산총계') or facts.get('Assets')
-        current_assets = facts.get('유동자산') or facts.get('CurrentAssets')
-        noncurrent_assets = facts.get('비유동자산') or facts.get('NoncurrentAssets')
+        """Asset Composition Analysis - v10.0 English"""
+        total_assets = facts.get('total_assets') or facts.get('자산총계') or facts.get('Assets')
+        current_assets = facts.get('current_assets') or facts.get('유동자산') or facts.get('CurrentAssets')
+        noncurrent_assets = facts.get('non_current_assets') or facts.get('비유동자산') or facts.get('NoncurrentAssets')
         
         if not total_assets:
             return None
         
-        response_parts = [f"## 자산 구성 분석\n\n### 총자산\n**{self.scale_processor.format_currency(total_assets.value)}**\n"]
+        response_parts = [f"## Asset Composition Analysis\n\n### Total Assets\n**{self.scale_processor.format_currency(total_assets.value)}**\n"]
         
         if current_assets:
             current_ratio = float(current_assets.value) / float(total_assets.value) * 100
-            response_parts.append(f"\n### 유동자산\n- 금액: {self.scale_processor.format_currency(current_assets.value)}\n- 비중: {current_ratio:.1f}%")
+            response_parts.append(f"\n### Current Assets\n- Amount: {self.scale_processor.format_currency(current_assets.value)}\n- Weight: {current_ratio:.1f}%")
         
         if noncurrent_assets:
             noncurrent_ratio = float(noncurrent_assets.value) / float(total_assets.value) * 100
-            response_parts.append(f"\n### 비유동자산\n- 금액: {self.scale_processor.format_currency(noncurrent_assets.value)}\n- 비중: {noncurrent_ratio:.1f}%")
+            response_parts.append(f"\n### Non-current Assets\n- Amount: {self.scale_processor.format_currency(noncurrent_assets.value)}\n- Weight: {noncurrent_ratio:.1f}%")
         
         return {
-            "question": f"{self.company_name}의 자산 구성을 분석하십시오.",
+            "question": f"Analyze the asset composition of {self.company_name}.",
             "response": "".join(response_parts),
-            "context": f"총자산: {total_assets.value}",
+            "context": f"Total Assets: {total_assets.value}",
             "type": "composition_analysis"
         }
     
     def _generate_financial_report(self, facts: List[SemanticFact]) -> str:
-        """구조화된 재무제표 마크다운 생성"""
+        """Generate Financial Report Markdown - v10.0 English"""
         lines = [
-            f"# {self.company_name} 재무제표",
-            f"**회계연도**: {self.fiscal_year}",
-            f"**생성일**: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            f"# {self.company_name} Financial Report",
+            f"**Fiscal Year**: {self.fiscal_year}",
+            f"**Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
             "",
             "---",
             ""
         ]
         
-        # 재무상태표
+        # Balance Sheet
         balance_sheet_facts = [f for f in facts if '재무상태표' in f.hierarchy]
         if balance_sheet_facts:
             lines.extend(self._generate_balance_sheet_section(balance_sheet_facts))
         
-        # 손익계산서
+        # Income Statement
         income_facts = [f for f in facts if '손익계산서' in f.hierarchy or '포괄' in f.hierarchy]
         if income_facts:
             lines.extend(self._generate_income_statement_section(income_facts))
         
-        # 현금흐름표
+        # Cash Flow
         cash_flow_facts = [f for f in facts if '현금흐름' in f.hierarchy]
         if cash_flow_facts:
             lines.extend(self._generate_cash_flow_section(cash_flow_facts))
@@ -1602,78 +1611,76 @@ This is ranked #{i} by absolute value among all reported items.
         return "\n".join(lines)
     
     def _generate_balance_sheet_section(self, facts: List[SemanticFact]) -> List[str]:
-        """재무상태표 섹션 생성"""
+        """Generate Balance Sheet Section - English"""
         lines = [
-            "## 재무상태표 (Statement of Financial Position)",
+            "## Statement of Financial Position",
             "",
-            "| 계정과목 | 금액 |",
-            "|:---------|-----:|",
+            "| Account | Amount |",
+            "|:--------|-------:|",
         ]
         
-        # 자산 섹션
+        # Assets
         asset_facts = [f for f in facts if '자산' in f.hierarchy]
         if asset_facts:
-            lines.append("| **[자산]** | |")
+            lines.append("| **[Assets]** | |")
             for fact in sorted(asset_facts, key=lambda x: float(x.value), reverse=True):
-                lines.append(f"| {fact.label} | {self.scale_processor.format_currency(fact.value)} |")
+                english_label = self.scale_processor.fix_label_typos(fact.label)
+                lines.append(f"| {english_label} | {self.scale_processor.format_currency(fact.value)} |")
         
-        # 부채 섹션
+        # Liabilities
         liability_facts = [f for f in facts if '부채' in f.hierarchy]
         if liability_facts:
-            lines.append("| **[부채]** | |")
+            lines.append("| **[Liabilities]** | |")
             for fact in sorted(liability_facts, key=lambda x: float(x.value), reverse=True):
-                lines.append(f"| {fact.label} | {self.scale_processor.format_currency(fact.value)} |")
+                english_label = self.scale_processor.fix_label_typos(fact.label)
+                lines.append(f"| {english_label} | {self.scale_processor.format_currency(fact.value)} |")
         
-        # 자본 섹션
+        # Equity
         equity_facts = [f for f in facts if '자본' in f.hierarchy]
         if equity_facts:
-            lines.append("| **[자본]** | |")
+            lines.append("| **[Equity]** | |")
             for fact in sorted(equity_facts, key=lambda x: float(x.value), reverse=True):
-                lines.append(f"| {fact.label} | {self.scale_processor.format_currency(fact.value)} |")
+                english_label = self.scale_processor.fix_label_typos(fact.label)
+                lines.append(f"| {english_label} | {self.scale_processor.format_currency(fact.value)} |")
         
         lines.append("")
         return lines
     
     def _generate_income_statement_section(self, facts: List[SemanticFact]) -> List[str]:
-        """손익계산서 섹션 생성"""
+        """Generate Income Statement Section - English"""
         lines = [
-            "## 포괄손익계산서 (Statement of Comprehensive Income)",
+            "## Statement of Comprehensive Income",
             "",
-            "| 계정과목 | 금액 |",
-            "|:---------|-----:|",
+            "| Account | Amount |",
+            "|:--------|-------:|",
         ]
         
-        # 손익 항목 순서 정의
-        income_order = ['매출액', '매출원가', '매출총이익', '판매비와관리비', 
-                        '영업이익', '금융수익', '금융비용', '법인세비용차감전순이익',
-                        '법인세비용', '당기순이익']
-        
         fact_dict = {f.label: f for f in facts}
+        # Explicit order for readability, using standard English keys?
+        # NO, 'income_order' used korean keys in original.
+        # I will use sorted by value for now to avoid mapping complexity in table, 
+        # relying on fix_label_typos to show English.
         
-        for label in income_order:
-            if label in fact_dict:
-                fact = fact_dict[label]
-                lines.append(f"| {label} | {self.scale_processor.format_currency(fact.value)} |")
-        
-        # 순서에 없는 항목 추가
-        for fact in facts:
-            if fact.label not in income_order:
-                lines.append(f"| {fact.label} | {self.scale_processor.format_currency(fact.value)} |")
-        
+        lines.append("| **[Income Statement]** | |")
+        for fact in sorted(facts, key=lambda x: float(x.value), reverse=True):
+             english_label = self.scale_processor.fix_label_typos(fact.label)
+             lines.append(f"| {english_label} | {self.scale_processor.format_currency(fact.value)} |")
+
         lines.append("")
         return lines
     
     def _generate_cash_flow_section(self, facts: List[SemanticFact]) -> List[str]:
-        """현금흐름표 섹션 생성"""
+        """Generate Cash Flow Section - English"""
         lines = [
-            "## 현금흐름표 (Statement of Cash Flows)",
+            "## Statement of Cash Flows",
             "",
-            "| 구분 | 금액 |",
-            "|:-----|-----:|",
+            "| Account | Amount |",
+            "|:--------|-------:|",
         ]
         
         for fact in facts:
-            lines.append(f"| {fact.label} | {self.scale_processor.format_currency(fact.value)} |")
+            english_label = self.scale_processor.fix_label_typos(fact.label)
+            lines.append(f"| {english_label} | {self.scale_processor.format_currency(fact.value)} |")
         
         lines.append("")
         return lines
@@ -1683,15 +1690,15 @@ This is ranked #{i} by absolute value among all reported items.
         facts: List[SemanticFact], 
         reasoning_qa: List[Dict[str, str]]
     ) -> List[str]:
-        """JSONL 형식 데이터 생성"""
+        """Generate JSONL Data - v10.0 English"""
         jsonl_lines = []
         
-        # 텍스트 후처리 (Post-Processing)
+        # Post-Processing
         def clean_text(text: str) -> str:
             if not text: return ""
-            return self.scale_processor.fix_label_typos(text)
+            return self.scale_processor.fix_label_typos(text) # Ensures English
         
-        # 추론형 Q&A를 JSONL로 변환
+        # Reasoning Q&A
         for qa in reasoning_qa:
             entry = {
                 "instruction": clean_text(qa["question"]),
@@ -1706,19 +1713,15 @@ This is ranked #{i} by absolute value among all reported items.
             }
             jsonl_lines.append(json.dumps(entry, ensure_ascii=False))
         
-        # 핵심 팩트 Q&A 추가 (단순 조회 비중 축소: 상위 3개만 - 10% 미만)
+        # Simple Facts (Top 3)
         for fact in facts[:3]:
-            # 오타 수정된 라벨 사용
-            label = self.scale_processor.fix_label_typos(fact.label)
-            
-            # 수치 정규화 (Billion 단위 + 통화 기호 일관성 유지)
-            # Reasoning Q&A와 동일하게 format_currency 사용 ($ 표시 포함)
+            label = self.scale_processor.fix_label_typos(fact.label) # Returns English
             val_norm = self.scale_processor.format_currency(fact.value)
             
             entry = {
-                "instruction": f"{self.company_name}의 {self.fiscal_year}년 {label}은 얼마인가?",
-                "input": "",
-                "output": f"{self.company_name}의 {self.fiscal_year}년 {label}은 {val_norm}입니다.",
+                "instruction": f"What is the {label} for {self.company_name} in {self.fiscal_year}?",
+                "input": f"{label}: {fact.value}",
+                "output": f"The {label} for {self.company_name} in {self.fiscal_year} is {val_norm}.",
                 "metadata": {
                     "company": self.company_name,
                     "fiscal_year": self.fiscal_year,
@@ -1732,14 +1735,23 @@ This is ranked #{i} by absolute value among all reported items.
         return jsonl_lines
     
     def _extract_key_metrics(self, facts: List[SemanticFact]) -> Dict[str, Any]:
-        """주요 지표 추출"""
+        """Extract Key Metrics - v10.0 English"""
         metrics = {}
         
-        key_labels = ['자산총계', '부채총계', '자본총계', '매출액', '영업이익', '당기순이익']
+        # Mapped to English
+        target_map = {
+            '자산총계': 'Total Assets', 'Assets': 'Total Assets', 'TotalAssets': 'Total Assets',
+            '부채총계': 'Total Liabilities', 'Liabilities': 'Total Liabilities', 'TotalLiabilities': 'Total Liabilities',
+            '자본총계': 'Total Equity', 'Equity': 'Total Equity', 'TotalEquity': 'Total Equity',
+            '매출액': 'Revenues', 'Revenues': 'Revenues', 'Revenue': 'Revenues',
+            '영업이익': 'Operating Income', 'OperatingIncome': 'Operating Income',
+            '당기순이익': 'Net Income', 'NetIncome': 'Net Income'
+        }
         
         for fact in facts:
-            if fact.label in key_labels:
-                metrics[fact.label] = {
+            if fact.label in target_map:
+                english_key = target_map[fact.label]
+                metrics[english_key] = {
                     "value": float(fact.value),
                     "formatted": self.scale_processor.format_currency(fact.value),
                     "period": fact.period
@@ -1748,7 +1760,7 @@ This is ranked #{i} by absolute value among all reported items.
         return metrics
     
     def _build_empty_result(self, error_message: str) -> XBRLIntelligenceResult:
-        """빈 결과 생성 (실패 시)"""
+        """Build Empty Result (on Failure) - English"""
         self.errors.append(error_message)
         logger.error(f"Empty result: {error_message}")
         
@@ -1758,7 +1770,7 @@ This is ranked #{i} by absolute value among all reported items.
             fiscal_year=self.fiscal_year,
             facts=[],
             reasoning_qa=[],
-            financial_report_md=f"# 파싱 실패\n\n{error_message}",
+            financial_report_md=f"# Parsing Failed\n\n{error_message}",
             jsonl_data=[],
             key_metrics={},
             parse_summary=error_message,
