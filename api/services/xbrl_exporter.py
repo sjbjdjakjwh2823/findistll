@@ -205,11 +205,20 @@ class PIIMasker:
 class XBRLExporter:
     """
     AI Training Data Exporter with dual output.
+    Integrates XBRLReasoner for advanced reasoning Q&A.
     """
     
     def __init__(self):
         self.validator = FinancialValidator()
         self.pii_masker = PIIMasker()
+        self._reasoner = None  # Lazy load to avoid circular imports
+    
+    @property
+    def reasoner(self):
+        if self._reasoner is None:
+            from .xbrl_reasoner import XBRLReasoner
+            self._reasoner = XBRLReasoner()
+        return self._reasoner
     
     def to_jsonl(self, data: Dict[str, Any], include_reasoning: bool = True) -> str:
         """
@@ -241,12 +250,26 @@ class XBRLExporter:
                 qa["validation_status"] = "passed" if all_passed else "review_required"
                 lines.append(json.dumps(qa, ensure_ascii=False))
         
-        # Generate reasoning Q&A pairs
+        # Generate reasoning Q&A pairs (basic)
         if include_reasoning:
             reasoning_qas = self._generate_reasoning_qas(masked_data)
             for qa in reasoning_qas:
                 qa["validation_status"] = "passed" if all_passed else "review_required"
                 lines.append(json.dumps(qa, ensure_ascii=False))
+        
+        # Generate advanced reasoning Q&A with Chain-of-Thought (from XBRLReasoner)
+        if include_reasoning and masked_data.get("facts"):
+            try:
+                self.reasoner.load_data(masked_data)
+                advanced_qas = self.reasoner.generate_reasoning_qa()
+                for qa in advanced_qas:
+                    lines.append(json.dumps(qa, ensure_ascii=False))
+            except Exception as e:
+                lines.append(json.dumps({
+                    "instruction": "고급 추론 분석 상태",
+                    "response": f"추론 엔진 오류: {str(e)}",
+                    "type": "diagnostic"
+                }, ensure_ascii=False))
         
         # Add parse log if extraction failed
         if not masked_data.get("facts") and not masked_data.get("formulas"):
