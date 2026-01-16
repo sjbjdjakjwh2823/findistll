@@ -61,7 +61,8 @@ export default function LoginPage() {
             await signInWithOAuth(provider);
         } catch (err: any) {
             console.error('OAuth error:', err);
-            setError(`Failed to sign in with ${provider}`);
+            // Show detailed error message
+            setError(err.message || `Failed to sign in with ${provider}`);
             setOauthLoading(null);
         }
     };
