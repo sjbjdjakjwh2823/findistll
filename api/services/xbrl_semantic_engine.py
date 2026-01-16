@@ -299,9 +299,9 @@ class ScaleProcessor:
         if not label:
             return label
         
-        # 1. 끝의 중복 문자 제거 (v7.0 Specific Regex)
-        # "익|계|금|액|용|비|성|합" 등의 접미사가 반복되는 경우 하나로 축소
-        fixed = re.sub(r'(익|계|금|액|용|비|성|합)\1+', r'\1', label)
+        # 1. 끝의 중복 문자 제거 (v7.0 Enhanced Regex)
+        # "익|계|금|액|용|비|성|합|료|원|가|세|등" 등의 접미사가 반복되는 경우 하나로 축소
+        fixed = re.sub(r'([익계금액용비성합료원가세등])\1+', r'\1', label)
         
         # 2. 연속 동일 단어 제거
         fixed = re.sub(r'\b(\w+)\s+\1\b', r'\1', fixed)
@@ -313,6 +313,12 @@ class ScaleProcessor:
             '당기순이익익': '당기순이익',
             '자산총계계': '자산총계',
             '부채총계계': '부채총계',
+            # Hard-Coded Semantic Mapping (English to Korean Standard)
+            'GrossProfit': '매출총이익',
+            'TotalAssets': '자산총계',
+            'OperatingIncome': '영업이익',
+            'NetIncome': '당기순이익',
+            'TotalLiabilities': '부채총계',
         }
         
         for typo, correct in typo_fixes.items():
@@ -1730,12 +1736,17 @@ ROE {roe:.2f}%는 주주가 투자한 자본 100원당 {roe:.0f}원의 순이익
         """JSONL 형식 데이터 생성"""
         jsonl_lines = []
         
+        # 텍스트 후처리 (Post-Processing)
+        def clean_text(text: str) -> str:
+            if not text: return ""
+            return self.scale_processor.fix_label_typos(text)
+        
         # 추론형 Q&A를 JSONL로 변환
         for qa in reasoning_qa:
             entry = {
-                "instruction": qa["question"],
-                "input": qa.get("context", ""),
-                "output": qa["response"],
+                "instruction": clean_text(qa["question"]),
+                "input": clean_text(qa.get("context", "")),
+                "output": clean_text(qa["response"]),
                 "metadata": {
                     "company": self.company_name,
                     "fiscal_year": self.fiscal_year,
