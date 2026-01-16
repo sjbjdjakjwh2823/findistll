@@ -239,13 +239,13 @@ class ScaleProcessor:
             sign = "-" if value < 0 else ""
             
             if abs_val >= Decimal('1e12'):
-                formatted = f"{float(abs_val / Decimal('1e12')):.2f}T"
+                formatted = f"{float(abs_val / Decimal('1e12')):.3f}T"
             elif abs_val >= Decimal('1e9'):
-                formatted = f"{float(abs_val / Decimal('1e9')):.2f}B"
+                formatted = f"{float(abs_val / Decimal('1e9')):.3f}B"
             elif abs_val >= Decimal('1e6'):
-                formatted = f"{float(abs_val / Decimal('1e6')):.2f}M"
+                formatted = f"{float(abs_val / Decimal('1e6')):.3f}M"
             elif abs_val >= Decimal('1e3'):
-                formatted = f"{float(abs_val / Decimal('1e3')):.2f}K"
+                formatted = f"{float(abs_val / Decimal('1e3')):.3f}K"
             else:
                 formatted = f"{int(abs_val):,}"
             
@@ -263,7 +263,7 @@ class ScaleProcessor:
         """
         수치를 Billion 단위로 정규화 (테이블 행 출력용)
         
-        예: 111601000000 → "111.60B"
+        예: 111601000000 → "111.601B" (소수점 3자리)
         
         공식: Value_std = Value_raw / 10^9 (Billion)
         """
@@ -274,15 +274,15 @@ class ScaleProcessor:
             if abs_val >= Decimal('1e12'):
                 # Trillion → 표시
                 normalized = float(value / Decimal('1e12'))
-                return f"{sign}{normalized:.2f}T"
+                return f"{sign}{normalized:.3f}T"
             elif abs_val >= Decimal('1e9'):
                 # Billion 정규화
                 normalized = float(value / Decimal('1e9'))
-                return f"{sign}{normalized:.2f}{unit}"
+                return f"{sign}{normalized:.3f}{unit}"
             elif abs_val >= Decimal('1e6'):
                 # Million
                 normalized = float(value / Decimal('1e6'))
-                return f"{sign}{normalized:.2f}M"
+                return f"{sign}{normalized:.3f}M"
             else:
                 return f"{int(value):,}"
         except:
@@ -1515,8 +1515,9 @@ ROE {roe:.2f}%는 주주가 투자한 자본 100원당 {roe:.0f}원의 순이익
             # 오타 수정된 라벨 사용
             label = self.scale_processor.fix_label_typos(fact.label)
             
-            # 수치 정규화 (Billion 단위)
-            val_norm = self.scale_processor.normalize_to_billion(fact.value)
+            # 수치 정규화 (Billion 단위 + 통화 기호 일관성 유지)
+            # Reasoning Q&A와 동일하게 format_currency 사용 ($ 표시 포함)
+            val_norm = self.scale_processor.format_currency(fact.value)
             
             entry = {
                 "instruction": f"{self.company_name}의 {self.fiscal_year}년 {label}은 얼마인가?",
