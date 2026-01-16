@@ -380,7 +380,26 @@ class FinancialMetricsEngine:
 class XBRLReasoner:
     """
     Generates high-quality reasoning Q&A pairs for LLM fine-tuning.
+    
+    Features:
+    - Excludes simple lookup questions (dates, identifiers)
+    - Generates analysis-focused Q&A (ratios, trends)
+    - Chain-of-Thought (CoT) format: Formula → Substitution → Result → Interpretation
     """
+    
+    # 제외할 질문 패턴 (단순 조회형 질문)
+    EXCLUDED_QUESTION_PATTERNS = [
+        r"날짜.*언제",
+        r"시작일.*무엇",
+        r"종료일.*무엇",
+        r"식별자.*무엇",
+        r"what.*date",
+        r"when.*start",
+        r"when.*end",
+        r"identifier",
+        r"context.*id",
+        r"unit.*is",
+    ]
     
     QUESTION_TEMPLATES = {
         "debt_ratio": [
@@ -411,6 +430,23 @@ class XBRLReasoner:
     def __init__(self, company_name: str = ""):
         self.company_name = company_name
         self.metrics_engine = FinancialMetricsEngine()
+    
+    @classmethod
+    def is_excluded_question(cls, question: str) -> bool:
+        """Check if question matches excluded patterns (simple lookup)."""
+        question_lower = question.lower()
+        for pattern in cls.EXCLUDED_QUESTION_PATTERNS:
+            if re.search(pattern, question_lower, re.IGNORECASE):
+                return True
+        return False
+    
+    @classmethod
+    def filter_qa_pairs(cls, qa_pairs: List[Dict]) -> List[Dict]:
+        """Filter out simple lookup Q&A pairs, keep only analysis-type."""
+        return [
+            qa for qa in qa_pairs
+            if not cls.is_excluded_question(qa.get("instruction", ""))
+        ]
     
     def load_data(self, parsed_data: Dict[str, Any]) -> None:
         """Load parsed XBRL data."""
