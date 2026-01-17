@@ -93,397 +93,397 @@ class ScaleProcessor:
         except (InvalidOperation, ValueError):
             return Decimal("0"), "error_fallback"
 
-class ExpertCoTGenerator:
-    """
-    Unified English Chain-of-Thought Generator.
-    Mandates 4-step analytical structure for financial training data.
-    """
-
-    @staticmethod
-    def generate(
-        metric_name: str,
-        company_name: str,
-        industry: str,
-        cy_val: Decimal,
-        py_val: Optional[Decimal] = None,
-        definition_text: Optional[str] = None
-    ) -> str:
-        """Builds a structured 4-step CoT response following the Golden Standard."""
-        
-        # 1. [Definition]
-        if not definition_text:
-            definition_text = f"The {metric_name.replace('_', ' ').title()} measures a corporation's performance by revealing its financial standing from the {industry} perspective."
-        
-        # 2. [Synthesis]
-        cy_str = f"CY ({datetime.now().year}): {ScaleProcessor.format_currency(cy_val)}"
-        py_str = f"PY ({datetime.now().year - 1}): " + (ScaleProcessor.format_currency(py_val) if py_val is not None else "N/A (Prior data missing)")
-        synthesis = f"{cy_str}, {py_str}."
-        
-        # 3. [Symbolic Reasoning]
-        if py_val is not None and py_val != 0:
-            growth = float((cy_val - py_val) / abs(py_val) * 100)
-            formula = f"$$Growth = \\frac{{{cy_val:.3f} - {py_val:.3f}}}{{{abs(py_val):.3f}}} \\times 100\\% = {growth:+.2f}\\%$$"
-        else:
-            growth = 0.0
-            formula = f"$$Growth = \\text{{N/A (Historical comparison unavailable)}}$$"
-        
-        # 4. [Professional Insight]
-        trend = "positive" if growth > 0 else "negative"
-        momentum = "acceleration" if growth > 0 else "deceleration"
-        insight = f"{company_name} shows a {trend} momentum in {metric_name.replace('_', ' ')}. "
-        if py_val is not None and py_val != 0:
-            insight += f"The {growth:+.2f}% growth indicates {momentum} in profitability and market dominance within the {industry} sector."
-        else:
-            insight += f"Current performance is representative of structural trends in {industry}, though longer-term trajectory requires prior period validation."
+    class ExpertCoTGenerator:
+        """
+        Unified English Chain-of-Thought Generator.
+        Mandates 4-step analytical structure for financial training data.
+        """
+    
+        @staticmethod
+        def generate(
+            metric_name: str,
+            company_name: str,
+            industry: str,
+            cy_val: Decimal,
+            py_val: Optional[Decimal] = None,
+            definition_text: Optional[str] = None
+        ) -> str:
+            """Builds a structured 4-step CoT response following the Golden Standard."""
             
-        return (
-            "[Definition]\n" + definition_text + "\n\n" +
-            "[Synthesis]\n" + synthesis + "\n\n" +
-            "[Symbolic Reasoning]\n" + formula + "\n\n" +
-            "[Professional Insight]\n" + insight
-        )
+            # 1. [Definition]
+            if not definition_text:
+                definition_text = f"The {metric_name.replace('_', ' ').title()} measures a corporation's performance by revealing its financial standing from the {industry} perspective."
+            
+            # 2. [Synthesis]
+            cy_str = f"CY ({datetime.now().year}): {ScaleProcessor.format_currency(cy_val)}"
+            py_str = f"PY ({datetime.now().year - 1}): " + (ScaleProcessor.format_currency(py_val) if py_val is not None else "N/A (Prior data missing)")
+            synthesis = f"{cy_str}, {py_str}."
+            
+            # 3. [Symbolic Reasoning]
+            if py_val is not None and py_val != 0:
+                growth = float((cy_val - py_val) / abs(py_val) * 100)
+                formula = f"$$Growth = \\frac{{{cy_val:.3f} - {py_val:.3f}}}{{{abs(py_val):.3f}}} \\times 100\\% = {growth:+.2f}\\%$$"
+            else:
+                growth = 0.0
+                formula = f"$$Growth = \\text{{N/A (Historical comparison unavailable)}}$$"
+            
+            # 4. [Professional Insight]
+            trend = "positive" if growth > 0 else "negative"
+            momentum = "acceleration" if growth > 0 else "deceleration"
+            insight = f"{company_name} shows a {trend} momentum in {metric_name.replace('_', ' ')}. "
+            if py_val is not None and py_val != 0:
+                insight += f"The {growth:+.2f}% growth indicates {momentum} in profitability and market dominance within the {industry} sector."
+            else:
+                insight += f"Current performance is representative of structural trends in {industry}, though longer-term trajectory requires prior period validation."
+            
+            # V13.0 Enhancement: Data Exploration Phase Nuance
+            # If value is very small (<$1M i.e., 0.001B) or PY is missing, explicitly state context.
+            if abs(cy_val) < Decimal("0.001") or py_val is None:
+                insight += " **Note: This analysis represents a broad Data Exploration Phase. Value magnitude warrants verification of unit scale (e.g., Millions vs Billions) or indicates an emerging metric.**"
+                
+            return (
+                "[Definition]\n" + definition_text + "\n\n" +
+                "[Synthesis]\n" + synthesis + "\n\n" +
+                "[Symbolic Reasoning]\n" + formula + "\n\n" +
+                "[Professional Insight]\n" + insight
+            )
 
-class XBRLSemanticEngine:
-    """
-    Primary engine for distalizing financial XML into JSONL.
-    Features strict English enforcement and poison pill verification.
-    """
-    
-    
-    def __init__(self, company_name: str = "Target Corp", fiscal_year: str = "2024", file_path: str = "unknown_file"):
-        self.company_name = company_name
-        self.fiscal_year = fiscal_year
-        self.file_path = file_path
-        self.facts: List[SemanticFact] = []
-        self.reasoning_qa: List[Dict[str, str]] = []
-        self.errors: List[str] = []
-
-    def _generate_jsonl(self, reasoning_qa: List[Dict[str, str]]) -> List[str]:
+    class XBRLSemanticEngine:
         """
-        Generates final JSONL line strings.
-        POISON PILL: Scans all output for any Korean character.
+        Primary engine for distalizing financial XML into JSONL.
+        Features strict English enforcement and poison pill verification.
         """
-        jsonl_lines = []
-        korean_pattern = re.compile(r'[\uAC00-\uD7A3]')
         
-        for qa in reasoning_qa:
-            entry = {
-                "instruction": f"Analyze the year-over-year (YoY) trend of {self.company_name}, focusing on its {qa.get('type', 'financial')} metrics.",
-                "input": f"{self.company_name} {self.fiscal_year} Financial Data",
-                "output": qa["response"],
-                "metadata": {
-                    "company": self.company_name,
-                    "year": self.fiscal_year,
-                    "engine_version": "v11.5_strict"
+        
+        def __init__(self, company_name: str = "Target Corp", fiscal_year: str = "2024", file_path: str = "unknown_file"):
+            self.company_name = company_name
+            self.fiscal_year = fiscal_year
+            self.file_path = file_path
+            self.facts: List[SemanticFact] = []
+            self.reasoning_qa: List[Dict[str, str]] = []
+            self.errors: List[str] = []
+    
+        def _generate_jsonl(self, reasoning_qa: List[Dict[str, str]]) -> List[str]:
+            """
+            Generates final JSONL line strings.
+            POISON PILL: Scans all output for any Korean character.
+            """
+            jsonl_lines = []
+            korean_pattern = re.compile(r'[\uAC00-\uD7A3]')
+            
+            for qa in reasoning_qa:
+                entry = {
+                    "instruction": f"Analyze the year-over-year (YoY) trend of {self.company_name}, focusing on its {qa.get('type', 'financial')} metrics.",
+                    "input": f"{self.company_name} {self.fiscal_year} Financial Data",
+                    "output": qa["response"],
+                    "metadata": {
+                        "company": self.company_name,
+                        "year": self.fiscal_year,
+                        "engine_version": "v13.0_broad"
+                    }
                 }
-            }
-            line = json.dumps(entry, ensure_ascii=False)
+                line = json.dumps(entry, ensure_ascii=False)
+                
+                # Poison Pill Check (Strict v11.5)
+                if korean_pattern.search(line):
+                    logger.error(f"POISON PILL TRIGGERED: Korean detected in output -> {line}")
+                    raise RuntimeError("KOREAN_DETECTED")
+                
+                jsonl_lines.append(line)
             
-            # Poison Pill Check (Strict v11.5)
-            if korean_pattern.search(line):
-                logger.error(f"POISON PILL TRIGGERED: Korean detected in output -> {line}")
-                raise RuntimeError("KOREAN_DETECTED")
+            logger.warning("V13.0 PIPELINE INTEGRITY: JSONL GENERATION ACTIVE")
+            return jsonl_lines
+    
+        def process_joint(self, instance_content: bytes, label_content: Optional[bytes] = None) -> XBRLIntelligenceResult:
+            """
+            Main entry point for XBRL distillation.
+            Extracts CY/PY facts, calculates trends, and generates CoT JSONL.
+            """
+            import xml.etree.ElementTree as ET
             
-            jsonl_lines.append(line)
-        
-        logger.warning("V11.5 FULL RECONSTRUCTION: 100% OPERATIONAL")
-        logger.warning("INTELLIGENCE RECOVERY COMPLETE: CoT & YoY ACTIVE")
-        return jsonl_lines
-
-    def process_joint(self, instance_content: bytes, label_content: Optional[bytes] = None) -> XBRLIntelligenceResult:
-        """
-        Main entry point for XBRL distillation.
-        Extracts CY/PY facts, calculates trends, and generates CoT JSONL.
-        """
-        import xml.etree.ElementTree as ET
-        
-        try:
-            tree = ET.fromstring(instance_content)
-            # Remove namespaces for easier querying in this strict reconstruction
-            for elem in tree.iter():
-                if '}' in elem.tag:
-                    elem.tag = elem.tag.split('}', 1)[1]
+            try:
+                tree = ET.fromstring(instance_content)
+                # Remove namespaces for easier querying in this strict reconstruction
+                for elem in tree.iter():
+                    if '}' in elem.tag:
+                        elem.tag = elem.tag.split('}', 1)[1]
+                
+                # 1. Parse Contexts (CY/PY Mapping)
+                contexts = self._parse_contexts(tree)
+                
+                # 2. Extract Metadata (Company Name, Fiscal Year)
+                self._extract_metadata(tree)
+                
+                # 3. Extract Key Facts
+                facts = self._extract_facts(tree, contexts)
+                self.facts = facts
+                
+                # 4. Trend Analysis (YoY) & QA Generation
+                qa_pairs = self._generate_reasoning_qa(facts)
+                
+                # 4. JSONL Generation (with Poison Pill)
+                jsonl_data = self._generate_jsonl(qa_pairs)
+                
+                # Extract summary from QA
+                summary = "Analysis complete."
+                for qa in qa_pairs:
+                    if qa.get("type") == "summary":
+                        summary = qa["response"]
+                        break
+                
+                return XBRLIntelligenceResult(
+                    success=True,
+                    company_name=self.company_name,
+                    fiscal_year=self.fiscal_year,
+                    facts=facts,
+                    reasoning_qa=qa_pairs,
+                    financial_report_md="# Financial Analysis Report",
+                    jsonl_data=jsonl_data,
+                    key_metrics={},
+                    parse_summary=summary,
+                    errors=self.errors
+                )
+            except Exception as e:
+                logger.error(f"Processing failed: {e}")
+                import traceback
+                error_trace = traceback.format_exc()
+                self.errors.append(f"Traceback: {error_trace}")
+                return XBRLIntelligenceResult(
+                    success=False, company_name=self.company_name, fiscal_year=self.fiscal_year,
+                    facts=[], reasoning_qa=[], financial_report_md="", jsonl_data=[],
+                    key_metrics={}, parse_summary=f"Error: {e}", errors=self.errors
+                )
+    
+        def _extract_metadata(self, tree: Any):
+            """Attempts to extract entity name and fiscal year from common XBRL tags."""
+            # Common DEIs (Document and Entity Information)
+            name_tags = ['EntityRegistrantName', 'EntityCentralIndexKey']
+            year_tags = ['DocumentFiscalYearFocus', 'DocumentPeriodEndDate']
             
-            # 1. Parse Contexts (CY/PY Mapping)
-            contexts = self._parse_contexts(tree)
-            
-            # 2. Extract Metadata (Company Name, Fiscal Year)
-            self._extract_metadata(tree)
-            
-            # 3. Extract Key Facts
-            facts = self._extract_facts(tree, contexts)
-            self.facts = facts
-            
-            # 4. Trend Analysis (YoY) & QA Generation
-            qa_pairs = self._generate_reasoning_qa(facts)
-            
-            # 4. JSONL Generation (with Poison Pill)
-            jsonl_data = self._generate_jsonl(qa_pairs)
-            
-            # Extract summary from QA
-            summary = "Analysis complete."
-            for qa in qa_pairs:
-                if qa.get("type") == "summary":
-                    summary = qa["response"]
+            for tag in name_tags:
+                elem = tree.find(f".//{tag}")
+                if elem is not None and elem.text:
+                    self.company_name = elem.text
                     break
             
-            return XBRLIntelligenceResult(
-                success=True,
-                company_name=self.company_name,
-                fiscal_year=self.fiscal_year,
-                facts=facts,
-                reasoning_qa=qa_pairs,
-                financial_report_md="# Financial Analysis Report",
-                jsonl_data=jsonl_data,
-                key_metrics={},
-                parse_summary=summary,
-                errors=self.errors
-            )
-        except Exception as e:
-            logger.error(f"Processing failed: {e}")
-            import traceback
-            error_trace = traceback.format_exc()
-            self.errors.append(f"Traceback: {error_trace}")
-            return XBRLIntelligenceResult(
-                success=False, company_name=self.company_name, fiscal_year=self.fiscal_year,
-                facts=[], reasoning_qa=[], financial_report_md="", jsonl_data=[],
-                key_metrics={}, parse_summary=f"Error: {e}", errors=self.errors
-            )
-
-    def _extract_metadata(self, tree: Any):
-        """Attempts to extract entity name and fiscal year from common XBRL tags."""
-        # Common DEIs (Document and Entity Information)
-        name_tags = ['EntityRegistrantName', 'EntityCentralIndexKey']
-        year_tags = ['DocumentFiscalYearFocus', 'DocumentPeriodEndDate']
-        
-        for tag in name_tags:
-            elem = tree.find(f".//{tag}")
-            if elem is not None and elem.text:
-                self.company_name = elem.text
-                break
-        
-        for tag in year_tags:
-            elem = tree.find(f".//{tag}")
-            if elem is not None and elem.text:
-                # Extract year from YYYY-MM-DD or use whole string
-                text = elem.text.strip()
-                if len(text) >= 4:
-                    self.fiscal_year = text[:4]
-                break
-
-    def _parse_contexts(self, tree: Any) -> Dict[str, str]:
-        """
-        V13.0 Semantic Time Series: 
-        Precision YoY Mapping using 365-day target window.
-        """
-        from collections import Counter
-        from datetime import datetime, timedelta
-        
-        context_map = {}
-        date_counts = Counter()
-        ctx_date_map = {}
-        
-        # 1. Scan all contexts and map IDs to dates
-        for ctx in tree.findall(".//context"):
-            ctx_id = ctx.get("id")
-            if not ctx_id: continue
+            for tag in year_tags:
+                elem = tree.find(f".//{tag}")
+                if elem is not None and elem.text:
+                    # Extract year from YYYY-MM-DD or use whole string
+                    text = elem.text.strip()
+                    if len(text) >= 4:
+                        self.fiscal_year = text[:4]
+                    break
+    
+        def _parse_contexts(self, tree: Any) -> Dict[str, str]:
+            """
+            V13.0 Semantic Time Series: 
+            Precision YoY Mapping using 365-day target window.
+            """
+            from collections import Counter
+            from datetime import datetime
             
-            period = ctx.find("period")
-            if period is not None:
-                # Prioritize endDate (Instant is also valid)
-                date_elem = period.find("endDate")
-                if date_elem is None:
-                    date_elem = period.find("instant")
+            context_map = {}
+            date_counts = Counter()
+            ctx_date_map = {}
+            
+            # 1. Scan all contexts and map IDs to dates
+            for ctx in tree.findall(".//context"):
+                ctx_id = ctx.get("id")
+                if not ctx_id: continue
+                
+                period = ctx.find("period")
+                if period is not None:
+                    # Prioritize endDate for distinct timepoints
+                    date_elem = period.find("endDate")
+                    if date_elem is None:
+                        date_elem = period.find("instant")
+                        
+                    if date_elem is not None and date_elem.text:
+                        d_str = date_elem.text.strip()
+                        ctx_date_map[ctx_id] = d_str
+                        date_counts[d_str] += 1
+            
+            if not date_counts:
+                logger.warning("V13.0 WARNING: No dates found in contexts.")
+                return {}
+                
+            # 2. Identify CY (Latest Valid Date)
+            sorted_dates = sorted(date_counts.keys(), reverse=True)
+            cy_date_str = sorted_dates[0]
+            
+            try:
+                cy_dt = datetime.strptime(cy_date_str, "%Y-%m-%d")
+            except ValueError:
+                 cy_dt = None
+                 logger.warning(f"V13.0 DATE PARSE FAIL: {cy_date_str}")
+    
+            # 3. Identify PY (Target: ~1 year prior with 30-day flexibility)
+            py_date_str = None
+            
+            if cy_dt:
+                best_gap = float('inf')
+                # Check top 5 dates candidates to find the 1-year mark
+                for d_str in sorted_dates: 
+                    if d_str == cy_date_str: continue
+                    try:
+                        d_dt = datetime.strptime(d_str, "%Y-%m-%d")
+                        days_diff = (cy_dt - d_dt).days
+                        
+                        # Target: 330 to 390 days (approx 1 year)
+                        if 300 <= days_diff <= 400:
+                             gap_score = abs(days_diff - 365)
+                             if gap_score < best_gap:
+                                 best_gap = gap_score
+                                 py_date_str = d_str
+                    except ValueError:
+                        continue
+            
+            # Fallback 1: If no precise 1-year match, take the oldest robust date
+            # This ensures we don't pick last month (Q4 vs Q3) but rather Q4 vs Oldest (likely PY or PYY)
+            if not py_date_str and len(sorted_dates) > 1:
+                # Filter out CY and dates too close (< 90 days)
+                candidates = []
+                for d in sorted_dates:
+                     if d == cy_date_str: continue
+                     try:
+                         if cy_dt and (cy_dt - datetime.strptime(d, "%Y-%m-%d")).days > 90:
+                             candidates.append(d)
+                     except: pass
+                
+                if candidates:
+                    py_date_str = candidates[-1] # The oldest available date
+                else:
+                    py_date_str = sorted_dates[-1] # Absolute fallback to oldest
+                
+            logger.warning(f"V13.0 TIME SERIES AI: Selected CY={cy_date_str}, PY={py_date_str if py_date_str else 'N/A'}")
+            
+            # 3. Map Context IDs (Strict)
+            for cid, dstr in ctx_date_map.items():
+                if dstr == cy_date_str:
+                    context_map[cid] = "CY"
+                elif py_date_str and dstr == py_date_str:
+                    context_map[cid] = "PY"
                     
-                if date_elem is not None and date_elem.text:
-                    d_str = date_elem.text.strip()
-                    ctx_date_map[ctx_id] = d_str
-                    date_counts[d_str] += 1
-        
-        if not date_counts:
-            logger.warning("No dates found in contexts.")
-            return {}
+            return context_map
+    
+        def _extract_facts(self, tree: Any, contexts: Dict[str, str]) -> List[SemanticFact]:
+            """
+            V13.0 Greedy Numeric Extraction.
+            Captures ALL contexts-bound numeric values indiscriminately.
+            """
+            facts = []
             
-        # 2. Identify CY (Latest Valid Date)
-        sorted_dates = sorted(date_counts.keys(), reverse=True)
-        cy_date_str = sorted_dates[0]
-        
-        try:
-            cy_dt = datetime.strptime(cy_date_str, "%Y-%m-%d")
-        except ValueError:
-            # Fallback for non-standard dates, just take top 2 textually
-             cy_dt = None
-
-        # 3. Identify PY (Target: ~1 year prior)
-        py_date_str = None
-        
-        if cy_dt:
-            # Look for a date between 330 and 390 days ago
-            target_days = 365
-            window = 60 # +/- 30 days roughly, or just look for previous year match
-            
-            best_gap = float('inf')
-            
-            for d_str in sorted_dates[1:]:
-                try:
-                    d_dt = datetime.strptime(d_str, "%Y-%m-%d")
-                    days_diff = (cy_dt - d_dt).days
-                    
-                    # We want positive difference (past) around 365
-                    if 300 <= days_diff <= 400:
-                         if abs(days_diff - 365) < best_gap:
-                             best_gap = abs(days_diff - 365)
-                             py_date_str = d_str
-                except ValueError:
+            # Iterate ALL elements
+            for elem in tree.iter():
+                ctx_ref = elem.get("contextRef")
+                if not ctx_ref or ctx_ref not in contexts:
                     continue
-        
-        # Fallback: if no smart YoY found, take the next most frequent date that isn't CY
-        if not py_date_str and len(sorted_dates) > 1:
-            # Filter out CY
-            candidates = [d for d in sorted_dates if d != cy_date_str]
-            if candidates:
-                py_date_str = candidates[0]
-            
-        logger.warning(f"TIME SERIES AI V13: CY={cy_date_str}, PY={py_date_str if py_date_str else 'N/A'}")
-        
-        # 3. Map Context IDs
-        for cid, dstr in ctx_date_map.items():
-            if dstr == cy_date_str:
-                context_map[cid] = "CY"
-            elif py_date_str and dstr == py_date_str:
-                context_map[cid] = "PY"
+                    
+                raw_val = elem.text
+                if not raw_val:
+                    continue
+                    
+                # Greedy Numeric Check: Logic is [0-9] MUST exist.
+                # Allow '$', ',', '.' but ensure at least one digit
+                if not any(char.isdigit() for char in raw_val):
+                    continue
+                    
+                tag_name = elem.tag # Namespace already stripped
                 
-        return context_map
-
-    def _extract_facts(self, tree: Any, contexts: Dict[str, str]) -> List[SemanticFact]:
-        """Extracts and scales XML elements into SemanticFacts (Universal Parsing)."""
-        facts = []
-        
-        # Universal Extraction: Iterate ALL elements to find numeric facts
-        for elem in tree.iter():
-            # Check if this element is a fact (has contextRef and value)
-            ctx_ref = elem.get("contextRef")
-            if not ctx_ref or ctx_ref not in contexts:
-                continue
+                # Check decimals for scaling
+                decimals = elem.get("decimals")
+                dec_int = int(decimals) if decimals and decimals not in ('INF', 'None') else None
                 
-            raw_val = elem.text
-            if not raw_val:
-                continue
+                val, scale_type = ScaleProcessor.apply_self_healing(raw_val, dec_int)
                 
-            # Check if value is numeric (skip pure text blocks)
-            # Remove whitespace and common non-numeric chars for check
-            check_val = raw_val.strip()
-            # Loose number check to capture more (allow parenthesis for negatives in some formats, though XBRL usually uses - sign)
-            if not re.match(r'^-?[\d,]+(\.\d+)?$', check_val.replace(',','')): 
-                continue
+                facts.append(SemanticFact(
+                    concept=tag_name,
+                    label=tag_name, # Raw tag name is fine for greedy mode
+                    value=val,
+                    raw_value=raw_val,
+                    unit=elem.get("unitRef", "USD"),
+                    period=contexts[ctx_ref],
+                    context_ref=ctx_ref,
+                    decimals=dec_int
+                ))
+    
+            logger.warning(f"TRACE 1: Found {len(facts)} facts in XML (V13.0 Greedy Parsing)")
+            return facts
+    
+        def _generate_reasoning_qa(self, facts: List[SemanticFact]) -> List[Dict[str, str]]:
+            """Calculates YoY trends and generates CoT responses."""
+            logger.warning(f"ENV CHECK: LLM_API_KEY_PRESENT = {bool(os.getenv('GEMINI_API_KEY'))}")
+            logger.warning(f"TRACE: Total facts found in XML = {len(facts)}")
+            self.reasoning_qa = []
+            
+            # Group by concept to find CY/PY pairs
+            concept_groups = {}
+            for f in facts:
+                if f.concept not in concept_groups: concept_groups[f.concept] = {}
+                concept_groups[f.concept][f.period] = f
                 
-            # It's a candidate fact!
-            tag_name = elem.tag # Namespace already stripped
+            for concept, periods in concept_groups.items():
+                cy_f = periods.get("CY")
+                py_f = periods.get("PY")
+                
+                # Force Generation: Always process if we have a CY value
+                target_f = cy_f if cy_f else py_f
+                if not target_f: continue
+                
+                c_val = cy_f.value if cy_f else target_f.value
+                p_val = py_f.value if py_f else None
+                
+                # Identity/Sanity Check
+                if p_val == c_val:
+                    p_val = None 
+                
+                # Force CoT through ExpertCoTGenerator - Forced call
+                response = ExpertCoTGenerator.generate(
+                    metric_name=concept,
+                    company_name=self.company_name,
+                    industry="Financial Services",
+                    cy_val=c_val,
+                    py_val=p_val
+                )
+                
+                if response:
+                    self.reasoning_qa.append({
+                        "question": f"Analyze the year-over-year (YoY) trend of {concept}.",
+                        "response": response,
+                        "type": "trend"
+                    })
             
-            decimals = elem.get("decimals")
-            dec_int = int(decimals) if decimals and decimals not in ('INF', 'None') else None
-            
-            val, scale_type = ScaleProcessor.apply_self_healing(raw_val, dec_int)
-            
-            facts.append(SemanticFact(
-                concept=tag_name,
-                label=tag_name.replace(':', ' ').replace('_', ' '), # Clean label
-                value=val,
-                raw_value=raw_val,
-                unit=elem.get("unitRef", "USD"),
-                period=contexts[ctx_ref],
-                context_ref=ctx_ref,
-                decimals=dec_int
-            ))
-
-        logger.warning(f"TRACE 1: Found {len(facts)} facts in XML (Broad Spectrum)")
-        return facts
-
-    def _generate_reasoning_qa(self, facts: List[SemanticFact]) -> List[Dict[str, str]]:
-        """Calculates YoY trends and generates CoT responses."""
-        logger.warning(f"ENV CHECK: LLM_API_KEY_PRESENT = {bool(os.getenv('GEMINI_API_KEY'))}")
-        logger.warning(f"ENV CHECK: XML_FILE_PATH = {self.file_path}")
-        logger.warning(f"TRACE: Total facts found in XML = {len(facts)}")
-        self.reasoning_qa = []
-        
-        # Group by concept to find CY/PY pairs
-        concept_groups = {}
-        for f in facts:
-            if f.concept not in concept_groups: concept_groups[f.concept] = {}
-            concept_groups[f.concept][f.period] = f
-            
-        for concept, periods in concept_groups.items():
-            # logger.info(f"TRACE 2: Processing concept {concept}...")
-            cy_f = periods.get("CY")
-            py_f = periods.get("PY")
-            
-            # Force Generation: Always process if we have a CY value
-            target_f = cy_f if cy_f else py_f
-            if not target_f: continue
-            
-            c_val = cy_f.value if cy_f else target_f.value
-            p_val = py_f.value if py_f else None
-            
-            # Identity Check: Should not compare same value as YoY
-            if p_val == c_val:
-                p_val = None # Treat as missing prior data for growth calc
-            
-            # logger.info(f"TRACE: Values for {concept} -> CY: {c_val}, PY: {p_val}")
-
-            # Force CoT through ExpertCoTGenerator - Forced call
-            response = ExpertCoTGenerator.generate(
-                metric_name=concept,
-                company_name=self.company_name,
-                industry="Financial Services",
-                cy_val=c_val,
-                py_val=p_val
-            )
-            
-            # STRICT DEBUG & APPEND VERIFICATION
-            # logger.info(f"TRACE 3: Generation for {concept} successful: {bool(response)}")
-            
-            if response:
-                self.reasoning_qa.append({
-                    "question": f"Analyze the year-over-year (YoY) trend of {concept}.",
-                    "response": response,
-                    "type": "trend"
+            # Comprehensive Summary as Mandatory CoT
+            if facts:
+                main_f = facts[0] # Just grab the first one for summary anchor
+                summary_response = ExpertCoTGenerator.generate(
+                    metric_name="Financial Aggregates",
+                    company_name=self.company_name,
+                    industry="Aggregate Financials",
+                    cy_val=main_f.value,
+                    py_val=None,
+                    definition_text=f"The Financial Performance Summary for {self.company_name} provides an aggregate view."
+                )
+                
+                self.reasoning_qa.insert(0, {
+                    "question": "Provide an executive summary of the document and its year-over-year (YoY) trajectory.",
+                    "response": summary_response,
+                    "type": "summary"
                 })
-                # logger.warning(f"TRACE 4: Current list size in Engine: {len(self.reasoning_qa)}")
-        
-        # Comprehensive Summary as Mandatory CoT
-        if facts:
-            main_f = facts[0]
-            summary_response = ExpertCoTGenerator.generate(
-                metric_name="Financial Aggregates",
-                company_name=self.company_name,
-                industry="Aggregate Financials",
-                cy_val=main_f.value,
-                py_val=None,
-                definition_text=f"The Financial Performance Summary for {self.company_name} provides an aggregate view of key indicators retrieved from the v11.5 XBRL stream."
-            )
-            
-            # logger.info(f"DEBUG: Fact Generated for SUMMARY | Definition Present: {'[Definition]' in summary_response}")
-            
-            self.reasoning_qa.insert(0, {
-                "question": "Provide an executive summary of the document and its year-over-year (YoY) trajectory.",
-                "response": summary_response,
-                "type": "summary"
-            })
-            
-        # [Strict Data Check]
-        # Fallback removed. Real data flow enforced.
-        if not self.reasoning_qa and facts:
-             logger.warning("No specific YoY pairs found, but facts exist. Generating coverage report.")
-             # At least generate 1 report based on the first fact found
-             self.reasoning_qa.append({
-                 "question": "Document Overview",
-                 "response": summary_response if 'summary_response' in locals() else "Data extraction complete but disjointed.",
-                 "type": "summary"
-             })
-
-        logger.warning(f"V13.0 COMPLETE: BUILD SUCCESS & YoY ACTIVE {len(self.reasoning_qa)} CHAINS FROM {len(facts)} FACTS")
-        print(f"V13.0 COMPLETE: BUILD SUCCESS & YoY ACTIVE {len(facts)} FACTS")
-        return self.reasoning_qa
+                
+            # [Strict Data Check]
+            if not self.reasoning_qa and facts:
+                 logger.warning("No specific YoY pairs found, but facts exist. Generating coverage report.")
+                 self.reasoning_qa.append({
+                     "question": "Document Overview",
+                     "response": summary_response if 'summary_response' in locals() else "Data extraction complete but disjointed.",
+                     "type": "summary"
+                 })
+    
+            logger.warning(f"V13.0 COMPLETE: BUILD SUCCESS & YoY ACTIVE {len(self.reasoning_qa)} CHAINS FROM {len(facts)} FACTS")
+            print(f"V13.0 COMPLETE: BUILD SUCCESS & YoY ACTIVE {len(facts)} FACTS")
+            return self.reasoning_qa
     
     def process_mock(self) -> XBRLIntelligenceResult:
         """Mock execution to demonstrate the 100% operational status."""
