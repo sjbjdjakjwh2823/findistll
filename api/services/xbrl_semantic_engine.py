@@ -292,7 +292,16 @@ class XBRLSemanticEngine:
         if not sorted_unique: return {}
         
         cy_date = sorted_unique[0]
-        py_date = sorted_unique[1] if len(sorted_unique) > 1 else None
+        cy_year = cy_date[:4]
+        
+        # Find first date from a different year for strict YoY
+        py_date = None
+        for d in sorted_unique[1:]:
+            if d[:4] != cy_year:
+                py_date = d
+                break
+                
+        print(f"TRACE: Context Mapping -> CY: {cy_date} (Year {cy_year}), PY: {py_date} (Year {py_date[:4] if py_date else 'N/A'})")
         
         for cid, dstr in ctx_date_list:
             if dstr == cy_date:
