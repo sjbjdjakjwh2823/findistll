@@ -16,6 +16,12 @@ from sqlalchemy import select, desc, text
 import os
 import json
 
+import logging
+
+# Configure logger
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("uvicorn")
+
 from .db import get_db, engine, Base
 from .models import Document, ExtractedResult
 from .services.ingestion import ingestion_service
@@ -35,15 +41,15 @@ async def lifespan(app: FastAPI):
     Perform database auto-migration on server startup.
     """
     try:
-        print("Starting database auto-migration...")
+        logger.info("Starting database auto-migration...")
         async with engine.begin() as conn:
             # 1. Create vector extension if not exists
             await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-            print("Vector extension checked/created.")
+            logger.info("Vector extension checked/created.")
             
             # 2. Create all tables defined in models
             await conn.run_sync(Base.metadata.create_all)
-            print("Database tables checked/created successfully.")
+            logger.info("Database tables checked/created successfully.")
             
             # 3. Add missing columns (safe migration for existing tables)
             # Check and add file_type column to documents table
@@ -52,9 +58,9 @@ async def lifespan(app: FastAPI):
                     ALTER TABLE documents 
                     ADD COLUMN IF NOT EXISTS file_type VARCHAR
                 """))
-                print("Column 'file_type' checked/added to documents table.")
+                logger.info("Column 'file_type' checked/added to documents table.")
             except Exception as col_error:
-                print(f"Note: Could not add file_type column (may already exist): {col_error}")
+                logger.warning(f"Note: Could not add file_type column (may already exist): {col_error}")
             
             # 4. Migrate user_id from INTEGER to VARCHAR (for Supabase UUID)
             # This requires dropping any FK constraint first
@@ -72,7 +78,7 @@ async def lifespan(app: FastAPI):
                         END IF;
                     END $$;
                 """))
-                print("FK constraint 'documents_user_id_fkey' dropped (if existed).")
+                logger.info("FK constraint 'documents_user_id_fkey' dropped (if existed).")
                 
                 # Check if column is already VARCHAR
                 result = await conn.execute(text("""
@@ -87,18 +93,15 @@ async def lifespan(app: FastAPI):
                         ALTER TABLE documents 
                         ALTER COLUMN user_id TYPE VARCHAR(255) USING user_id::VARCHAR
                     """))
-                    print("Column 'user_id' migrated from INTEGER to VARCHAR.")
+                    logger.info("Column 'user_id' migrated from INTEGER to VARCHAR.")
                 else:
-                    print("Column 'user_id' is already VARCHAR type.")
+                    logger.info("Column 'user_id' is already VARCHAR type.")
                     
             except Exception as type_error:
-                print(f"ERROR during user_id migration: {type_error}")
-                # Re-raise to see the actual error
-                import traceback
-                traceback.print_exc()
+                logger.error(f"ERROR during user_id migration: {type_error}", exc_info=True)
             
     except Exception as e:
-        print(f"CRITICAL: Database initialization failed: {e}")
+        logger.critical(f"CRITICAL: Database initialization failed: {e}")
         # We don't raise here to allow the app to start even if DB is flaky,
         # but errors will be logged for debugging.
     
@@ -127,20 +130,18 @@ app.add_middleware(
 @app.middleware("http")
 async def log_requests(request, call_next):
     """Log incoming requests to debug auth headers and paths."""
-    print(f"[API DEBUG] Request: {request.method} {request.url.path}")
+    logger.info(f"[API DEBUG] Request: {request.method} {request.url.path}")
     try:
         auth = request.headers.get("Authorization")
         if auth:
-            print(f"[API DEBUG] Auth Header present: {auth[:10]}...")
+            logger.info(f"[API DEBUG] Auth Header present: {auth[:10]}...")
         else:
-            print("[API DEBUG] No Authorization header found.")
+            logger.warning("[API DEBUG] No Authorization header found.")
         
         response = await call_next(request)
         return response
     except Exception as e:
-        print(f"[API CRITICAL] Unhandled exception in request: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        logger.critical(f"[API CRITICAL] Unhandled exception in request: {str(e)}", exc_info=True)
         return JSONResponse(
             status_code=500,
             content={"detail": f"Internal Server Error: {str(e)}", "type": str(type(e).__name__)}
