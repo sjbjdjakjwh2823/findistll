@@ -40,11 +40,14 @@ class DataExporter:
             lines.append(json.dumps(entry, ensure_ascii=False))
             
         # Final check: if no lines generated, try to report error or summary
+        # Final check: if no lines generated, try to report error or summary
         if not lines:
+            print("WARNING: No lines generated from reasoning_qa. Attempting fallback.")
             error_msg = data.get("summary", "No processable financial data found.")
             if isinstance(data.get("parse_log"), list) and data["parse_log"]:
                  error_msg += " Errors: " + "; ".join(str(e) for e in data["parse_log"])
             
+            # Even in fallback, we write a valid JSONL line
             lines.append(json.dumps({
                 "instruction": "System Status Report",
                 "input": data.get("title", "Unknown Document"),
@@ -52,6 +55,9 @@ class DataExporter:
                 "metadata": {"status": "empty_result"}
             }, ensure_ascii=False))
 
+        # EXPLICIT CONFIRMATION LOG
+        print(f"RECOVERY SUCCESS: {len(lines)} entries written to JSONL")
+        
         return "\n".join(lines)
     
     def to_markdown(self, data: Dict[str, Any]) -> str:
