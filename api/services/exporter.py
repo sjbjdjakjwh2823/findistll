@@ -21,9 +21,9 @@ class DataExporter:
         
         # Summary instruction
         lines.append(json.dumps({
-            "instruction": "다음 재무 문서의 핵심 내용을 요약해주세요.",
-            "input": data.get("title", "재무 문서"),
-            "output": data.get("summary", "요약 정보 없음")
+            "instruction": "Summarize the key financial findings in this document.",
+            "input": data.get("title", "Financial Document"),
+            "output": data.get("summary", "No summary available")
         }, ensure_ascii=False))
         
         # Table extraction instructions
@@ -35,9 +35,9 @@ class DataExporter:
             if rows:
                 table_text = self._table_to_text(table)
                 lines.append(json.dumps({
-                    "instruction": f"다음 '{table_name}' 테이블의 데이터를 분석해주세요.",
+                    "instruction": f"Analyze the data in the '{table_name}' table.",
                     "input": table_text,
-                    "output": f"이 테이블은 {len(headers)}개의 컬럼과 {len(rows)}개의 데이터 행을 포함합니다."
+                    "output": f"This table contains {len(headers)} columns and {len(rows)} data rows."
                 }, ensure_ascii=False))
                 
                 # Create Q&A pairs for each row
@@ -49,7 +49,7 @@ class DataExporter:
                             pairs.append(f"{h}: {v}")
                         
                         lines.append(json.dumps({
-                            "instruction": f"'{table_name}'에서 '{headers[0]}'이(가) '{row[0]}'인 데이터를 찾아주세요.",
+                            "instruction": f"In '{table_name}', find the data where '{headers[0]}' is '{row[0]}'.",
                             "input": table_text,
                             "output": ", ".join(pairs)
                         }, ensure_ascii=False))
@@ -57,8 +57,8 @@ class DataExporter:
         # Key metrics instructions
         for metric, value in data.get("key_metrics", {}).items():
             lines.append(json.dumps({
-                "instruction": f"재무제표에서 {metric}를 추출해주세요.",
-                "input": data.get("title", "재무제표"),
+                "instruction": f"Extract the value for {metric} from the financial statement.",
+                "input": data.get("title", "Financial Document"),
                 "output": f"{metric}: {value}"
             }, ensure_ascii=False))
         
@@ -69,28 +69,28 @@ class DataExporter:
         md_lines = []
         
         # Title
-        title = data.get("title", "재무 문서")
+        title = data.get("title", "Financial Document")
         md_lines.append(f"# {title}")
         md_lines.append("")
         
         # Metadata
         if "metadata" in data:
-            md_lines.append("## 문서 정보")
+            md_lines.append("## Document Information")
             for key, value in data["metadata"].items():
                 md_lines.append(f"- **{key}**: {value}")
             md_lines.append("")
         
         # Summary
         if "summary" in data:
-            md_lines.append("## 요약")
+            md_lines.append("## Summary")
             md_lines.append(data["summary"])
             md_lines.append("")
         
         # Key Metrics
         if "key_metrics" in data and data["key_metrics"]:
-            md_lines.append("## 핵심 지표")
+            md_lines.append("## Key Metrics")
             md_lines.append("")
-            md_lines.append("| 지표 | 값 |")
+            md_lines.append("| Metric | Value |")
             md_lines.append("|------|-----|")
             for metric, value in data["key_metrics"].items():
                 md_lines.append(f"| {metric} | {value} |")
@@ -250,14 +250,14 @@ class DataExporter:
         rows = table.get("rows", [])
         
         if headers:
-            lines.append("컬럼: " + ", ".join(str(h) for h in headers))
+            lines.append("Columns: " + ", ".join(str(h) for h in headers))
         
         for i, row in enumerate(rows[:5], 1):
             val_strs = [str(v) for v in row]
-            lines.append(f"행 {i}: " + ", ".join(val_strs))
+            lines.append(f"Row {i}: " + ", ".join(val_strs))
         
         if len(rows) > 5:
-            lines.append(f"... 외 {len(rows) - 5}개 행")
+            lines.append(f"... and {len(rows) - 5} other rows")
         
         return "\n".join(lines)
 

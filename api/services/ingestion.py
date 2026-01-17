@@ -269,16 +269,13 @@ class FileIngestionService:
         """
         Process XBRL/XML file using STRUCTURAL Tree Parser.
         
-        🔴 CRITICAL: Embedding 모델 사용 금지 - 구조적 파싱만 사용
+        [Workflow]
+        1. Parse structure with XML Tree Parser
+        2. Standardize units via ScaleProcessor ($B)
+        3. Filter Contexts (CY/PY mapping)
+        4. Infer reasoning Q&A in CoT format
         
-        워크플로우:
-        1. XML Tree Parser로 구조 직접 읽기
-        2. unitRef/decimals 기반 수치 표준화 (ScaleProcessor)
-        3. Context 필터링 (연결/별도 재무제표 구분)
-        4. 시맨틱 라벨 결합 (_lab.xml)
-        5. 추론형 Q&A 생성 (CoT 포맷)
-        
-        Returns: XBRLSemanticEngine 결과를 표준 포맷으로 변환
+        Returns: XBRLIntelligenceResult converted to standard format
         """
         from .xbrl_semantic_engine import XBRLSemanticEngine
         
@@ -302,9 +299,8 @@ class FileIngestionService:
             )
             
             if not result.success:
-                # 파싱 실패 시 에러 로그와 함께 반환
                 return {
-                    "title": f"XBRL 파싱 실패: {filename}",
+                    "title": f"XBRL Parsing Failed: {filename}",
                     "summary": result.parse_summary,
                     "tables": [],
                     "key_metrics": {},
@@ -312,27 +308,26 @@ class FileIngestionService:
                     "parse_log": result.errors,
                     "metadata": {
                         "file_type": "xbrl",
-                        "processed_by": "xbrl-semantic-engine-v2",
+                        "processed_by": "xbrl-semantic-engine-v11.5",
                         "error": True
                     }
                 }
             
-            # SemanticFact를 표준 포맷으로 변환
+            # Convert SemanticFacts to standard format
             facts_list = []
             for fact in result.facts:
                 facts_list.append({
                     "concept": fact.concept,
-                    "label": fact.label,  # 이미 시맨틱 라벨 적용됨
-                    "value": str(fact.value),  # Decimal → str
+                    "label": fact.label,
+                    "value": str(fact.value),
                     "raw_value": fact.raw_value,
                     "unit": fact.unit,
                     "period": fact.period,
-                    "hierarchy": fact.hierarchy,
                     "is_consolidated": fact.is_consolidated,
                     "decimals": fact.decimals
                 })
             
-            # 테이블 형식으로 변환 (재무상태표/손익계산서)
+            # Convert to table format
             tables = self._build_financial_tables(facts_list)
             
             return {
@@ -349,84 +344,53 @@ class FileIngestionService:
                     "company": result.company_name,
                     "fiscal_year": result.fiscal_year,
                     "fact_count": len(facts_list),
-                    "processed_by": "xbrl-semantic-engine-v2"
+                    "processed_by": "xbrl-semantic-engine-v11.5"
                 }
             }
             
         except Exception as e:
-            print(f"XBRLSemanticEngine error: {e}")
-            import traceback
-            traceback.print_exc()
-            
-            # 폴백: 기존 XBRLParser 사용
-            from .xbrl_parser import XBRLParser
-            parser = XBRLParser(taxonomy_type="ifrs")
-            
-            try:
-                fallback_result = parser.parse(content)
-                fallback_result["title"] = f"XBRL: {filename}"
-                fallback_result["metadata"]["processed_by"] = "xbrl-parser-legacy-fallback"
-                return fallback_result
-            except Exception as fallback_error:
-                return {
-                    "title": f"XBRL 파싱 완전 실패: {filename}",
-                    "summary": f"파싱 오류: {str(e)}, 폴백 오류: {str(fallback_error)}",
-                    "tables": [],
-                    "key_metrics": {},
-                    "facts": [],
-                    "metadata": {
-                        "file_type": "xbrl",
-                        "error": True,
-                        "processed_by": "none"
-                    }
+            logger.error(f"XBRL Parsing totally failed: {e}")
+            return {
+                "title": f"XBRL Parsing Error: {filename}",
+                "summary": f"Fatal error: {str(e)}",
+                "tables": [],
+                "key_metrics": {},
+                "facts": [],
+                "metadata": {
+                    "file_type": "xbrl",
+                    "error": True,
+                    "processed_by": "none"
                 }
+            }
     
     def _build_financial_tables(self, facts: List[Dict]) -> List[Dict]:
-        """팩트 리스트를 재무제표 테이블 형식으로 변환."""
-        from .xbrl_semantic_engine import ScaleProcessor
-        from decimal import Decimal, InvalidOperation
-
-        # 재무상태표 항목
+        """Convert facts into financial table format."""
+        
+        # Balance Sheet items
         balance_sheet = {
-            "name": "재무상태표 (Statement of Financial Position)",
-            "headers": ["계정과목", "금액", "기간"],
+            "name": "Statement of Financial Position (Balance Sheet)",
+            "headers": ["Account", "Amount ($B)", "Period"],
             "rows": []
         }
         
-        # 손익계산서 항목
+        # Income Statement items
         income_statement = {
-            "name": "포괄손익계산서 (Statement of Comprehensive Income)",
-            "headers": ["계정과목", "금액", "기간"],
+            "name": "Statement of Comprehensive Income (Income Statement)",
+            "headers": ["Account", "Amount ($B)", "Period"],
             "rows": []
         }
         
         for fact in facts:
-            # 🔴 FIX: 레이블 오타 수정 및 영문 표준화
-            raw_label = fact.get("label", "")
-            label = ScaleProcessor.fix_label_typos(raw_label)
-            
-            # 🔴 FIX: 수치 정규화 (Billion/Million 단위)
-            raw_value = fact.get("value", "")
-            try:
-                clean_value = raw_value.replace(',', '').replace(' ', '')
-                if clean_value and clean_value != '-':
-                    decimal_value = Decimal(clean_value)
-                    # 테이블 행 데이터도 요약본과 동일하게 정규화
-                    std_value = ScaleProcessor.normalize_to_billion(decimal_value)
-                    value = std_value
-                else:
-                    value = raw_value
-            except (ValueError, InvalidOperation):
-                value = raw_value
-            
+            label = fact.get("label", "")
+            value = fact.get("value", "")
             period = fact.get("period", "")
-            hierarchy = fact.get("hierarchy", "")
             
             row = [label, value, period]
             
-            if "재무상태표" in hierarchy or any(k in label for k in ['자산', '부채', '자본', 'Assets', 'Liabilities', 'Equity']):
+            # Simple categorization based on core keywords
+            if any(k in label.lower() for k in ['asset', 'liabilit', 'equity']):
                 balance_sheet["rows"].append(row)
-            elif "손익" in hierarchy or any(k in label for k in ['매출', '이익', '비용', 'Revenue', 'Profit', 'Income']):
+            elif any(k in label.lower() for k in ['revenue', 'profit', 'income', 'loss', 'expens']):
                 income_statement["rows"].append(row)
         
         tables = []

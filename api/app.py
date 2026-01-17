@@ -1,10 +1,10 @@
 """
 FinDistill FastAPI Application for Vercel Serverless
 
-Multi-format financial document distillation:
-- Ingestion: PDF, Excel, CSV, Images
-- Export: JSONL, Markdown, Parquet
-- Database: Supabase with pgvector
+Multi-format financial document distillation (v11.5 Strict):
+- Ingestion: XBRL/XML (CY/PY), PDF, Excel, CSV
+- Export: JSONL (CoT), Markdown, Parquet, HDF5
+- Policy: 100% English-only, Poison Pill enabled
 """
 
 from contextlib import asynccontextmanager
@@ -109,9 +109,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="FinDistill API",
-    description="Financial Document Data Distillation API",
-    version="2.1.1",
+    title="FinDistill API v11.5 (Strict English)",
+    description="High-performance financial distillation with 100% English CoT data generation.",
+    version="11.5.0",
     lifespan=lifespan
 )
 
