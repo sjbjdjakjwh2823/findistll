@@ -366,13 +366,18 @@ class XBRLSemanticEngine:
             target_f = cy_f if cy_f else py_f
             if not target_f: continue
             
+            c_val = cy_f.value if cy_f else target_f.value
+            p_val = py_f.value if py_f else None
+            
+            print(f"TRACE: Values for {concept} -> CY: {c_val}, PY: {p_val}")
+
             # Force CoT through ExpertCoTGenerator
             response = ExpertCoTGenerator.generate(
                 metric_name=concept,
                 company_name=self.company_name,
                 industry="Financial Services",
-                cy_val=cy_f.value if cy_f else target_f.value,
-                py_val=py_f.value if py_f else None
+                cy_val=c_val,
+                py_val=p_val
             )
             
             # STRICT DEBUG & APPEND VERIFICATION
