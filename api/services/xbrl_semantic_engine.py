@@ -131,15 +131,23 @@ class ScaleProcessor:
             trend = "positive" if growth > 0 else "negative"
             momentum = "acceleration" if growth > 0 else "deceleration"
             insight = f"{company_name} shows a {trend} momentum in {metric_name.replace('_', ' ')}. "
+            
             if py_val is not None and py_val != 0:
                 insight += f"The {growth:+.2f}% growth indicates {momentum} in profitability and market dominance within the {industry} sector."
             else:
                 insight += f"Current performance is representative of structural trends in {industry}, though longer-term trajectory requires prior period validation."
+                
+            # V13.1 Insight Nuance: Contextualizing Non-Standard Figures
+            abs_val = abs(cy_val)
             
-            # V13.0 Enhancement: Data Exploration Phase Nuance
-            # If value is very small (<$1M i.e., 0.001B) or PY is missing, explicitly state context.
-            if abs(cy_val) < Decimal("0.001") or py_val is None:
-                insight += " **Note: This analysis represents a broad Data Exploration Phase. Value magnitude warrants verification of unit scale (e.g., Millions vs Billions) or indicates an emerging metric.**"
+            if cy_val == 0:
+                 insight += " **Note: This zero-balance entry indicates inactive status or no reported figures for this period.**"
+            elif abs_val < 10 and abs_val > 0:
+                 insight += f" **Note: The value {abs_val} suggests this metric may represent an operational count, ratio, or categorical flag rather than a direct monetary figure.**"
+            elif abs_val < Decimal("0.001"):
+                 insight += " **Note: This analysis represents a broad Data Exploration Phase. Value magnitude warrants verification of unit scale (e.g., Millions vs Billions) or indicates an emerging metric.**"
+            elif py_val is None:
+                 insight += " **Note: Historical data missing necessitates caution in trend extrapolation.**"
                 
             return (
                 "[Definition]\n" + definition_text + "\n\n" +
