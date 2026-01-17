@@ -349,8 +349,7 @@ class XBRLSemanticEngine:
                         context_ref=ctx_ref,
                         decimals=dec_int
                     ))
-                        decimals=dec_int
-                    ))
+
         logger.warning(f"TRACE 1: Found {len(facts)} facts in XML")
         return facts
 
@@ -425,8 +424,7 @@ class XBRLSemanticEngine:
                 "type": "summary"
             })
             
-                "type": "summary"
-            })
+
             
         # [Fallback Mechanism]
         if not self.reasoning_qa:
