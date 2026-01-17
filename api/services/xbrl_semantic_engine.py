@@ -152,6 +152,7 @@ class XBRLSemanticEngine:
         self.company_name = company_name
         self.fiscal_year = fiscal_year
         self.facts: List[SemanticFact] = []
+        self.reasoning_qa: List[Dict[str, str]] = []
         self.errors: List[str] = []
 
     def _generate_jsonl(self, reasoning_qa: List[Dict[str, str]]) -> List[str]:
@@ -332,8 +333,8 @@ class XBRLSemanticEngine:
 
     def _generate_reasoning_qa(self, facts: List[SemanticFact]) -> List[Dict[str, str]]:
         """Calculates YoY trends and generates CoT responses."""
-        print(f"DEBUG: Starting processing {len(facts)} facts")
-        qa_pairs = []
+        print(f"TRACE: Total facts found in XML = {len(facts)}")
+        self.reasoning_qa = []
         
         # Group by concept to find CY/PY pairs
         concept_groups = {}
@@ -359,11 +360,10 @@ class XBRLSemanticEngine:
             )
             
             # STRICT DEBUG & APPEND VERIFICATION
-            print(f"DEBUG: Generated QA for {concept}: {bool(response)}")
+            print(f"TRACE: Created QA for {concept} -> Success: {bool(response)}")
             
             if response:
-                print(f"DEBUG: Appending QA Pair for {concept} to reasoning_qa list.")
-                qa_pairs.append({
+                self.reasoning_qa.append({
                     "question": f"Analyze the year-over-year (YoY) trend of {concept}.",
                     "response": response,
                     "type": "trend"
@@ -383,13 +383,14 @@ class XBRLSemanticEngine:
             
             print(f"DEBUG: Fact Generated for SUMMARY | Definition Present: {'[Definition]' in summary_response}")
             
-            qa_pairs.insert(0, {
+            self.reasoning_qa.insert(0, {
                 "question": "Provide an executive summary of the document and its year-over-year (YoY) trajectory.",
                 "response": summary_response,
                 "type": "summary"
             })
             
-        return qa_pairs
+        print(f"TRACE: Final List Count in Engine = {len(self.reasoning_qa)}")
+        return self.reasoning_qa
     
     def process_mock(self) -> XBRLIntelligenceResult:
         """Mock execution to demonstrate the 100% operational status."""
