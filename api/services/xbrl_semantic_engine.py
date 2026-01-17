@@ -55,15 +55,9 @@ class ScaleProcessor:
     LARGE_VALUE_THRESHOLD = Decimal("1000000") # $1M as threshold for raw detection
 
     @classmethod
-    def normalize_to_billion(cls, value: Decimal, decimals: Optional[int] = None) -> Decimal:
-        """Normalize any numeric value to Billion ($B) with decimal adjustment."""
-        multiplier = Decimal("1")
-        if decimals is not None:
-            multiplier = Decimal("10")**decimals
-        
-        # Explicit multiplier usage as per v11.5 intelligence requirements
-        adjusted_value = value * multiplier
-        return (adjusted_value / Decimal("1000000000")).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
+    def normalize_to_billion(cls, value: Decimal) -> Decimal:
+        """Standardize to Billion ($B) using raw/1e9 as base."""
+        return (value / Decimal("1000000000")).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
 
     @classmethod
     def format_currency(cls, value: Decimal) -> str:
@@ -79,19 +73,20 @@ class ScaleProcessor:
         Intelligently detect scale and normalize to Billion.
         If the value is already large (trillions/billions), it skips redundant scaling.
         """
+    @classmethod
+    def apply_self_healing(cls, raw_val: str, decimals: Optional[int] = None) -> Tuple[Decimal, str]:
+        """
+        Intelligently detect scale and normalize to Billion.
+        Simplification: raw_value / 1e9 base logic.
+        """
         try:
             clean_val = re.sub(r'[^-0-9.]', '', raw_val)
             if not clean_val: return Decimal("0"), "zero_fallback"
             
             val = Decimal(clean_val)
-            original_val = val
             
-            # Self-Healing: Detect if raw value or adjusted value is already in realistic large range (e.g. Trillions)
-            if abs(original_val) >= cls.LARGE_VALUE_THRESHOLD:
-                print(f"[Self-Healing: Raw value {original_val} processed as large base]")
-                val = original_val # Use raw as base
-            
-            normalized = cls.normalize_to_billion(val, decimals)
+            normalized = cls.normalize_to_billion(val)
+            print(f"[Self-Healing: Processing {cls.format_currency(normalized)}]")
             return normalized, "healed_billion"
             
         except (InvalidOperation, ValueError):
@@ -129,7 +124,7 @@ class ExpertCoTGenerator:
             formula = f"$$Growth = \\frac{{{cy_val:.3f} - {py_val:.3f}}}{{{abs(py_val):.3f}}} \\times 100\\% = {growth:+.2f}\\%$$"
         else:
             growth = 0.0
-            formula = "$$Growth = \\text{N/A (Prior data missing)}$$"
+            formula = f"$$Growth = \\text{{N/A (Prior data missing)}}$$"
         
         # 4. [Professional Insight]
         trend = "positive" if growth > 0 else "negative"
@@ -169,7 +164,7 @@ class XBRLSemanticEngine:
         
         for qa in reasoning_qa:
             entry = {
-                "instruction": f"Analyze the multi-year performance of {self.company_name}, focusing on its {qa.get('type', 'financial')} metrics.",
+                "instruction": f"Analyze the year-over-year (YoY) trend of {self.company_name}, focusing on its {qa.get('type', 'financial')} metrics.",
                 "input": f"{self.company_name} {self.fiscal_year} Financial Data",
                 "output": qa["response"],
                 "metadata": {

@@ -32,7 +32,7 @@ def test_v11_5_operational():
         ("[Symbolic Reasoning]" in output, "Mandatory [Symbolic Reasoning] block"),
         ("[Professional Insight]" in output, "Mandatory [Professional Insight] block"),
         ("$$Growth =" in output, "LaTeX Growth formula present"),
-        ("Analyze the multi-year performance" in data["instruction"], "Correct English instruction"),
+        ("Analyze the year-over-year (YoY) trend of" in data["instruction"], "Correct English instruction"),
         (not re.search(r'[\uAC00-\uD7A3]', output), "No Korean detected")
     ]
     
