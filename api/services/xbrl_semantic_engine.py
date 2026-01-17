@@ -2248,9 +2248,9 @@ A Financial Performance Executive Summary provides senior leadership and investo
 - Total Liabilities: {liab_str}
 
 [Symbolic Reasoning]
-$$Operating\\ Margin = \\frac{{Operating\\ Income}}{{Revenues}} \\times 100\\% = {op_margin:.2f}\\%$$ (if applicable)
+{f"$$Operating\\ Margin = \\frac{{Operating\\ Income}}{{Revenues}} \\times 100\\% = {op_margin:.2f}\\%$$" if op_margin is not None else ""}
 
-$$Debt\\ Ratio = \\frac{{Total\\ Liabilities}}{{Total\\ Assets}} \\times 100\\% = {debt_ratio:.2f}\\%$$ (if applicable)
+{f"$$Debt\\ Ratio = \\frac{{Total\\ Liabilities}}{{Total\\ Assets}} \\times 100\\% = {debt_ratio:.2f}\\%$$" if debt_ratio is not None else ""}
 
 [Professional Insight]
 {self.company_name} concluded fiscal year {self.fiscal_year} with total assets of {assets_str}, reflecting the company's operational scale and capital base. {"Revenue of " + rev_str + " demonstrates the company's market presence and sales execution capability. " if revenue else ""}{"Operating income of " + op_income_str + (" representing a " + f"{op_margin:.1f}%" + " operating margin, indicates " + ("strong" if op_margin > 20 else "solid" if op_margin > 10 else "moderate") + " operational efficiency. ") if operating_income and op_margin else ""}{"The balance of " + eq_str + " in shareholders' equity against " + liab_str + " in liabilities reflects a " + ("conservative" if debt_ratio < 40 else "balanced" if debt_ratio < 60 else "leveraged") + " capital structure." if equity and liabilities and debt_ratio else ""}
