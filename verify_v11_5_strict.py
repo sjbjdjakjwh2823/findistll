@@ -1,6 +1,7 @@
 import sys
 import os
 import re
+import json
 from decimal import Decimal
 
 # Add current directory to path
@@ -66,7 +67,37 @@ def test_poison_pill():
         else:
             print(f"FAIL: Wrong error raised: {e}")
 
+async def test_ingestion_integration():
+    print("\n--- Testing Ingestion Integration ---")
+    from api.services.ingestion import ingestion_service
+    
+    # Mock XBRL content (simplified)
+    mock_xbrl = b"""<?xml version="1.0" encoding="UTF-8"?>
+    <xbrl>
+        <context id="c1"><period><instant>2024-12-31</instant></period></context>
+        <context id="c2"><period><instant>2023-12-31</instant></period></context>
+        <Revenues contextRef="c1" unitRef="USD" decimals="-9">150000000000</Revenues>
+        <Revenues contextRef="c2" unitRef="USD" decimals="-9">120000000000</Revenues>
+    </xbrl>
+    """
+    
+    result = await ingestion_service.process_file(mock_xbrl, "test.xml", "application/xml")
+    
+    print(f"Title: {result['title']}")
+    print(f"Summary: {result['summary']}")
+    
+    # Check for Korean in the entire result
+    dump = json.dumps(result, ensure_ascii=False)
+    if not re.search(r'[\uAC00-\uD7A3]', dump):
+        print("PASS: No Korean detected in integration result.")
+    else:
+        print("FAIL: Korean detected in integration result.")
+        
+    if "Statement of Financial Position" in str(result.get("tables")):
+        print("PASS: Financial tables correctly generated.")
+
 if __name__ == "__main__":
+    import asyncio
     from io import StringIO
     # Capture output for status check
     old_stdout = sys.stdout
@@ -76,6 +107,7 @@ if __name__ == "__main__":
         test_v11_5_operational()
         test_self_healing()
         test_poison_pill()
+        asyncio.run(test_ingestion_integration())
     finally:
         sys.stdout = old_stdout
         print(mystdout.getvalue())

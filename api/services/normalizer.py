@@ -16,26 +16,20 @@ from datetime import datetime
 class FinancialNormalizer:
     """Normalizes financial data for AI training consistency."""
     
-    # Common financial term corrections (Korean)
+    # Common financial term corrections (English)
     TERM_CORRECTIONS = {
-        "영엽이익": "영업이익",
-        "매출총이": "매출총이익",
-        "순이": "순이익",
-        "부채비율": "부채비율",
-        "자본금": "자본금",
-        "당기순이익": "당기순이익",
-        "영업외수익": "영업외수익",
-        "영업외비용": "영업외비용",
-        "매출원가": "매출원가",
-        "판관비": "판매관리비",
-        "판매및관리비": "판매관리비",
+        "Reveneu": "Revenue",
+        "Net Incom": "Net Income",
+        "Assetts": "Assets",
+        "Liablities": "Liabilities",
+        "Equitry": "Equity",
+        "Operatin Income": "Operating Income",
     }
     
     # Date format patterns
     DATE_PATTERNS = [
         (r'(\d{4})\.(\d{1,2})\.(\d{1,2})', r'\1-\2-\3'),  # 2024.1.1 -> 2024-1-1
         (r'(\d{4})/(\d{1,2})/(\d{1,2})', r'\1-\2-\3'),   # 2024/1/1 -> 2024-1-1
-        (r'(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일', r'\1-\2-\3'),  # 2024년 1월 1일
     ]
     
     # Currency exchange rates (approximate, for normalization reference)
@@ -179,21 +173,9 @@ class FinancialNormalizer:
         cleaned = cleaned.replace(",", "")
         cleaned = cleaned.replace(" ", "")
         
-        # Handle Korean currency units
-        multiplier = 1
-        if "억" in cleaned:
-            multiplier = 100000000
-            cleaned = cleaned.replace("억", "")
-        elif "만" in cleaned:
-            multiplier = 10000
-            cleaned = cleaned.replace("만", "")
-        elif "천" in cleaned:
-            multiplier = 1000
-            cleaned = cleaned.replace("천", "")
-        
         # Remove currency symbols
-        cleaned = re.sub(r'[원$€¥₩]', '', cleaned)
-        cleaned = re.sub(r'(KRW|USD|EUR|JPY)', '', cleaned)
+        cleaned = re.sub(r'[$€¥₩]', '', cleaned)
+        cleaned = re.sub(r'(USD|EUR|JPY)', '', cleaned)
         
         # Handle percentages
         is_percentage = "%" in cleaned
@@ -216,11 +198,11 @@ class FinancialNormalizer:
     
     def get_currency_info(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Extract and standardize currency information."""
-        currency = data.get("currency", "KRW")
+        currency = data.get("currency", "USD")
         
         return {
             "primary_currency": currency,
-            "exchange_rate_to_krw": self.EXCHANGE_RATES.get(currency, 1),
+            "exchange_rate_to_usd": 1.0, # Base is USD in v11.5
             "detected_currencies": self._detect_currencies(str(data))
         }
     
@@ -229,10 +211,9 @@ class FinancialNormalizer:
         currencies = []
         
         patterns = [
-            (r'\$|USD|달러', 'USD'),
-            (r'₩|KRW|원', 'KRW'),
-            (r'€|EUR|유로', 'EUR'),
-            (r'¥|JPY|엔', 'JPY'),
+            (r'\$|USD', 'USD'),
+            (r'€|EUR', 'EUR'),
+            (r'¥|JPY', 'JPY'),
         ]
         
         for pattern, currency in patterns:
