@@ -8,6 +8,7 @@ CRITICAL: 100% Zero-Base Reconstruction. All legacy logic and Korean markers rem
 """
 
 import re
+import os
 import json
 import logging
 from typing import Dict, Any, List, Optional, Tuple, Set
@@ -148,8 +149,7 @@ class XBRLSemanticEngine:
     Features strict English enforcement and poison pill verification.
     """
     
-import os
-
+    
     def __init__(self, company_name: str = "Target Corp", fiscal_year: str = "2024", file_path: str = "unknown_file"):
         self.company_name = company_name
         self.fiscal_year = fiscal_year
