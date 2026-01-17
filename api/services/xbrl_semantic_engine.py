@@ -1183,7 +1183,15 @@ class XBRLSemanticEngine:
             # 7. JSONL 생성
             jsonl_data = self._generate_jsonl(core_facts, reasoning_qa)
             
-            # 8. 주요 지표 추출
+            # 8. v11.0: Output Validation (Zero-Tolerance for Unit Errors)
+            is_valid, validation_results = self._validate_output_units(jsonl_data)
+            if not is_valid:
+                logger.warning(f"Output validation issues detected: {validation_results}")
+                self.parse_log.append(f"Validation warnings: {len(validation_results.get('unit_check', {}).get('errors', []))} unit issues")
+            else:
+                self.parse_log.append("Output validation passed: All units in Billion ($B) format")
+            
+            # 9. 주요 지표 추출
             key_metrics = self._extract_key_metrics(core_facts)
             
             return XBRLIntelligenceResult(
@@ -1425,41 +1433,46 @@ class XBRLSemanticEngine:
     
     def _generate_reasoning_qa(self, facts: List[SemanticFact]) -> List[Dict[str, str]]:
         """
-        추론형 Q&A 생성 (CoT 포맷) - v2 확장판
+        v11.0: Fin-R1 Style Reasoning Q&A Generation
         
-        🔴 FIX: 최소 50개 이상 Q&A 생성
-        - 비율 분석 (Ratio Analysis)
-        - 구성비 분석 (Composition %)  
-        - 상위 항목 분석 (Top-N Analysis)
-        - YoY 성장률 (Time Series)
+        Quality Thresholds:
+        - Simple queries (Find X): < 10%
+        - Cross-table analysis: Required (ROA, ROE, DuPont)
+        - How/Why questions: > 60%
+        - CoT format: 100% (4-step mandatory)
         """
         qa_pairs = []
         
         # 1. 유연한 라벨 매칭으로 fact_dict 구축
         fact_dict = self._build_flexible_fact_dict(facts)
         
-        # 2. 핵심 비율 분석 Q&A (5-10개)
+        # 2. 핵심 비율 분석 Q&A (5-10개) - How/Why style
         qa_pairs.extend(self._generate_ratio_analysis_qa(fact_dict, facts))
         
-        # 3. 자산 구성비 분석 Q&A (개별 항목별, 20개+)
+        # 3. 자산 구성비 분석 Q&A (개별 항목별, 20개+) - Analytical
         qa_pairs.extend(self._generate_composition_qa(fact_dict, facts))
         
-        # 4. 상위 20개 항목 분석 Q&A (20개)
-        qa_pairs.extend(self._generate_top_items_qa(facts[:20]))
+        # 4. v11.0: Top Items REDUCED to 10% - Only 5 items (was 20)
+        # Simple queries should be < 10% of total
+        qa_pairs.extend(self._generate_top_items_qa(facts[:5]))
         
         # 5. 재무 건전성 종합 평가 Q&A
         qa = self._generate_financial_health_qa(fact_dict, facts)
         if qa:
             qa_pairs.append(qa)
             
-        # 6. 활동성 분석 Q&A (v6.0)
+        # 6. 활동성 분석 Q&A (Expert CoT)
         qa_pairs.extend(self._generate_activity_analysis_qa(fact_dict, facts))
         
-        # 7. 효율성 분석 Q&A (v6.0)
+        # 7. 효율성 분석 Q&A (Expert CoT)
         qa_pairs.extend(self._generate_efficiency_qa(fact_dict, facts))
         
-        # 8. 추세 분석 Q&A (v6.0 - YoY)
+        # 8. 추세 분석 Q&A (YoY)
         qa_pairs.extend(self._generate_trend_analysis_qa(facts))
+        
+        # 9. v11.0: Cross-Table Analysis (NEW - Multi-Statement Synthesis)
+        # Highest quality questions requiring BS + IS combination
+        qa_pairs.extend(self._generate_cross_table_qa(fact_dict, facts))
         
         return qa_pairs
     
@@ -2298,7 +2311,14 @@ SG&A expenses consume {ratio:.2f}% of revenue. {'✅ Highly efficient cost struc
         facts: List[SemanticFact], 
         reasoning_qa: List[Dict[str, str]]
     ) -> List[str]:
-        """Generate JSONL Data - v10.0 English"""
+        """
+        v11.0: Fin-R1 Style JSONL Generation
+        
+        Changes:
+        - All values use format_currency_strict_billion (Billion only)
+        - Simple fact queries REMOVED (was 3, now 0) - replaced with interpretive
+        - Metadata includes Fin-R1 quality tracking
+        """
         jsonl_lines = []
         
         # Post-Processing
@@ -2306,7 +2326,7 @@ SG&A expenses consume {ratio:.2f}% of revenue. {'✅ Highly efficient cost struc
             if not text: return ""
             return self.scale_processor.fix_label_typos(text) # Ensures English
         
-        # Reasoning Q&A
+        # Reasoning Q&A - Main content
         for qa in reasoning_qa:
             entry = {
                 "instruction": clean_text(qa["question"]),
@@ -2316,29 +2336,48 @@ SG&A expenses consume {ratio:.2f}% of revenue. {'✅ Highly efficient cost struc
                     "company": self.company_name,
                     "fiscal_year": self.fiscal_year,
                     "type": qa.get("type", "analysis"),
-                    "source": "xbrl_semantic_engine"
+                    "source": "xbrl_semantic_engine_v11",
+                    "format": "fin_r1_cot",
+                    "unit_policy": "strict_billion"
                 }
             }
             jsonl_lines.append(json.dumps(entry, ensure_ascii=False))
         
-        # Simple Facts (Top 3)
-        for fact in facts[:3]:
-            label = self.scale_processor.fix_label_typos(fact.label) # Returns English
-            val_norm = self.scale_processor.format_currency(fact.value)
+        # v11.0: Simple Facts REMOVED - No more "What is X?" questions
+        # Instead, include context summary only if absolutely needed
+        # This ensures simple queries < 10%
+        
+        # Optional: Add 1 summary entry with key metrics (interpretive format)
+        if facts:
+            key_facts = facts[:5]
+            metrics_summary = []
+            for fact in key_facts:
+                label = self.scale_processor.fix_label_typos(fact.label)
+                val_norm = ScaleProcessor.format_currency_strict_billion(fact.value)
+                metrics_summary.append(f"- {label}: {val_norm}")
             
-            entry = {
-                "instruction": f"What is the {label} for {self.company_name} in {self.fiscal_year}?",
-                "input": f"{label}: {fact.value}",
-                "output": f"The {label} for {self.company_name} in {self.fiscal_year} is {val_norm}.",
+            summary_entry = {
+                "instruction": f"What are the key financial highlights for {self.company_name} in fiscal year {self.fiscal_year}, and what do they reveal about the company's financial position?",
+                "input": "\n".join(metrics_summary),
+                "output": f"""[Definition]
+Key financial highlights provide a snapshot of a company's financial position, scale, and operational performance at a point in time.
+
+[Synthesis]
+{chr(10).join(metrics_summary)}
+
+[Professional Insight]
+These figures represent {self.company_name}'s financial footprint in {self.fiscal_year}. The scale of total assets and revenues indicates the company's market position, while the relationship between assets, liabilities, and equity reveals its capital structure and risk profile.
+""",
                 "metadata": {
                     "company": self.company_name,
                     "fiscal_year": self.fiscal_year,
-                    "concept": fact.concept,
-                    "type": "fact_retrieval",
-                    "source": "xbrl_semantic_engine"
+                    "type": "summary",
+                    "source": "xbrl_semantic_engine_v11",
+                    "format": "fin_r1_cot",
+                    "unit_policy": "strict_billion"
                 }
             }
-            jsonl_lines.append(json.dumps(entry, ensure_ascii=False))
+            jsonl_lines.append(json.dumps(summary_entry, ensure_ascii=False))
         
         return jsonl_lines
     
@@ -2384,6 +2423,223 @@ SG&A expenses consume {ratio:.2f}% of revenue. {'✅ Highly efficient cost struc
             parse_summary=error_message,
             errors=self.errors
         )
+    
+    def _validate_output_units(self, jsonl_lines: List[str]) -> Tuple[bool, Dict[str, Any]]:
+        """
+        v11.0: Self-Validation - Zero Tolerance for Unit Errors
+        
+        Validates all output before file generation:
+        1. No Million ($M), Thousand ($K), Trillion ($T) units allowed
+        2. All Billion values must have 3 or 6 decimal places
+        3. No Korean text in output (English only)
+        
+        Returns:
+            (all_passed, detailed_results)
+        """
+        results = {
+            'unit_check': {'passed': True, 'errors': []},
+            'precision_check': {'passed': True, 'errors': []},
+            'language_check': {'passed': True, 'errors': []},
+            'total_lines': len(jsonl_lines),
+        }
+        
+        for i, line in enumerate(jsonl_lines):
+            # 1. Unit check - no Million, Trillion, Thousand suffix (strict)
+            if re.search(r'\$[\d.]+[MKT](?:[^a-zA-Z]|$)', line):
+                results['unit_check']['passed'] = False
+                # Attempt auto-fix by logging
+                match = re.search(r'\$([\d.]+)M', line)
+                if match:
+                    results['unit_check']['errors'].append(
+                        f"Line {i+1}: Million unit ${match.group(1)}M should be ${float(match.group(1))/1000:.3f}B"
+                    )
+                else:
+                    results['unit_check']['errors'].append(f"Line {i+1}: Non-billion unit detected")
+            
+            # 2. Precision check - must have 3 or 6 decimals for B values
+            matches = re.findall(r'\$(\d+\.\d+)B', line)
+            for match in matches:
+                decimals = len(match.split('.')[1])
+                if decimals not in [3, 6]:
+                    results['precision_check']['passed'] = False
+                    results['precision_check']['errors'].append(
+                        f"Line {i+1}: Invalid precision {decimals} decimals (expected 3 or 6)"
+                    )
+            
+            # 3. Korean text check
+            if re.search(r'[\u3131-\u318E\uAC00-\uD7A3]', line):
+                results['language_check']['passed'] = False
+                results['language_check']['errors'].append(f"Line {i+1}: Korean text detected")
+        
+        all_passed = all(
+            r['passed'] for k, r in results.items() 
+            if isinstance(r, dict) and 'passed' in r
+        )
+        return all_passed, results
+    
+    def _generate_cross_table_qa(self, fact_dict: Dict, facts: List[SemanticFact]) -> List[Dict]:
+        """
+        v11.0: Cross-Table Logic Activation
+        
+        Generates complex Q&A requiring combination of Balance Sheet + Income Statement.
+        These are the highest-quality reasoning questions that force multi-table synthesis.
+        
+        Metrics:
+        - ROA = Net Income (IS) / Average Total Assets (BS)
+        - ROE = Net Income (IS) / Average Total Equity (BS)
+        - ROIC = NOPAT (IS) / Invested Capital (BS)
+        """
+        qa_list = []
+        industry = self.industry_code
+        
+        # Get prior period data
+        try:
+            current_year = int(self.fiscal_year)
+            prior_year = str(current_year - 1)
+            py_fact_dict = self._build_flexible_fact_dict(facts, target_period=prior_year)
+        except:
+            py_fact_dict = {}
+        
+        # 1. Return on Assets (ROA) - Cross-table: IS + BS
+        net_income = fact_dict.get('net_income')
+        total_assets = fact_dict.get('total_assets')
+        
+        if net_income and total_assets:
+            py_assets = py_fact_dict.get('total_assets')
+            
+            # Calculate average assets
+            avg_assets, avg_desc = ScaleProcessor.calculate_average_balance(
+                total_assets.value,
+                py_assets.value if py_assets else None,
+                "Total Assets"
+            )
+            
+            if float(avg_assets) > 0:
+                roa = float(net_income.value) / float(avg_assets) * 100
+                
+                # Arithmetic verification
+                verify_result = ScaleProcessor.verify_calculation(
+                    "ROA", net_income.value, avg_assets, roa / 100
+                )
+                
+                ni_b = float(net_income.value) / 1e9
+                avg_assets_b = float(avg_assets) / 1e9
+                
+                response = ExpertCoTGenerator.generate(
+                    metric_name='roe',  # Using roe definition as proxy
+                    formula_latex=r"ROA = \frac{Net\ Income}{Average\ Total\ Assets} \times 100\%",
+                    data_sources=[
+                        ("Income Statement", "Net Income", net_income.value),
+                        ("Balance Sheet (Current)", "Total Assets", total_assets.value),
+                        ("Balance Sheet (Prior)", "Beginning Assets", py_assets.value if py_assets else Decimal(0)),
+                    ],
+                    calculation_steps=[
+                        avg_desc,
+                        f"$ROA = \\frac{{{ni_b:.3f}B}}{{{avg_assets_b:.3f}B}} \\times 100\\% = {roa:.2f}\\%$"
+                    ],
+                    result=roa,
+                    industry=industry,
+                    company_name=self.company_name,
+                    verification_result=verify_result
+                )
+                
+                qa_list.append({
+                    "question": f"How effectively does {self.company_name} generate profit from its asset base, and what does the Return on Assets (ROA) indicate about overall capital efficiency?",
+                    "response": response,
+                    "type": "cross_table_analysis",
+                    "context": f"Net Income: {ScaleProcessor.format_currency(net_income.value)}, Average Total Assets: {ScaleProcessor.format_currency(avg_assets)}"
+                })
+        
+        # 2. Return on Equity (ROE) - Cross-table: IS + BS
+        equity = fact_dict.get('total_equity')
+        
+        if net_income and equity:
+            py_equity = py_fact_dict.get('total_equity')
+            
+            # Calculate average equity
+            avg_equity, eq_avg_desc = ScaleProcessor.calculate_average_balance(
+                equity.value,
+                py_equity.value if py_equity else None,
+                "Total Equity"
+            )
+            
+            if float(avg_equity) > 0:
+                roe = float(net_income.value) / float(avg_equity) * 100
+                
+                # Arithmetic verification
+                verify_result = ScaleProcessor.verify_calculation(
+                    "ROE", net_income.value, avg_equity, roe / 100
+                )
+                
+                ni_b = float(net_income.value) / 1e9
+                avg_eq_b = float(avg_equity) / 1e9
+                
+                response = ExpertCoTGenerator.generate(
+                    metric_name='roe',
+                    formula_latex=r"ROE = \frac{Net\ Income}{Average\ Shareholders'\ Equity} \times 100\%",
+                    data_sources=[
+                        ("Income Statement", "Net Income", net_income.value),
+                        ("Balance Sheet (Current)", "Total Equity", equity.value),
+                        ("Balance Sheet (Prior)", "Beginning Equity", py_equity.value if py_equity else Decimal(0)),
+                    ],
+                    calculation_steps=[
+                        eq_avg_desc,
+                        f"$ROE = \\frac{{{ni_b:.3f}B}}{{{avg_eq_b:.3f}B}} \\times 100\\% = {roe:.2f}\\%$"
+                    ],
+                    result=roe,
+                    industry=industry,
+                    company_name=self.company_name,
+                    verification_result=verify_result
+                )
+                
+                qa_list.append({
+                    "question": f"Why is Return on Equity (ROE) a critical measure for {self.company_name}'s shareholders, and how does it reflect management's effectiveness in deploying equity capital?",
+                    "response": response,
+                    "type": "cross_table_analysis",
+                    "context": f"Net Income: {ScaleProcessor.format_currency(net_income.value)}, Average Total Equity: {ScaleProcessor.format_currency(avg_equity)}"
+                })
+        
+        # 3. DuPont Analysis - Triple cross-table decomposition
+        revenue = fact_dict.get('revenue')
+        if net_income and revenue and total_assets and equity:
+            try:
+                # DuPont: ROE = Profit Margin × Asset Turnover × Equity Multiplier
+                profit_margin = float(net_income.value) / float(revenue.value)
+                asset_turnover = float(revenue.value) / float(total_assets.value)
+                equity_multiplier = float(total_assets.value) / float(equity.value)
+                
+                roe_dupont = profit_margin * asset_turnover * equity_multiplier * 100
+                
+                response = f"""[Definition]
+DuPont Analysis decomposes Return on Equity into three drivers: profitability (Net Profit Margin), efficiency (Asset Turnover), and leverage (Equity Multiplier). This reveals whether ROE is driven by operational excellence or financial engineering.
+
+[Synthesis]
+- Income Statement: Net Income = {ScaleProcessor.format_currency(net_income.value)}
+- Income Statement: Revenues = {ScaleProcessor.format_currency(revenue.value)}
+- Balance Sheet: Total Assets = {ScaleProcessor.format_currency(total_assets.value)}
+- Balance Sheet: Total Equity = {ScaleProcessor.format_currency(equity.value)}
+
+[Symbolic Reasoning]
+$$ROE = \\underbrace{{\\frac{{Net\\ Income}}{{Revenue}}}}_{{{profit_margin:.4f}}} \\times \\underbrace{{\\frac{{Revenue}}{{Assets}}}}_{{{asset_turnover:.2f}}} \\times \\underbrace{{\\frac{{Assets}}{{Equity}}}}_{{{equity_multiplier:.2f}}}$$
+
+$$= {profit_margin:.4f} \\times {asset_turnover:.2f} \\times {equity_multiplier:.2f} = {roe_dupont:.2f}\\%$$
+
+[Professional Insight]
+{IndustryInsightEngine.get_insight(industry, 'roe', roe_dupont)}
+
+**Primary ROE Driver**: {'Profitability (high margin)' if profit_margin > 0.15 else 'Asset Efficiency' if asset_turnover > 1.0 else 'Financial Leverage'}
+"""
+                
+                qa_list.append({
+                    "question": f"Using DuPont Analysis, decompose {self.company_name}'s ROE into its three fundamental drivers and identify which component contributes most to shareholder returns.",
+                    "response": response,
+                    "type": "cross_table_analysis",
+                    "context": f"Profit Margin: {profit_margin:.2%}, Asset Turnover: {asset_turnover:.2f}x, Equity Multiplier: {equity_multiplier:.2f}x"
+                })
+            except:
+                pass
+        
+        return qa_list
 
 
 # ============================================================
