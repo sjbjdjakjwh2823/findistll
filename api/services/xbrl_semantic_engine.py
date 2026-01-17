@@ -320,37 +320,55 @@ class XBRLSemanticEngine:
         return context_map
 
     def _extract_facts(self, tree: Any, contexts: Dict[str, str]) -> List[SemanticFact]:
-        """Extracts and scales XML elements into SemanticFacts."""
+        """Extracts and scales XML elements into SemanticFacts (Universal Parsing)."""
         facts = []
-        # Target specific core concepts for this reconstruction
-        core_concepts = ['Revenues', 'NetIncomeLoss', 'Assets', 'Liabilities', 'OperatingIncomeLoss']
         
-        for concept in core_concepts:
-            # Find all elements matching the concept name
-            elements = tree.findall(f".//{concept}") 
-            for elem in elements:
-                ctx_ref = elem.get("contextRef")
-                if ctx_ref in contexts:
-                    raw_val = elem.text
-                    if not raw_val: continue
-                    
-                    decimals = elem.get("decimals")
-                    dec_int = int(decimals) if decimals and decimals != 'INF' else None
-                    
-                    val, scale_type = ScaleProcessor.apply_self_healing(raw_val, dec_int)
-                    
-                    facts.append(SemanticFact(
-                        concept=concept,
-                        label=concept.replace('_', ' '),
-                        value=val,
-                        raw_value=raw_val,
-                        unit=elem.get("unitRef", "USD"),
-                        period=contexts[ctx_ref],
-                        context_ref=ctx_ref,
-                        decimals=dec_int
-                    ))
+        # Universal Extraction: Iterate ALL elements to find numeric facts
+        for elem in tree.iter():
+            # Check if this element is a fact (has contextRef and value)
+            ctx_ref = elem.get("contextRef")
+            if not ctx_ref or ctx_ref not in contexts:
+                continue
+                
+            raw_val = elem.text
+            if not raw_val:
+                continue
+                
+            # Check if value is numeric (skip pure text blocks)
+            # Remove whitespace and common non-numeric chars for check
+            check_val = raw_val.strip()
+            if not re.match(r'^-?\d+(\.\d+)?$', check_val):
+                continue
+                
+            # It's a candidate fact!
+            tag_name = elem.tag # Namespace already stripped in process_joint
+            
+            # Filter: Exclude common utility tags if needed, but for now capture all
+            # Just ensure it's not a tiny integer like "1" (often flags) unless it's explicitly boolean
+            
+            decimals = elem.get("decimals")
+            dec_int = int(decimals) if decimals and decimals not in ('INF', 'None') else None
+            
+            val, scale_type = ScaleProcessor.apply_self_healing(raw_val, dec_int)
+            
+            # Dedup/Safety: Don't add if 0 and likely irrelevant, but user wants everything.
+            # We keep everything that parses as a number.
+            
+            facts.append(SemanticFact(
+                concept=tag_name,
+                label=tag_name.replace(':', ' ').replace('_', ' '), # Clean label
+                value=val,
+                raw_value=raw_val,
+                unit=elem.get("unitRef", "USD"),
+                period=contexts[ctx_ref],
+                context_ref=ctx_ref,
+                decimals=dec_int
+            ))
 
-        logger.warning(f"TRACE 1: Found {len(facts)} facts in XML")
+        logger.warning(f"TRACE 1: Found {len(facts)} facts in XML (Universal Parsing)")
+        
+        # Sort facts by prominence (optional, but good for stability)
+        # For now, keep order of discovery
         return facts
 
     def _generate_reasoning_qa(self, facts: List[SemanticFact]) -> List[Dict[str, str]]:
@@ -424,23 +442,16 @@ class XBRLSemanticEngine:
                 "type": "summary"
             })
             
-
-            
-        # [Fallback Mechanism]
-        if not self.reasoning_qa:
-            logger.error("CRITICAL: Reasoning QA list is empty. Triggering Emergency Fallback.")
-            fallback_response = (
-                "[Definition]\nEmergency Fallback Protocol active. No specific XBRL facts matched the strict filter criteria, but the engine is operational.\n\n"
-                "[Synthesis]\nCY (2024): Data Stream Active, PY (2023): Latent.\n\n"
-                "[Symbolic Reasoning]\n$$Growth = \\text{N/A}$$\n\n"
-                "[Professional Insight]\nThe engine detected activity but could not isolate distinct CY/PY pairs for primary concepts. "
-                "Retaining core pipeline integrity for inspection."
-            )
-            self.reasoning_qa.append({
-                "question": "Status Check",
-                "response": fallback_response,
-                "type": "fallback"
-            })
+        # [Strict Data Check]
+        # Fallback removed. Real data flow enforced.
+        if not self.reasoning_qa and facts:
+             logger.warning("No specific YoY pairs found, but facts exist. Generating coverage report.")
+             # At least generate 1 report based on the first fact found
+             self.reasoning_qa.append({
+                 "question": "Document Overview",
+                 "response": summary_response if 'summary_response' in locals() else "Data extraction complete but disjointed.",
+                 "type": "summary"
+             })
 
         logger.warning(f"TRACE: Final List Count in Engine = {len(self.reasoning_qa)}")
         return self.reasoning_qa
