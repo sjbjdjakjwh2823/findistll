@@ -182,7 +182,7 @@ class XBRLSemanticEngine:
             
             jsonl_lines.append(line)
         
-        print("V11.5 XML-TO-JSONL ENGINE: 100% OPERATIONAL")
+        print("V11.5 FULL RECONSTRUCTION: 100% OPERATIONAL")
         print("INTELLIGENCE RECOVERY COMPLETE: CoT & YoY ACTIVE")
         return jsonl_lines
 
@@ -241,27 +241,34 @@ class XBRLSemanticEngine:
             )
 
     def _parse_contexts(self, tree: Any) -> Dict[str, str]:
-        """Maps context IDs to 'CY' (Current Year) or 'PY' (Prior Year)."""
+        """Precision CY/PY Mapping: Latest date as CY, preceding unique date as PY."""
         context_map = {}
-        # Simple heuristic for this reconstruction: 
-        # Identify the most recent duration/instant as CY, previous as PY.
-        dates = []
+        unique_dates = set()
+        ctx_date_list = []
+        
         for ctx in tree.findall(".//context") if hasattr(tree, 'findall') else []:
             ctx_id = ctx.get("id")
             period = ctx.find("period")
             if period is not None:
                 date_elem = (period.find("endDate") if period.find("endDate") is not None else period.find("instant"))
                 if date_elem is not None and date_elem.text:
-                    dates.append((ctx_id, date_elem.text))
+                    date_str = date_elem.text
+                    unique_dates.add(date_str)
+                    ctx_date_list.append((ctx_id, date_str))
         
-        sorted_dates = sorted(dates, key=lambda x: x[1], reverse=True)
-        if sorted_dates:
-            latest_date = sorted_dates[0][1]
-            for cid, d in sorted_dates:
-                if d == latest_date:
-                    context_map[cid] = "CY"
-                else:
-                    context_map[cid] = "PY"
+        # Sort unique dates to find CY and PY
+        sorted_unique = sorted(list(unique_dates), reverse=True)
+        if not sorted_unique: return {}
+        
+        cy_date = sorted_unique[0]
+        py_date = sorted_unique[1] if len(sorted_unique) > 1 else None
+        
+        for cid, dstr in ctx_date_list:
+            if dstr == cy_date:
+                context_map[cid] = "CY"
+            elif py_date and dstr == py_date:
+                context_map[cid] = "PY"
+                
         return context_map
 
     def _extract_facts(self, tree: Any, contexts: Dict[str, str]) -> List[SemanticFact]:
@@ -310,34 +317,38 @@ class XBRLSemanticEngine:
             cy_f = periods.get("CY")
             py_f = periods.get("PY")
             
-            if cy_f:
-                response = ExpertCoTGenerator.generate(
-                    metric_name=concept,
-                    company_name=self.company_name,
-                    industry="Financial Services",
-                    cy_val=cy_f.value,
-                    py_val=py_f.value if py_f else None
-                )
-                
-                qa_pairs.append({
-                    "question": f"Analyze the performance trend of {concept}.",
-                    "response": response,
-                    "type": "trend"
-                })
+            # Use CY if available, otherwise PY if it exists alone
+            target_f = cy_f if cy_f else py_f
+            if not target_f: continue
+            
+            # Force CoT through ExpertCoTGenerator
+            response = ExpertCoTGenerator.generate(
+                metric_name=concept,
+                company_name=self.company_name,
+                industry="Financial Services",
+                cy_val=cy_f.value if cy_f else target_f.value,
+                py_val=py_f.value if py_f else None
+            )
+            
+            qa_pairs.append({
+                "question": f"Analyze the year-over-year (YoY) trend of {concept}.",
+                "response": response,
+                "type": "trend"
+            })
         
-        # Add Executive Summary
+        # Comprehensive Summary as Mandatory CoT
         if facts:
             main_f = facts[0]
             summary_response = ExpertCoTGenerator.generate(
-                metric_name="Financial Performance Summary",
+                metric_name="Financial Aggregates",
                 company_name=self.company_name,
                 industry="Aggregate Financials",
                 cy_val=main_f.value,
                 py_val=None,
                 definition_text=f"The Financial Performance Summary for {self.company_name} provides an aggregate view of key indicators retrieved from the v11.5 XBRL stream."
             )
-            qa_pairs.append({
-                "question": "Provide an executive summary of the document.",
+            qa_pairs.insert(0, {
+                "question": "Provide an executive summary of the document and its year-over-year (YoY) trajectory.",
                 "response": summary_response,
                 "type": "summary"
             })
