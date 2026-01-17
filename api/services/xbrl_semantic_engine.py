@@ -225,7 +225,7 @@ class ScaleProcessor:
                 
                 # Poison Pill Check (Strict v11.5)
                 if korean_pattern.search(line):
-                    logger.error(f"POISON PILL TRIGGERED: Korean detected in output -> {line}")
+                    logger.error(f"POISON PILL TRIGGERED: Korean detected in output -> {line}")  # noqa: E501
                     raise RuntimeError("KOREAN_DETECTED")
                 
                 jsonl_lines.append(line)
@@ -447,12 +447,12 @@ class ScaleProcessor:
                     decimals=dec_int
                 ))
     
-            logger.warning(f"TRACE 1: Found {len(facts)} facts in XML (V13.0 Greedy Parsing)")
+            logger.warning(f"TRACE 1: Found {len(facts)} facts in XML (V13.0 Greedy Parsing)")  # noqa: E501
             return facts
     
         def _generate_reasoning_qa(self, facts: List[SemanticFact]) -> List[Dict[str, str]]:
             """Calculates YoY trends and generates CoT responses."""
-            logger.warning(f"ENV CHECK: LLM_API_KEY_PRESENT = {bool(os.getenv('GEMINI_API_KEY'))}")
+            logger.warning(f"ENV CHECK: LLM_API_KEY_PRESENT = {bool(os.getenv('GEMINI_API_KEY'))}")  # noqa: E501
             logger.warning(f"TRACE: Total facts found in XML = {len(facts)}")
             self.reasoning_qa = []
             
@@ -502,7 +502,10 @@ class ScaleProcessor:
                     industry="Aggregate Financials",
                     cy_val=main_f.value,
                     py_val=None,
-                    definition_text=f"The Financial Performance Summary for {self.company_name} provides an aggregate view."
+                    definition_text=(
+                        f"The Financial Performance Summary for {self.company_name} "
+                        "provides an aggregate view."
+                    )
                 )
                 
                 self.reasoning_qa.insert(0, {
@@ -513,7 +516,7 @@ class ScaleProcessor:
                 
             # [Strict Data Check]
             if not self.reasoning_qa and facts:
-                 logger.warning("No specific YoY pairs found, but facts exist. Generating coverage report.")
+                 logger.warning("No specific YoY pairs found, but facts exist. Generating coverage report.")  # noqa: E501
                  self.reasoning_qa.append({
                      "question": "Document Overview",
                      "response": summary_response if 'summary_response' in locals() else "Data extraction complete but disjointed.",
@@ -524,7 +527,7 @@ class ScaleProcessor:
                 f"V13.0 COMPLETE: BUILD SUCCESS & YoY ACTIVE {len(self.reasoning_qa)} "
                 f"CHAINS FROM {len(facts)} FACTS"
             )
-            print(f"V13.0 COMPLETE: BUILD SUCCESS & YoY ACTIVE {len(facts)} FACTS")
+            print(f"V13.0 COMPLETE: BUILD SUCCESS & YoY ACTIVE {len(facts)} FACTS")  # noqa: E501
             return self.reasoning_qa
     
     def process_mock(self) -> XBRLIntelligenceResult:
