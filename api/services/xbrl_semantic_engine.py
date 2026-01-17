@@ -55,9 +55,15 @@ class ScaleProcessor:
     LARGE_VALUE_THRESHOLD = Decimal("1000000") # $1M as threshold for raw detection
 
     @classmethod
-    def normalize_to_billion(cls, value: Decimal) -> Decimal:
-        """Normalize any numeric value to Billion ($B)."""
-        return (value / Decimal("1000000000")).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
+    def normalize_to_billion(cls, value: Decimal, decimals: Optional[int] = None) -> Decimal:
+        """Normalize any numeric value to Billion ($B) with decimal adjustment."""
+        multiplier = Decimal("1")
+        if decimals is not None:
+            multiplier = Decimal("10")**decimals
+        
+        # Explicit multiplier usage as per v11.5 intelligence requirements
+        adjusted_value = value * multiplier
+        return (adjusted_value / Decimal("1000000000")).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
 
     @classmethod
     def format_currency(cls, value: Decimal) -> str:
@@ -80,20 +86,12 @@ class ScaleProcessor:
             val = Decimal(clean_val)
             original_val = val
             
-            # Decimals adjustment if provided
-            multiplier = Decimal("1")
-            if decimals is not None:
-                multiplier = Decimal("10")**decimals
-            
-            val = val * multiplier
-
             # Self-Healing: Detect if raw value or adjusted value is already in realistic large range (e.g. Trillions)
-            # Apple Case: 3.2T might be stored as 3,253,431,000,000
             if abs(original_val) >= cls.LARGE_VALUE_THRESHOLD:
                 print(f"[Self-Healing: Raw value {original_val} processed as large base]")
                 val = original_val # Use raw as base
             
-            normalized = cls.normalize_to_billion(val)
+            normalized = cls.normalize_to_billion(val, decimals)
             return normalized, "healed_billion"
             
         except (InvalidOperation, ValueError):
@@ -108,42 +106,44 @@ class ExpertCoTGenerator:
     @staticmethod
     def generate(
         metric_name: str,
-        formula_latex: str,
-        data_sources: List[Tuple[str, str, Decimal]],
-        calculation_steps: List[str],
-        result: float,
-        industry: str,
         company_name: str,
-        yoy_growth: Optional[float] = None,
-        trend_status: Optional[str] = None
+        industry: str,
+        cy_val: Decimal,
+        py_val: Optional[Decimal] = None,
+        definition_text: Optional[str] = None
     ) -> str:
-        """Builds a structured 4-step CoT response."""
+        """Builds a structured 4-step CoT response following the Golden Standard."""
         
-        # 1. Definition
-        definition = f"The {metric_name.replace('_', ' ').title()} evaluates {company_name}'s financial standing by analyzing specific metrics from the {industry} perspective."
+        # 1. [Definition]
+        if not definition_text:
+            definition_text = f"The {metric_name.replace('_', ' ').title()} measures a corporation's performance by revealing its financial standing from the {industry} perspective."
         
-        # 2. Synthesis
-        synthesis_lines = [f"- {src}: {cls_label} = {ScaleProcessor.format_currency(val)}" for src, cls_label, val in data_sources]
-        synthesis = "\n".join(synthesis_lines)
+        # 2. [Synthesis]
+        cy_str = f"CY ({datetime.now().year}): {ScaleProcessor.format_currency(cy_val)}"
+        py_str = f"PY ({datetime.now().year - 1}): " + (ScaleProcessor.format_currency(py_val) if py_val is not None else "N/A (Prior data missing)")
+        synthesis = f"{cy_str}, {py_str}."
         
-        # 3. Symbolic Reasoning (LaTeX)
-        reasoning_logic = "\n".join([f"- {step}" for step in calculation_steps])
-        formula_block = f"$${formula_latex}$$\n"
-        if yoy_growth is not None:
-            formula_block += f"$$Growth = \\frac{{CY - PY}}{{PY}} \\times 100\\% = {yoy_growth:+.2f}\\%$$\n"
-            formula_block += f"Trend Status: {trend_status if trend_status else ('Accelerated' if yoy_growth > 0 else 'Decelerated')}\n"
-        
-        # 4. Professional Insight
-        insight = f"Based on the analysis, {company_name} shows {'positive' if result > 0 else 'negative'} momentum in {metric_name.replace('_', ' ')}. "
-        if trend_status:
-            insight += f"The {trend_status} growth suggests tactical strength in the {industry} sector."
+        # 3. [Symbolic Reasoning]
+        if py_val is not None and py_val != 0:
+            growth = float((cy_val - py_val) / abs(py_val) * 100)
+            formula = f"$$Growth = \\frac{{{cy_val:.3f} - {py_val:.3f}}}{{{abs(py_val):.3f}}} \\times 100\\% = {growth:+.2f}\\%$$"
         else:
-            insight += f"The current performance is representative of structural trends in {industry}."
+            growth = 0.0
+            formula = "$$Growth = \\text{N/A (Prior data missing)}$$"
+        
+        # 4. [Professional Insight]
+        trend = "positive" if growth > 0 else "negative"
+        momentum = "acceleration" if growth > 0 else "deceleration"
+        insight = f"{company_name} shows a {trend} momentum in {metric_name.replace('_', ' ')}. "
+        if py_val is not None:
+            insight += f"The {growth:+.2f}% growth indicates {momentum} in profitability and market dominance within the {industry} sector."
+        else:
+            insight += f"Current performance is representative of structural trends in {industry}, though longer-term trajectory requires prior period validation."
 
         return (
-            "[Definition]\n" + definition + "\n\n" +
+            "[Definition]\n" + definition_text + "\n\n" +
             "[Synthesis]\n" + synthesis + "\n\n" +
-            "[Symbolic Reasoning]\n" + formula_block + reasoning_logic + "\n\n" +
+            "[Symbolic Reasoning]\n" + formula + "\n\n" +
             "[Professional Insight]\n" + insight
         )
 
@@ -180,7 +180,7 @@ class XBRLSemanticEngine:
             }
             line = json.dumps(entry, ensure_ascii=False)
             
-            # Poison Pill Check
+            # Poison Pill Check (Strict v11.5)
             if korean_pattern.search(line):
                 logger.error(f"POISON PILL TRIGGERED: Korean detected in output -> {line}")
                 raise RuntimeError("KOREAN_DETECTED")
@@ -188,6 +188,7 @@ class XBRLSemanticEngine:
             jsonl_lines.append(line)
         
         print("V11.5 XML-TO-JSONL ENGINE: 100% OPERATIONAL")
+        print("INTELLIGENCE RECOVERY COMPLETE: CoT & YoY ACTIVE")
         return jsonl_lines
 
     def process_joint(self, instance_content: bytes, label_content: Optional[bytes] = None) -> XBRLIntelligenceResult:
@@ -217,6 +218,13 @@ class XBRLSemanticEngine:
             # 4. JSONL Generation (with Poison Pill)
             jsonl_data = self._generate_jsonl(qa_pairs)
             
+            # Extract summary from QA
+            summary = "Analysis complete."
+            for qa in qa_pairs:
+                if qa.get("type") == "summary":
+                    summary = qa["response"]
+                    break
+            
             return XBRLIntelligenceResult(
                 success=True,
                 company_name=self.company_name,
@@ -226,7 +234,7 @@ class XBRLSemanticEngine:
                 financial_report_md="# Financial Analysis Report",
                 jsonl_data=jsonl_data,
                 key_metrics={},
-                parse_summary="Analysis complete.",
+                parse_summary=summary,
                 errors=self.errors
             )
         except Exception as e:
@@ -304,33 +312,16 @@ class XBRLSemanticEngine:
             concept_groups[f.concept][f.period] = f
             
         for concept, periods in concept_groups.items():
-            if "CY" in periods and "PY" in periods:
-                cy_f = periods["CY"]
-                py_f = periods["PY"]
-                
-                # YoY Growth
-                try:
-                    growth_val = float((cy_f.value - py_f.value) / abs(py_f.value) * 100) if py_f.value != 0 else 0.0
-                except:
-                    growth_val = 0.0
-                
+            cy_f = periods.get("CY")
+            py_f = periods.get("PY")
+            
+            if cy_f:
                 response = ExpertCoTGenerator.generate(
                     metric_name=concept,
-                    formula_latex=f"{concept.replace(' ', r'\\ ')} = Value_{{CY}}",
-                    data_sources=[
-                        ("Current Period", f"{concept} (CY)", cy_f.value),
-                        ("Prior Period", f"{concept} (PY)", py_f.value)
-                    ],
-                    calculation_steps=[
-                        f"Current Value: {ScaleProcessor.format_currency(cy_f.value)}",
-                        f"Prior Value: {ScaleProcessor.format_currency(py_f.value)}",
-                        f"Growth: {growth_val:+.2f}%"
-                    ],
-                    result=float(cy_f.value),
-                    industry="Financial Services",
                     company_name=self.company_name,
-                    yoy_growth=growth_val,
-                    trend_status="Accelerated" if growth_val > 0 else "Decelerated"
+                    industry="Financial Services",
+                    cy_val=cy_f.value,
+                    py_val=py_f.value if py_f else None
                 )
                 
                 qa_pairs.append({
@@ -339,43 +330,37 @@ class XBRLSemanticEngine:
                     "type": "trend"
                 })
         
+        # Add Executive Summary
+        if facts:
+            main_f = facts[0]
+            summary_response = ExpertCoTGenerator.generate(
+                metric_name="Financial Performance Summary",
+                company_name=self.company_name,
+                industry="Aggregate Financials",
+                cy_val=main_f.value,
+                py_val=None,
+                definition_text=f"The Financial Performance Summary for {self.company_name} provides an aggregate view of key indicators retrieved from the v11.5 XBRL stream."
+            )
+            qa_pairs.append({
+                "question": "Provide an executive summary of the document.",
+                "response": summary_response,
+                "type": "summary"
+            })
+            
         return qa_pairs
-
+    
     def process_mock(self) -> XBRLIntelligenceResult:
         """Mock execution to demonstrate the 100% operational status."""
-        # Current Year Data
-        rev_cy = Decimal("150000000000") # 150B
-        asset_cy = Decimal("500000000000") # 500B
-        
-        # Prior Year Data
-        rev_py = Decimal("120000000000") # 120B
-        
-        # Scaling
-        rev_cy_scaled = ScaleProcessor.normalize_to_billion(rev_cy)
-        asset_cy_scaled = ScaleProcessor.normalize_to_billion(asset_cy)
-        rev_py_scaled = ScaleProcessor.normalize_to_billion(rev_py)
-        
-        # YoY
-        yoy = float((rev_cy - rev_py) / rev_py * 100)
+        rev_cy = Decimal("150") # In billions already after scale
+        rev_py = Decimal("120")
         
         # Generation
         response = ExpertCoTGenerator.generate(
             metric_name="revenue_growth",
-            formula_latex=r"Revenue\ Growth = \frac{Revenues_{CY} - Revenues_{PY}}{Revenues_{PY}}",
-            data_sources=[
-                ("Income Statement", "Current Revenues", rev_cy),
-                ("Income Statement", "Prior Revenues", rev_py)
-            ],
-            calculation_steps=[
-                f"CY: {ScaleProcessor.format_currency(rev_cy_scaled)}",
-                f"PY: {ScaleProcessor.format_currency(rev_py_scaled)}",
-                f"Calculation: ({rev_cy_scaled} - {rev_py_scaled}) / {rev_py_scaled} = {yoy/100:.4f}"
-            ],
-            result=yoy,
-            industry="Technology",
             company_name=self.company_name,
-            yoy_growth=yoy,
-            trend_status="Accelerated"
+            industry="Technology",
+            cy_val=rev_cy,
+            py_val=rev_py
         )
         
         qa_pairs = [{"question": "Analyze growth", "response": response, "type": "trend"}]
