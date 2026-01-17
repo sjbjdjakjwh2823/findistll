@@ -334,7 +334,7 @@ class FileIngestionService:
             import copy
             final_qa = copy.deepcopy(result.reasoning_qa)
             qa_count = len(final_qa)
-            print(f"V11.5 DATA FOUND: {qa_count} items ready for export")
+            print(f"V11.5 DATA RECOVERED: [{qa_count}] ROWS READY")
             
             return {
                 "title": f"XBRL: {result.company_name or filename}",
