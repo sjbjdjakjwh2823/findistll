@@ -334,6 +334,12 @@ class FileIngestionService:
             # CRITICAL DEBUG: Verify Data Pipe before return
             import copy
             final_qa = copy.deepcopy(result.reasoning_qa)
+            
+            # [Strict Handover] Defensive Check
+            if not isinstance(final_qa, list):
+                logger.error(f"CRITICAL HANDOVER ERROR: reasoning_qa is not a list! Type: {type(final_qa)}")
+                final_qa = [] # Emergency reset
+            
             qa_count = len(final_qa)
             print(f"V11.5 DATA RECOVERED: [{qa_count}] ROWS READY")
             print(f"TRACE 5: Final data count being sent to Exporter: {qa_count}")
