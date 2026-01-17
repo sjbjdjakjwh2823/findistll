@@ -81,8 +81,11 @@ class ScaleProcessor:
             original_val = val
             
             # Decimals adjustment if provided
+            multiplier = Decimal("1")
             if decimals is not None:
-                val = val * (Decimal("10")**decimals)
+                multiplier = Decimal("10")**decimals
+            
+            val = val * multiplier
 
             # Self-Healing: Detect if raw value or adjusted value is already in realistic large range (e.g. Trillions)
             # Apple Case: 3.2T might be stored as 3,253,431,000,000

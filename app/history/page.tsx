@@ -40,9 +40,9 @@ export default function HistoryPage() {
             } catch (error: any) {
                 console.error('Failed to fetch history', error);
                 if (error.response?.status === 401) {
-                    setError('로그인이 필요합니다.');
+                    setError('Authentication required. Please log in.');
                 } else {
-                    setError('히스토리를 불러오는데 실패했습니다.');
+                    setError('Failed to load history. Please try again later.');
                 }
             } finally {
                 setLoading(false);

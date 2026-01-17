@@ -72,9 +72,9 @@ export default function LoginPage() {
 
                     // Show success message
                     if (result.requiresEmailConfirmation) {
-                        setSuccessMessage('회원가입이 완료되었습니다! 이메일 인증 후 로그인해 주세요. 📧');
+                        setSuccessMessage('Registration complete! Please check your email for confirmation before logging in. 📧');
                     } else {
-                        setSuccessMessage('회원가입이 완료되었습니다. 로그인을 진행해 주세요. ✅');
+                        setSuccessMessage('Registration complete. Please log in to continue. ✅');
                     }
                 }
             }
@@ -280,7 +280,7 @@ export default function LoginPage() {
                                         htmlFor="rememberMe"
                                         className="text-sm text-gray-600 cursor-pointer select-none"
                                     >
-                                        로그인 유지 (이메일 기억하기)
+                                        Keep me signed in (Remember email)
                                     </label>
                                 </div>
                             )}
