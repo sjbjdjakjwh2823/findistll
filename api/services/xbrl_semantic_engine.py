@@ -141,13 +141,27 @@ class ScaleProcessor:
             abs_val = abs(cy_val)
             
             if cy_val == 0:
-                 insight += " **Note: This zero-balance entry indicates inactive status or no reported figures for this period.**"
-            elif abs_val < 10 and abs_val > 0:
-                 insight += f" **Note: The value {abs_val} suggests this metric may represent an operational count, ratio, or categorical flag rather than a direct monetary figure.**"
+                 insight += (
+                     " **Note: This zero-balance entry indicates inactive status "
+                     "or no reported figures for this period.**"
+                 )
+            elif abs_val < 10:
+                 insight += (
+                     f" **Note: The value {abs_val} suggests this metric may represent "
+                     "an operational count, ratio, or categorical flag "
+                     "rather than a direct monetary figure.**"
+                 )
             elif abs_val < Decimal("0.001"):
-                 insight += " **Note: This analysis represents a broad Data Exploration Phase. Value magnitude warrants verification of unit scale (e.g., Millions vs Billions) or indicates an emerging metric.**"
+                 insight += (
+                     " **Note: This analysis represents a broad Data Exploration Phase. "
+                     "Value magnitude warrants verification of unit scale "
+                     "(e.g., Millions vs Billions) or indicates an emerging metric.**"
+                 )
             elif py_val is None:
-                 insight += " **Note: Historical data missing necessitates caution in trend extrapolation.**"
+                 insight += (
+                     " **Note: Historical data missing necessitates caution "
+                     "in trend extrapolation.**"
+                 )
                 
             return (
                 "[Definition]\n" + definition_text + "\n\n" +
