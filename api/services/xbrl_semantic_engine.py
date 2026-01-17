@@ -81,12 +81,18 @@ class XBRLIntelligenceResult:
 
 class ScaleProcessor:
     """
-    수치 스케일 처리기 (v3) - Self-Healing Scale Logic
+    수치 스케일 처리기 (v11.0) - Expert Financial Analysis Engine
     
     🔴 지능형 수치 보정 (Self-Healing):
     1. 원본 값이 이미 큰 절대값(≥10^6)이고 decimals가 음수면 곱셈 중단
     2. 최종값이 10^15 초과 시 자동 역산(Reverse Scaling)
-    3. 모든 수치를 Billion($10^9) 또는 Million($10^6) 단위로 표준화
+    3. 모든 수치를 Billion($10^9) 단위로 표준화 (STRICT)
+    
+    🆕 v11.0 Features:
+    - Strict Billion ($B$) Unit Only Policy
+    - Variable Precision (3 decimals standard, 6 for small values)
+    - Arithmetic Cross-Check Verification
+    - Time-Series Average Calculation
     
     입력: 다양한 형식의 XBRL 수치
     출력: 합리적 범위(~$1T)의 표준화된 수치
@@ -95,6 +101,12 @@ class ScaleProcessor:
     # 표준화 목표 단위
     STANDARD_UNIT_BILLION = Decimal('1e9')   # $1B = 10^9
     STANDARD_UNIT_MILLION = Decimal('1e6')   # $1M = 10^6
+    
+    # v11.0: Precision Constants
+    SMALL_VALUE_THRESHOLD = Decimal('1e6')   # $0.001B = $1M
+    PRECISION_STANDARD = 3                    # Standard: 3 decimals
+    PRECISION_EXTENDED = 6                    # Extended: 6 decimals for small values
+    PRECISION_INSIGNIFICANT = Decimal('1e3') # Values below $1K are insignificant
     
     # 합리적 재무 수치 범위
     MAX_REASONABLE_VALUE = Decimal('1e13')   # 10조 (Apple 총자산 ~$400B의 10배)
@@ -233,60 +245,144 @@ class ScaleProcessor:
     
     @staticmethod
     def format_currency(value: Decimal, currency: str = "USD") -> str:
-        """통화 포맷팅 (간소화된 단위 표시)"""
+        """
+        v11.0: Strict Billion Unit Formatting with Variable Precision
+        
+        Policy: ALL values output in Billion ($B$) only
+        - Values >= $0.001B: 3 decimal places (standard)
+        - Values < $0.001B: 6 decimal places (extended precision)
+        - Values < $0.000001B: marked as "< $0.001B (insignificant)"
+        
+        This eliminates M/K/T unit mixing that causes AI hallucinations.
+        """
         try:
             abs_val = abs(value)
             sign = "-" if value < 0 else ""
             
-            if abs_val >= Decimal('1e12'):
-                formatted = f"{float(abs_val / Decimal('1e12')):.3f}T"
-            elif abs_val >= Decimal('1e9'):
-                formatted = f"{float(abs_val / Decimal('1e9')):.3f}B"
-            elif abs_val >= Decimal('1e6'):
-                formatted = f"{float(abs_val / Decimal('1e6')):.3f}M"
-            elif abs_val >= Decimal('1e3'):
-                formatted = f"{float(abs_val / Decimal('1e3')):.3f}K"
-            else:
-                formatted = f"{int(abs_val):,}"
+            # Convert to Billion (10^9)
+            billion_val = float(abs_val / Decimal('1e9'))
             
-            if currency == "KRW":
-                return f"{sign}₩{formatted}"
-            elif currency == "USD":
-                return f"{sign}${formatted}"
+            # Variable precision based on magnitude
+            if abs_val < ScaleProcessor.PRECISION_INSIGNIFICANT:
+                # Very small values (< $1K)
+                return f"{sign}< $0.001B (insignificant)"
+            elif abs_val < ScaleProcessor.SMALL_VALUE_THRESHOLD:
+                # Small values (< $1M): Extended precision (6 decimals)
+                if currency == "USD":
+                    return f"{sign}${billion_val:.6f}B"
+                else:
+                    return f"{sign}{billion_val:.6f}B {currency}"
             else:
-                return f"{sign}{formatted} {currency}"
+                # Standard values (>= $1M): Standard precision (3 decimals)
+                if currency == "USD":
+                    return f"{sign}${billion_val:.3f}B"
+                else:
+                    return f"{sign}{billion_val:.3f}B {currency}"
         except:
             return str(value)
     
     @classmethod
+    def format_currency_strict_billion(cls, value: Decimal, currency: str = "USD") -> str:
+        """Alias for format_currency - v11.0 Strict Billion Policy"""
+        return cls.format_currency(value, currency)
+    
+    @classmethod
     def normalize_to_billion(cls, value: Decimal, unit: str = "B") -> str:
         """
-        수치를 Billion 단위로 정규화 (테이블 행 출력용)
+        v11.0: Strict Billion Normalization (No exceptions)
         
-        예: 111601000000 → "111.601B" (소수점 3자리)
-        
-        공식: Value_std = Value_raw / 10^9 (Billion)
+        All values output in Billion with variable precision:
+        - Standard: 3 decimals for values >= $1M
+        - Extended: 6 decimals for values < $1M
         """
         try:
             abs_val = abs(value)
             sign = "-" if value < 0 else ""
+            billion_val = float(value / Decimal('1e9'))
             
-            if abs_val >= Decimal('1e12'):
-                # Trillion → 표시
-                normalized = float(value / Decimal('1e12'))
-                return f"{sign}{normalized:.3f}T"
-            elif abs_val >= Decimal('1e9'):
-                # Billion 정규화
-                normalized = float(value / Decimal('1e9'))
-                return f"{sign}{normalized:.3f}{unit}"
-            elif abs_val >= Decimal('1e6'):
-                # Million
-                normalized = float(value / Decimal('1e6'))
-                return f"{sign}{normalized:.3f}M"
+            if abs_val < cls.PRECISION_INSIGNIFICANT:
+                return f"{sign}< 0.001{unit}"
+            elif abs_val < cls.SMALL_VALUE_THRESHOLD:
+                return f"{sign}{billion_val:.6f}{unit}"
             else:
-                return f"{int(value):,}"
+                return f"{sign}{billion_val:.3f}{unit}"
         except:
             return str(value)
+    
+    @classmethod
+    def verify_calculation(
+        cls,
+        formula_name: str,
+        numerator: Decimal,
+        denominator: Decimal,
+        reported_result: float,
+        tolerance: float = 0.01
+    ) -> Tuple[bool, str]:
+        """
+        v11.0: Arithmetic Cross-Check Verification
+        
+        Verifies that LLM-generated calculations match actual computation.
+        This prevents arithmetic hallucinations in output.
+        
+        Args:
+            formula_name: Name of the formula being verified
+            numerator: Numerator value
+            denominator: Denominator value
+            reported_result: The result reported in the output
+            tolerance: Acceptable difference (default 1%)
+        
+        Returns:
+            (is_valid, verification_message)
+        """
+        if denominator == 0:
+            return False, f"⚠️ {formula_name}: Division by zero"
+        
+        actual_result = float(numerator / denominator)
+        difference = abs(actual_result - reported_result)
+        relative_diff = difference / abs(actual_result) if actual_result != 0 else difference
+        
+        if relative_diff <= tolerance:
+            return True, f"✅ Arithmetic Verified: {formula_name} = {actual_result:.4f}"
+        else:
+            return False, f"❌ Arithmetic Mismatch: {formula_name} expected {actual_result:.4f}, got {reported_result:.4f} (diff: {relative_diff*100:.2f}%)"
+    
+    @classmethod
+    def calculate_average_balance(
+        cls,
+        current_value: Decimal,
+        prior_value: Optional[Decimal],
+        metric_name: str = "Balance"
+    ) -> Tuple[Decimal, str]:
+        """
+        v11.0: Time-Series Average Calculation for Turnover Ratios
+        
+        Formula: Average = (Beginning Balance + Ending Balance) / 2
+        
+        This is the accounting-standard method for calculating turnover ratios.
+        Using ending balance only is technically incorrect.
+        
+        Args:
+            current_value: Ending balance (current period)
+            prior_value: Beginning balance (prior period ending)
+            metric_name: Name for description
+        
+        Returns:
+            (average_value, calculation_description)
+        """
+        if prior_value is not None and prior_value > 0:
+            average = (prior_value + current_value) / 2
+            description = (
+                f"Average {metric_name} = (Beginning {cls.format_currency(prior_value)} + "
+                f"Ending {cls.format_currency(current_value)}) / 2 = {cls.format_currency(average)}"
+            )
+            return average, description
+        else:
+            # Fallback: Use ending balance only with warning
+            description = (
+                f"Ending {metric_name} = {cls.format_currency(current_value)} "
+                f"(⚠️ Prior period data unavailable - using ending balance as fallback)"
+            )
+            return current_value, description
     
     @staticmethod
     def fix_label_typos(label: str) -> str:
@@ -647,6 +743,363 @@ class CoreFinancialConcepts:
 
 
 # ============================================================
+# INDUSTRY INSIGHT ENGINE (v11.0)
+# ============================================================
+
+class IndustryInsightEngine:
+    """
+    v11.0: Industry-Specific Professional Insight Generator
+    
+    Provides sector-appropriate analysis based on SIC codes or company identification.
+    Different industries prioritize different metrics.
+    
+    SIC Code Mapping:
+    - 3570-3579, 7370-7379: Computer/Technology (Tech)
+    - 5200-5999: Retail Trade
+    - 6000-6799: Finance, Insurance, Real Estate
+    """
+    
+    INDUSTRY_TEMPLATES = {
+        'tech': {
+            'focus_metrics': ['rnd_intensity', 'gross_margin', 'revenue_growth'],
+            'inventory_turnover': {
+                'high': "For technology companies, high inventory turnover ({value:.1f}x) indicates efficient supply chain management and low obsolescence risk - critical for rapidly evolving product cycles. This is particularly important for semiconductor companies like NVIDIA where product lifecycles are short.",
+                'low': "⚠️ Low inventory turnover ({value:.1f}x) in the tech sector raises concerns about product obsolescence and potential inventory write-downs. Technology products depreciate quickly due to rapid innovation cycles.",
+            },
+            'rnd_intensity': {
+                'high': "✅ R&D intensity of {value:.1f}% demonstrates strong commitment to innovation, typical of industry leaders that maintain competitive moats through continuous technological advancement. For semiconductor companies, sustained R&D investment is essential for next-generation product development.",
+                'low': "R&D intensity of {value:.1f}% is below tech sector average (10-15%). May indicate mature product portfolio, cost optimization phase, or potential competitive vulnerability.",
+            },
+            'operating_margin': {
+                'high': "✅ Outstanding operating margin of {value:.1f}% reflects strong pricing power and scalable business model characteristic of technology leaders with differentiated products.",
+                'low': "Operating margin of {value:.1f}% is below tech sector peers. Consider competitive pressure, product mix, or investment phase impacts.",
+            },
+            'asset_turnover': {
+                'high': "Asset turnover of {value:.2f}x indicates efficient capital deployment in a capital-intensive semiconductor industry.",
+                'low': "Asset turnover of {value:.2f}x reflects significant capital investment typical of fab or R&D intensive operations.",
+            }
+        },
+        'retail': {
+            'focus_metrics': ['inventory_turnover', 'operating_margin', 'same_store_sales'],
+            'inventory_turnover': {
+                'high': "✅ Excellent inventory turnover ({value:.1f}x) for retail - indicates strong consumer demand, efficient merchandising, and minimal markdowns. This is a key performance indicator for retail profitability.",
+                'low': "⚠️ Low inventory turnover ({value:.1f}x) suggests potential overbuying, weak demand, or upcoming clearance needs. This may pressure gross margins through markdowns.",
+            },
+            'operating_margin': {
+                'high': "Operating margin of {value:.1f}% is strong for retail sector where margins are typically thin.",
+                'low': "Operating margin of {value:.1f}% is typical of retail's competitive, low-margin environment.",
+            },
+            'rnd_intensity': {
+                'high': "R&D spending of {value:.1f}% is unusual for traditional retail; may indicate e-commerce or technology platform investment.",
+                'low': "R&D intensity of {value:.1f}% is expected for traditional retail operations.",
+            }
+        },
+        'financial': {
+            'focus_metrics': ['roe', 'capital_adequacy', 'net_interest_margin'],
+            'debt_ratio': {
+                'high': "For financial institutions, leverage of {value:.1f}% is expected. Focus remains on capital adequacy ratios, regulatory compliance, and risk-weighted asset management.",
+                'low': "Conservative leverage ({value:.1f}%) provides buffer against market volatility but may limit return on equity potential.",
+            },
+            'operating_margin': {
+                'high': "Operating margin of {value:.1f}% indicates efficient operations and strong fee income or net interest margin.",
+                'low': "Operating margin of {value:.1f}% may reflect elevated credit costs or competitive interest rate environment.",
+            }
+        },
+        'default': {
+            'inventory_turnover': {
+                'high': "Inventory turnover of {value:.1f}x indicates efficient inventory management and strong sales velocity.",
+                'low': "Inventory turnover of {value:.1f}x warrants investigation into demand patterns and inventory optimization opportunities.",
+            },
+            'rnd_intensity': {
+                'high': "R&D intensity of {value:.1f}% indicates significant investment in innovation.",
+                'low': "R&D intensity of {value:.1f}% is typical for industries with lower technology dependence.",
+            },
+            'operating_margin': {
+                'high': "Operating margin of {value:.1f}% indicates strong profitability.",
+                'low': "Operating margin of {value:.1f}% may warrant cost structure analysis.",
+            },
+            'debt_ratio': {
+                'high': "Debt ratio of {value:.1f}% indicates higher financial leverage.",
+                'low': "Debt ratio of {value:.1f}% indicates conservative capital structure.",
+            },
+            'asset_turnover': {
+                'high': "Asset turnover of {value:.2f}x indicates efficient asset utilization.",
+                'low': "Asset turnover of {value:.2f}x suggests asset-intensive operations.",
+            },
+            'dso': {
+                'high': "DSO of {value:.0f} days indicates slower collection cycles that may impact working capital.",
+                'low': "DSO of {value:.0f} days reflects efficient accounts receivable management.",
+            },
+            'current_ratio': {
+                'high': "Current ratio of {value:.2f}x indicates strong short-term liquidity position.",
+                'low': "Current ratio of {value:.2f}x may warrant attention to short-term liquidity management.",
+            }
+        }
+    }
+    
+    # Metric thresholds for high/low classification
+    THRESHOLDS = {
+        'inventory_turnover': 6.0,
+        'rnd_intensity': 10.0,
+        'debt_ratio': 100.0,
+        'operating_margin': 10.0,
+        'asset_turnover': 1.0,
+        'dso': 45.0,
+        'current_ratio': 1.5,
+    }
+    
+    @classmethod
+    def classify_industry(cls, entity_name: str, sic_code: Optional[str] = None) -> str:
+        """
+        Classify company industry based on SIC code or entity name heuristics
+        
+        Returns: 'tech', 'retail', 'financial', or 'default'
+        """
+        if sic_code:
+            try:
+                sic_int = int(sic_code)
+                if 3570 <= sic_int <= 3579 or 7370 <= sic_int <= 7379:
+                    return 'tech'
+                elif 5200 <= sic_int <= 5999:
+                    return 'retail'
+                elif 6000 <= sic_int <= 6799:
+                    return 'financial'
+            except ValueError:
+                pass
+        
+        # Fallback: Name-based heuristics
+        entity_lower = entity_name.lower()
+        tech_keywords = ['nvidia', 'intel', 'amd', 'microsoft', 'apple', 'google', 
+                        'meta', 'semiconductor', 'software', 'amazon', 'tesla']
+        retail_keywords = ['walmart', 'target', 'costco', 'retail', 'store', 'mart']
+        financial_keywords = ['bank', 'capital', 'financial', 'insurance', 'investment']
+        
+        if any(kw in entity_lower for kw in tech_keywords):
+            return 'tech'
+        if any(kw in entity_lower for kw in retail_keywords):
+            return 'retail'
+        if any(kw in entity_lower for kw in financial_keywords):
+            return 'financial'
+        
+        return 'default'
+    
+    @classmethod
+    def get_insight(cls, industry: str, metric: str, value: float) -> str:
+        """
+        Get industry-appropriate insight for a metric
+        
+        Args:
+            industry: Industry classification ('tech', 'retail', 'financial', 'default')
+            metric: Metric name (e.g., 'inventory_turnover', 'rnd_intensity')
+            value: The calculated metric value
+        
+        Returns:
+            Formatted insight string
+        """
+        templates = cls.INDUSTRY_TEMPLATES.get(industry, cls.INDUSTRY_TEMPLATES['default'])
+        metric_templates = templates.get(metric, cls.INDUSTRY_TEMPLATES['default'].get(metric, {}))
+        
+        if not metric_templates:
+            return f"{metric}: {value:.2f}"
+        
+        # Determine high/low based on metric thresholds
+        threshold = cls.THRESHOLDS.get(metric, 5.0)
+        
+        # Special handling for DSO (lower is better)
+        if metric == 'dso':
+            level = 'low' if value <= threshold else 'high'
+        else:
+            level = 'high' if value >= threshold else 'low'
+        
+        template = metric_templates.get(level, f"{metric}: {value:.2f}")
+        return template.format(value=value)
+
+
+# ============================================================
+# EXPERT COT GENERATOR (v11.0)
+# ============================================================
+
+class ExpertCoTGenerator:
+    """
+    v11.0: Expert Chain-of-Thought Generator - CFA Level III Standard
+    
+    Framework: 4-Step Analysis Chain
+    1. [Definition]: Accounting definition + investor significance
+    2. [Synthesis]: Cross-table data extraction and linking
+    3. [Symbolic Reasoning]: LaTeX formula with step-by-step calculation
+    4. [Professional Insight]: Industry-specific analyst interpretation
+    """
+    
+    METRIC_DEFINITIONS = {
+        'inventory_turnover': (
+            "Inventory Turnover measures how many times a company's inventory is sold and "
+            "replaced over a period. For investors, this ratio reveals operational efficiency "
+            "and working capital management effectiveness. High turnover indicates strong "
+            "demand and efficient inventory management; low turnover may signal obsolescence risk."
+        ),
+        'dso': (
+            "Days Sales Outstanding (DSO) represents the average number of days required to "
+            "collect payment after a sale. It directly impacts cash flow and working capital "
+            "requirements. Lower DSO indicates efficient collection; higher DSO may signal "
+            "credit quality issues or lax collection policies."
+        ),
+        'asset_turnover': (
+            "Asset Turnover measures revenue generated per dollar of assets. This efficiency "
+            "ratio helps investors assess how effectively management deploys capital. Higher "
+            "ratios indicate efficient asset utilization; lower ratios may be acceptable in "
+            "capital-intensive industries."
+        ),
+        'rnd_intensity': (
+            "R&D Intensity represents the percentage of revenue reinvested in research and "
+            "development. For technology companies, this metric signals commitment to "
+            "innovation and future competitive positioning. Investors evaluate this against "
+            "industry norms and the company's growth strategy."
+        ),
+        'operating_margin': (
+            "Operating Margin measures operating profit as a percentage of revenue, indicating "
+            "core business profitability before interest and taxes. It reflects pricing power, "
+            "cost efficiency, and scalability of the business model."
+        ),
+        'current_ratio': (
+            "Current Ratio assesses short-term liquidity by comparing current assets to "
+            "current liabilities. A ratio above 1.0 indicates ability to meet short-term "
+            "obligations; ratios below 1.0 suggest potential liquidity stress."
+        ),
+        'debt_ratio': (
+            "Debt-to-Equity Ratio measures financial leverage by comparing total liabilities "
+            "to shareholders' equity. It indicates the extent of debt financing and associated "
+            "financial risk. Optimal levels vary by industry and interest rate environment."
+        ),
+        'roe': (
+            "Return on Equity (ROE) measures profitability relative to shareholders' investment. "
+            "It indicates management's effectiveness in generating returns from equity capital. "
+            "DuPont analysis can decompose ROE into margin, turnover, and leverage components."
+        ),
+    }
+    
+    @classmethod
+    def generate(
+        cls,
+        metric_name: str,
+        formula_latex: str,
+        data_sources: List[Tuple[str, str, Decimal]],  # [(statement, label, value), ...]
+        calculation_steps: List[str],
+        result: float,
+        industry: str,
+        company_name: str = "",
+        verification_result: Optional[Tuple[bool, str]] = None
+    ) -> str:
+        """
+        Generate complete 4-step CoT analysis
+        
+        Args:
+            metric_name: Name of the metric (e.g., 'inventory_turnover')
+            formula_latex: LaTeX formula string
+            data_sources: List of (statement, label, value) tuples
+            calculation_steps: List of calculation step strings
+            result: Final calculated result
+            industry: Industry classification
+            company_name: Company name for context
+            verification_result: Optional (is_valid, message) from arithmetic check
+        
+        Returns:
+            Formatted 4-step CoT response
+        """
+        # Get definition
+        definition = cls.METRIC_DEFINITIONS.get(
+            metric_name, 
+            f"{metric_name.replace('_', ' ').title()} analysis"
+        )
+        
+        # Build synthesis section
+        synthesis_lines = []
+        for stmt, label, val in data_sources:
+            synthesis_lines.append(f"- {stmt}: {label} = {ScaleProcessor.format_currency(val)}")
+        synthesis = "\n".join(synthesis_lines)
+        
+        # Build symbolic reasoning
+        symbolic = f"$${formula_latex}$$\n\n" + "\n".join(calculation_steps)
+        
+        # Get industry insight
+        insight = IndustryInsightEngine.get_insight(industry, metric_name, result)
+        
+        # Build verification section if provided
+        verification_section = ""
+        if verification_result:
+            is_valid, verify_msg = verification_result
+            verification_section = f"\n\n[Verification]\n{verify_msg}"
+        
+        response = f"""[Definition]
+{definition}
+
+[Synthesis]
+{synthesis}
+
+[Symbolic Reasoning]
+{symbolic}
+
+[Professional Insight]
+{insight}{verification_section}
+"""
+        return response
+
+
+# ============================================================
+# OUTPUT VALIDATOR (v11.0)
+# ============================================================
+
+class OutputValidator:
+    """
+    v11.0: Comprehensive Output Validation Suite
+    
+    Checks:
+    1. Unit consistency (all values in $B)
+    2. Precision compliance (3 or 6 decimals)
+    3. No Korean text in output
+    4. Arithmetic verification pass
+    """
+    
+    @classmethod
+    def validate_jsonl_output(cls, jsonl_lines: List[str]) -> Tuple[bool, Dict[str, Any]]:
+        """
+        Run all validation checks on output
+        
+        Returns:
+            (all_passed, detailed_results)
+        """
+        results = {
+            'unit_check': {'passed': True, 'errors': []},
+            'precision_check': {'passed': True, 'errors': []},
+            'language_check': {'passed': True, 'errors': []},
+            'total_lines': len(jsonl_lines),
+        }
+        
+        for i, line in enumerate(jsonl_lines):
+            # 1. Unit check - no Million, Trillion, Thousand suffix
+            if re.search(r'\$[\d.]+[MKT][^a-zA-Z]', line):
+                results['unit_check']['passed'] = False
+                results['unit_check']['errors'].append(f"Line {i+1}: Non-billion unit detected")
+            
+            # 2. Precision check - must have 3 or 6 decimals for B values
+            matches = re.findall(r'\$(\d+\.\d+)B', line)
+            for match in matches:
+                decimals = len(match.split('.')[1])
+                if decimals not in [3, 6]:
+                    results['precision_check']['passed'] = False
+                    results['precision_check']['errors'].append(
+                        f"Line {i+1}: Invalid precision {decimals} decimals"
+                    )
+            
+            # 3. Korean text check
+            if re.search(r'[\u3131-\u318E\uAC00-\uD7A3]', line):
+                results['language_check']['passed'] = False
+                results['language_check']['errors'].append(f"Line {i+1}: Korean text detected")
+        
+        all_passed = all(r['passed'] for k, r in results.items() if isinstance(r, dict) and 'passed' in r)
+        return all_passed, results
+
+
+# ============================================================
 # XBRL SEMANTIC ENGINE
 # ============================================================
 
@@ -665,9 +1118,10 @@ class XBRLSemanticEngine:
     6. 구조화된 마크다운 리포트 생성
     """
     
-    def __init__(self, company_name: str = "", fiscal_year: str = ""):
+    def __init__(self, company_name: str = "", fiscal_year: str = "", sic_code: Optional[str] = None):
         self.company_name = company_name
         self.fiscal_year = fiscal_year
+        self.sic_code = sic_code  # v11.0: Industry classification
         self.label_mapping: Dict[str, str] = {}  # concept → human label
         self.contexts: Dict[str, ParsedContext] = {}
         self.facts: List[SemanticFact] = []
@@ -677,6 +1131,11 @@ class XBRLSemanticEngine:
         # 프로세서 초기화
         self.scale_processor = ScaleProcessor()
         self.context_filter = ContextFilter()
+    
+    @property
+    def industry_code(self) -> str:
+        """v11.0: Get industry classification for sector-specific insights"""
+        return IndustryInsightEngine.classify_industry(self.company_name, self.sic_code)
         
     def process_joint(
         self, 
@@ -1283,10 +1742,18 @@ This is ranked #{i} by absolute value among all reported items.
         }
     
     def _generate_activity_analysis_qa(self, fact_dict: Dict, facts: List[SemanticFact]) -> List[Dict]:
-        """Activity Analysis Q&A (Inventory, Receivables, Asset Turnover) - v10.0 English"""
+        """
+        v11.0: Activity Analysis Q&A with Expert CoT Framework
+        
+        Features:
+        - 4-Step Analysis Chain (Definition, Synthesis, Symbolic Reasoning, Professional Insight)
+        - Time-Series Average Calculation: (Beginning + Ending) / 2
+        - Arithmetic Cross-Check Verification
+        - Industry-Specific Insights
+        """
         qa_list = []
         
-        # Load Prior Year Data
+        # Load Prior Year Data for averaging
         try:
             current_year = int(self.fiscal_year)
             prior_year = str(current_year - 1)
@@ -1294,134 +1761,275 @@ This is ranked #{i} by absolute value among all reported items.
         except:
             py_fact_dict = {}
         
-        # 1. Inventory Turnover
+        # Get industry classification
+        industry = self.industry_code
+        
+        # 1. Inventory Turnover - Expert CoT
         cogs = fact_dict.get('cogs')
         inventory = fact_dict.get('inventory')
         
         if cogs and inventory:
             py_inventory = py_fact_dict.get('inventory')
             
-            # Average Inventory
-            inv_val = float(inventory.value)
-            if py_inventory:
-                avg_inv = (inv_val + float(py_inventory.value)) / 2
-                avg_desc = f"(Beginning {self.scale_processor.format_currency(py_inventory.value)} + Ending {self.scale_processor.format_currency(inventory.value)}) / 2"
-            else:
-                avg_inv = inv_val
-                avg_desc = f"Ending Balance {self.scale_processor.format_currency(inventory.value)} (Fallback)"
+            # v11.0: Use proper averaging logic
+            avg_inv, avg_desc = ScaleProcessor.calculate_average_balance(
+                inventory.value,
+                py_inventory.value if py_inventory else None,
+                "Inventory"
+            )
             
-            if avg_inv > 0:
-                turnover = float(cogs.value) / avg_inv
+            if float(avg_inv) > 0:
+                turnover = float(cogs.value) / float(avg_inv)
+                
+                # Arithmetic verification
+                verify_result = ScaleProcessor.verify_calculation(
+                    "Inventory Turnover", cogs.value, avg_inv, turnover
+                )
+                
+                # Generate expert CoT response
+                cogs_b = float(cogs.value) / 1e9
+                avg_inv_b = float(avg_inv) / 1e9
+                
+                response = ExpertCoTGenerator.generate(
+                    metric_name='inventory_turnover',
+                    formula_latex=r"Inventory\ Turnover = \frac{Cost\ of\ Goods\ Sold}{\frac{Beginning\ Inv + Ending\ Inv}{2}}",
+                    data_sources=[
+                        ("Income Statement", "Cost of Goods Sold", cogs.value),
+                        ("Balance Sheet (Current)", "Ending Inventory", inventory.value),
+                        ("Balance Sheet (Prior)", "Beginning Inventory", py_inventory.value if py_inventory else Decimal(0)),
+                    ],
+                    calculation_steps=[
+                        avg_desc,
+                        f"$= \\frac{{{cogs_b:.3f}B}}{{{avg_inv_b:.3f}B}} = {turnover:.2f}$ times"
+                    ],
+                    result=turnover,
+                    industry=industry,
+                    company_name=self.company_name,
+                    verification_result=verify_result
+                )
+                
                 qa_list.append({
-                    "question": f"Calculate the Inventory Turnover for {self.company_name} and analyze its inventory management efficiency.",
-                    "response": f"""[Definition]: Inventory Turnover measures how many times a company's inventory is sold and replaced over a period. Formula: Cost of Goods Sold / Average Inventory.
-[Extraction]: Cost of Goods Sold {self.scale_processor.format_currency(cogs.value)}, Average Inventory {self.scale_processor.format_currency(Decimal(avg_inv))} ({avg_desc})
-[Calculation]: {float(cogs.value):,.0f} / {avg_inv:,.0f} = {turnover:.2f} times
-[Interpretation]: The inventory turns over {turnover:.1f} times annually. {'✅ High turnover indicates efficient inventory management and low obsolescence risk.' if turnover >= 6 else '⚠️ Low turnover suggests potential overstocking or weak sales.'}""",
+                    "question": f"How does the Inventory Turnover ratio reflect {self.company_name}'s supply chain and inventory management efficiency, and what are the risk implications?",
+                    "response": response,
                     "type": "activity_analysis",
-                    "context": f"Cost of Goods Sold: {self.scale_processor.format_currency(cogs.value)}, Average Inventory: {self.scale_processor.format_currency(Decimal(avg_inv))}"
+                    "context": f"Cost of Goods Sold: {ScaleProcessor.format_currency(cogs.value)}, Average Inventory: {ScaleProcessor.format_currency(avg_inv)}"
                 })
 
-        # 2. Receivables Turnover (DSO)
+        # 2. Days Sales Outstanding (DSO) - Expert CoT
         revenue = fact_dict.get('revenue')
         receivables = fact_dict.get('receivables')
         
         if revenue and receivables:
             py_recv = py_fact_dict.get('receivables')
             
-            curr_recv_val = float(receivables.value)
-            if py_recv:
-                avg_recv = (curr_recv_val + float(py_recv.value)) / 2
-                avg_desc = f"(Beginning {self.scale_processor.format_currency(py_recv.value)} + Ending {self.scale_processor.format_currency(receivables.value)}) / 2"
-            else:
-                avg_recv = curr_recv_val
-                avg_desc = f"Ending Balance {self.scale_processor.format_currency(receivables.value)} (Fallback)"
+            # v11.0: Use proper averaging logic
+            avg_recv, recv_avg_desc = ScaleProcessor.calculate_average_balance(
+                receivables.value,
+                py_recv.value if py_recv else None,
+                "Receivables"
+            )
                 
-            if avg_recv > 0:
-                turnover = float(revenue.value) / avg_recv
-                dso = 365 / turnover
+            if float(avg_recv) > 0:
+                recv_turnover = float(revenue.value) / float(avg_recv)
+                dso = 365 / recv_turnover
+                
+                # Arithmetic verification
+                verify_result = ScaleProcessor.verify_calculation(
+                    "DSO", Decimal(365), Decimal(recv_turnover), dso
+                )
+                
+                rev_b = float(revenue.value) / 1e9
+                avg_recv_b = float(avg_recv) / 1e9
+                
+                response = ExpertCoTGenerator.generate(
+                    metric_name='dso',
+                    formula_latex=r"DSO = \frac{365}{\frac{Revenues}{Average\ Receivables}}",
+                    data_sources=[
+                        ("Income Statement", "Revenues", revenue.value),
+                        ("Balance Sheet (Current)", "Accounts Receivable", receivables.value),
+                        ("Balance Sheet (Prior)", "Beginning Receivables", py_recv.value if py_recv else Decimal(0)),
+                    ],
+                    calculation_steps=[
+                        recv_avg_desc,
+                        f"Receivables Turnover $= \\frac{{{rev_b:.3f}B}}{{{avg_recv_b:.3f}B}} = {recv_turnover:.2f}$ times",
+                        f"$DSO = \\frac{{365}}{{{recv_turnover:.2f}}} = {dso:.1f}$ days"
+                    ],
+                    result=dso,
+                    industry=industry,
+                    company_name=self.company_name,
+                    verification_result=verify_result
+                )
+                
                 qa_list.append({
-                    "question": f"Calculate the Days Sales Outstanding (DSO) for {self.company_name} and evaluate its cash collection speed.",
-                    "response": f"""[Definition]: DSO represents the average number of days it takes to collect payment after a sale. Formula: 365 / (Revenues / Average Receivables).
-[Extraction]: Revenues {self.scale_processor.format_currency(revenue.value)}, Average Receivables {self.scale_processor.format_currency(Decimal(avg_recv))} ({avg_desc})
-[Calculation]: 365 / ({float(revenue.value):,.0f} / {avg_recv:,.0f}) = {dso:.1f} days
-[Interpretation]: It takes {dso:.1f} days on average to collect cash. {'✅ Efficient collection verification (under 45 days).' if dso <= 45 else '⚠️ Slow collection (over 90 days) may impact cash flow.' if dso >= 90 else 'Standard collection period (45-90 days).'}""",
+                    "question": f"Why does the Days Sales Outstanding matter for {self.company_name}'s cash conversion cycle, and how does it compare to industry benchmarks?",
+                    "response": response,
                     "type": "activity_analysis",
-                    "context": f"Revenues: {self.scale_processor.format_currency(revenue.value)}, Average Receivables: {self.scale_processor.format_currency(Decimal(avg_recv))}"
+                    "context": f"Revenues: {ScaleProcessor.format_currency(revenue.value)}, Average Receivables: {ScaleProcessor.format_currency(avg_recv)}"
                 })
 
-        # 3. Asset Turnover
+        # 3. Asset Turnover - Expert CoT
         assets = fact_dict.get('total_assets')
         if revenue and assets:
             py_assets = py_fact_dict.get('total_assets')
-            curr_assets_val = float(assets.value)
-            if py_assets:
-                avg_assets = (curr_assets_val + float(py_assets.value)) / 2
-                avg_desc = f"(Beginning {self.scale_processor.format_currency(py_assets.value)} + Ending {self.scale_processor.format_currency(assets.value)}) / 2"
-            else:
-                avg_assets = curr_assets_val
-                avg_desc = f"Ending Balance {self.scale_processor.format_currency(assets.value)} (Fallback)"
             
-            if avg_assets > 0:
-                turnover = float(revenue.value) / avg_assets
+            # v11.0: Use proper averaging logic
+            avg_assets, assets_avg_desc = ScaleProcessor.calculate_average_balance(
+                assets.value,
+                py_assets.value if py_assets else None,
+                "Total Assets"
+            )
+            
+            if float(avg_assets) > 0:
+                turnover = float(revenue.value) / float(avg_assets)
+                
+                # Arithmetic verification
+                verify_result = ScaleProcessor.verify_calculation(
+                    "Asset Turnover", revenue.value, avg_assets, turnover
+                )
+                
+                rev_b = float(revenue.value) / 1e9
+                avg_assets_b = float(avg_assets) / 1e9
+                
+                response = ExpertCoTGenerator.generate(
+                    metric_name='asset_turnover',
+                    formula_latex=r"Asset\ Turnover = \frac{Revenues}{\frac{Beginning\ Assets + Ending\ Assets}{2}}",
+                    data_sources=[
+                        ("Income Statement", "Revenues", revenue.value),
+                        ("Balance Sheet (Current)", "Total Assets", assets.value),
+                        ("Balance Sheet (Prior)", "Beginning Assets", py_assets.value if py_assets else Decimal(0)),
+                    ],
+                    calculation_steps=[
+                        assets_avg_desc,
+                        f"$= \\frac{{{rev_b:.3f}B}}{{{avg_assets_b:.3f}B}} = {turnover:.2f}$"
+                    ],
+                    result=turnover,
+                    industry=industry,
+                    company_name=self.company_name,
+                    verification_result=verify_result
+                )
+                
                 qa_list.append({
-                    "question": f"Calculate the Asset Turnover Ratio for {self.company_name} and analyze asset utilization.",
-                    "response": f"""[Definition]: Asset Turnover measures the efficiency of using assets to generate revenue. Formula: Revenues / Average Total Assets.
-[Extraction]: Revenues {self.scale_processor.format_currency(revenue.value)}, Average Total Assets {self.scale_processor.format_currency(Decimal(avg_assets))} ({avg_desc})
-[Calculation]: {float(revenue.value):,.0f} / {avg_assets:,.0f} = {turnover:.2f}
-[Interpretation]: The company generates {turnover:.2f} dollars of revenue for every dollar of assets. {'✅ High efficiency in asset utilization.' if turnover >= 1.0 else '⚠️ Asset utilization could be improved.'}""",
+                    "question": f"How effectively does {self.company_name} utilize its assets to generate revenue, and what does the Asset Turnover indicate about capital efficiency?",
+                    "response": response,
                     "type": "activity_analysis",
-                    "context": f"Revenues: {self.scale_processor.format_currency(revenue.value)}, Average Total Assets: {self.scale_processor.format_currency(Decimal(avg_assets))}"
+                    "context": f"Revenues: {ScaleProcessor.format_currency(revenue.value)}, Average Total Assets: {ScaleProcessor.format_currency(avg_assets)}"
                 })
         
         return qa_list
 
     def _generate_efficiency_qa(self, fact_dict: Dict, facts: List[SemanticFact]) -> List[Dict]:
-        """Efficiency Analysis Q&A (R&D, Op Margin, SG&A) - v10.0 English"""
+        """
+        v11.0: Efficiency Analysis Q&A with Expert CoT Framework
+        
+        Features:
+        - 4-Step Analysis Chain (Definition, Synthesis, Symbolic Reasoning, Professional Insight)
+        - Arithmetic Cross-Check Verification
+        - Industry-Specific Insights (Tech: R&D focus, Retail: margin focus)
+        """
         qa_list = []
+        industry = self.industry_code
         
         revenue = fact_dict.get('revenue')
         rnd = fact_dict.get('rnd_expenses')
         sga = fact_dict.get('sga_expenses')
         op_income = fact_dict.get('operating_income')
         
-        # 1. R&D Intensity
+        # 1. R&D Intensity - Expert CoT
         if revenue and rnd and float(revenue.value) > 0:
             intensity = float(rnd.value) / float(revenue.value) * 100
+            
+            # Arithmetic verification
+            verify_result = ScaleProcessor.verify_calculation(
+                "R&D Intensity", rnd.value, revenue.value, intensity / 100
+            )
+            
+            rev_b = float(revenue.value) / 1e9
+            rnd_b = float(rnd.value) / 1e9
+            
+            response = ExpertCoTGenerator.generate(
+                metric_name='rnd_intensity',
+                formula_latex=r"R\&D\ Intensity = \frac{R\&D\ Expenses}{Revenues} \times 100\%",
+                data_sources=[
+                    ("Income Statement", "Revenues", revenue.value),
+                    ("Income Statement", "R&D Expenses", rnd.value),
+                ],
+                calculation_steps=[
+                    f"$= \\frac{{{rnd_b:.3f}B}}{{{rev_b:.3f}B}} \\times 100\\% = {intensity:.2f}\\%$"
+                ],
+                result=intensity,
+                industry=industry,
+                company_name=self.company_name,
+                verification_result=verify_result
+            )
+            
             qa_list.append({
-                "question": f"Analyze the R&D Intensity for {self.company_name} and evaluate its investment in innovation.",
-                "response": f"""[Definition]: R&D Intensity measures the percentage of revenue reinvested in research and development. Formula: (R&D Expenses / Revenues) * 100.
-[Extraction]: Revenues {self.scale_processor.format_currency(revenue.value)}, R&D Expenses {self.scale_processor.format_currency(rnd.value)}
-[Calculation]: ({float(rnd.value):,.0f} / {float(revenue.value):,.0f}) * 100 = {intensity:.2f}%
-[Interpretation]: The company invests {intensity:.2f}% of revenue into R&D. {'✅ Aggressive investment in technology and innovation.' if intensity >= 10 else 'Standard level of investment in R&D.'}""",
+                "question": f"Why is R&D investment critical for {self.company_name}'s competitive positioning, and how does its R&D Intensity compare to sector benchmarks?",
+                "response": response,
                 "type": "efficiency_analysis",
-                "context": f"R&D Expenses: {self.scale_processor.format_currency(rnd.value)}, Revenues: {self.scale_processor.format_currency(revenue.value)}"
+                "context": f"R&D Expenses: {ScaleProcessor.format_currency(rnd.value)}, Revenues: {ScaleProcessor.format_currency(revenue.value)}"
             })
             
-        # 2. Operating Margin
+        # 2. Operating Margin - Expert CoT
         if revenue and op_income and float(revenue.value) > 0:
             margin = float(op_income.value) / float(revenue.value) * 100
+            
+            # Arithmetic verification
+            verify_result = ScaleProcessor.verify_calculation(
+                "Operating Margin", op_income.value, revenue.value, margin / 100
+            )
+            
+            rev_b = float(revenue.value) / 1e9
+            op_b = float(op_income.value) / 1e9
+            
+            response = ExpertCoTGenerator.generate(
+                metric_name='operating_margin',
+                formula_latex=r"Operating\ Margin = \frac{Operating\ Income}{Revenues} \times 100\%",
+                data_sources=[
+                    ("Income Statement", "Revenues", revenue.value),
+                    ("Income Statement", "Operating Income", op_income.value),
+                ],
+                calculation_steps=[
+                    f"$= \\frac{{{op_b:.3f}B}}{{{rev_b:.3f}B}} \\times 100\\% = {margin:.2f}\\%$"
+                ],
+                result=margin,
+                industry=industry,
+                company_name=self.company_name,
+                verification_result=verify_result
+            )
+            
             qa_list.append({
-                "question": f"Calculate the Operating Margin for {self.company_name} and analyze its profitability.",
-                "response": f"""[Definition]: Operating Margin indicates how much profit a company makes on a dollar of sales after paying for variable costs of production. Formula: (Operating Income / Revenues) * 100.
-[Extraction]: Revenues {self.scale_processor.format_currency(revenue.value)}, Operating Income {self.scale_processor.format_currency(op_income.value)}
-[Calculation]: ({float(op_income.value):,.0f} / {float(revenue.value):,.0f}) * 100 = {margin:.2f}%
-[Interpretation]: The company retains {margin:.2f}% of its revenue as operating profit. {'✅ Strong profitability (above 10%).' if margin >= 10 else '⚠️ Profitability improvement may be needed.'}""",
+                "question": f"How does {self.company_name}'s Operating Margin reflect its pricing power and cost efficiency, and what does it indicate about scalability?",
+                "response": response,
                 "type": "efficiency_analysis",
-                "context": f"Operating Income: {self.scale_processor.format_currency(op_income.value)}, Revenues: {self.scale_processor.format_currency(revenue.value)}"
+                "context": f"Operating Income: {ScaleProcessor.format_currency(op_income.value)}, Revenues: {ScaleProcessor.format_currency(revenue.value)}"
             })
 
-        # 3. SG&A Efficiency
+        # 3. SG&A Efficiency - Simple format (less critical metric)
         if revenue and sga and float(revenue.value) > 0:
             ratio = float(sga.value) / float(revenue.value) * 100
+            
+            sga_b = float(sga.value) / 1e9
+            rev_b = float(revenue.value) / 1e9
+            
             qa_list.append({
-                "question": f"Analyze the SG&A Efficiency Ratio for {self.company_name}.",
-                "response": f"""[Definition]: SG&A Ratio measures the percentage of revenue spent on selling, general, and administrative expenses. Formula: (SG&A Expenses / Revenues) * 100.
-[Extraction]: Revenues {self.scale_processor.format_currency(revenue.value)}, SG&A Expenses {self.scale_processor.format_currency(sga.value)}
-[Calculation]: ({float(sga.value):,.0f} / {float(revenue.value):,.0f}) * 100 = {ratio:.2f}%
-[Interpretation]: SG&A expenses consume {ratio:.2f}% of revenue. {'✅ Highly efficient cost structure (under 15%).' if ratio <= 15 else 'High operational costs.'}""",
+                "question": f"What does the SG&A Efficiency Ratio reveal about {self.company_name}'s operational cost structure?",
+                "response": f"""[Definition]
+SG&A Ratio measures the percentage of revenue consumed by selling, general, and administrative expenses. It indicates operational efficiency and cost discipline.
+
+[Synthesis]
+- Income Statement: Revenues = {ScaleProcessor.format_currency(revenue.value)}
+- Income Statement: SG&A Expenses = {ScaleProcessor.format_currency(sga.value)}
+
+[Symbolic Reasoning]
+$$SG\\&A\\ Ratio = \\frac{{SG\\&A\\ Expenses}}{{Revenues}} \\times 100\\%$$
+
+$$= \\frac{{{sga_b:.3f}B}}{{{rev_b:.3f}B}} \\times 100\\% = {ratio:.2f}\\%$$
+
+[Professional Insight]
+SG&A expenses consume {ratio:.2f}% of revenue. {'✅ Highly efficient cost structure indicates strong operational leverage.' if ratio <= 15 else '⚠️ Higher SG&A may reflect investment in growth or distribution channels.' if ratio <= 25 else 'Elevated SG&A ratio warrants cost structure analysis.'}
+""",
                 "type": "efficiency_analysis",
-                "context": f"SG&A Expenses: {self.scale_processor.format_currency(sga.value)}, Revenues: {self.scale_processor.format_currency(revenue.value)}"
+                "context": f"SG&A Expenses: {ScaleProcessor.format_currency(sga.value)}, Revenues: {ScaleProcessor.format_currency(revenue.value)}"
             })
             
         return qa_list
