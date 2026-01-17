@@ -1789,7 +1789,11 @@ This value ranks #{i} by absolute magnitude among all reported line items.
         return qa_list
     
     def _generate_financial_health_qa(self, fact_dict: Dict, facts: List[SemanticFact]) -> Optional[Dict]:
-        """종합 Financial Health 평가 Q&A"""
+        """
+        v11.0: Comprehensive Financial Health Assessment - 4-Step CoT Format
+        
+        Uses ExpertCoTGenerator pattern for consistency.
+        """
         assets = fact_dict.get('total_assets')
         liabilities = fact_dict.get('total_liabilities')
         equity = fact_dict.get('total_equity')
@@ -1797,7 +1801,7 @@ This value ranks #{i} by absolute magnitude among all reported line items.
         if not assets or not liabilities:
             return None
         
-        # 🔴 FIX: 재무 등식(Sanity Check) Verification
+        # Sanity Check: Financial Equation Verification
         is_valid_eq, eq_msg = ScaleProcessor.validate_financial_equation(
             assets.value, liabilities.value, equity.value if equity else None
         )
@@ -1805,27 +1809,39 @@ This value ranks #{i} by absolute magnitude among all reported line items.
         debt_ratio = float(liabilities.value) / float(assets.value) * 100 if assets else 0
         equity_ratio = float(equity.value) / float(assets.value) * 100 if equity and assets else 0
         
+        assets_b = float(assets.value) / 1e9
+        liab_b = float(liabilities.value) / 1e9
+        eq_b = float(equity.value) / 1e9 if equity else 0
+        
+        response = f"""[Definition]
+A comprehensive financial health assessment evaluates a company's overall financial stability through key metrics including leverage ratios, capital structure, and liquidity. This analysis helps investors assess default risk and financial flexibility.
+
+[Synthesis]
+- Balance Sheet: Total Assets = {ScaleProcessor.format_currency(assets.value)}
+- Balance Sheet: Total Liabilities = {ScaleProcessor.format_currency(liabilities.value)}
+- Balance Sheet: Total Equity = {ScaleProcessor.format_currency(equity.value) if equity else 'N/A'}
+- Data Integrity: {eq_msg}
+
+[Symbolic Reasoning]
+$$Debt\\ Ratio = \\frac{{Total\\ Liabilities}}{{Total\\ Assets}} \\times 100\\%$$
+
+$$= \\frac{{{liab_b:.3f}B}}{{{assets_b:.3f}B}} \\times 100\\% = {debt_ratio:.2f}\\%$$
+
+$$Equity\\ Ratio = \\frac{{Total\\ Equity}}{{Total\\ Assets}} \\times 100\\%$$
+
+$$= \\frac{{{eq_b:.3f}B}}{{{assets_b:.3f}B}} \\times 100\\% = {equity_ratio:.2f}\\%$$
+
+[Professional Insight]
+{'Strong Financial Position: Low leverage ({:.1f}% debt ratio) with substantial equity buffer provides flexibility for growth investments and economic downturns.'.format(debt_ratio) if debt_ratio < 50 else 'Moderate Risk Profile: {:.1f}% debt ratio indicates balanced but monitored leverage. Interest coverage should be tracked.'.format(debt_ratio) if debt_ratio < 70 else 'Elevated Risk: {:.1f}% debt ratio suggests significant leverage exposure requiring active debt management.'.format(debt_ratio)}
+
+[Verification]
+- Total Items Analyzed: {len(facts)}
+- Financial Equation Check: {'Passed' if is_valid_eq else 'Failed'}
+"""
+        
         return {
-            "question": f"Provide a comprehensive financial health assessment for {self.company_name or 'this company'}.",
-            "response": f"""## Comprehensive Financial Health Assessment
-
-### 📊 Data Integrity Check (Sanity Check)
-{eq_msg}
-
-### Key Metrics Summary
-| Metric | Value |
-|--------|-------|
-| Total Assets | {ScaleProcessor.format_currency(assets.value)} |
-| Total Liabilities | {ScaleProcessor.format_currency(liabilities.value)} |
-| Total Equity | {ScaleProcessor.format_currency(equity.value) if equity else 'N/A'} |
-| Debt-to-Assets | {debt_ratio:.1f}% |
-| Equity Ratio | {equity_ratio:.1f}% |
-
-### Overall Assessment
-{'✅ **Strong Financial Position**: Low leverage with substantial equity buffer.' if debt_ratio < 50 else '⚠️ **Moderate Risk**: Higher leverage requires monitoring.' if debt_ratio < 70 else '❌ **High Risk**: Significant debt burden may impact financial flexibility.'}
-
-### Number of Items Analyzed: {len(facts)}
-""",
+            "question": f"Evaluate the comprehensive financial health of {self.company_name}, analyzing its capital structure, leverage, and overall stability.",
+            "response": response,
             "type": "comprehensive_analysis"
         }
     
@@ -2141,14 +2157,7 @@ SG&A expenses consume {ratio:.2f}% of revenue. {'✅ Highly efficient cost struc
             ('operating_income', 'Operating Income'),
             ('net_income', 'Net Income'),
             ('total_assets', 'Total Assets'),
-            ('total_liabilities', 'Total Liabilities'),
-            ('total_equity', 'Total Equity'),
-            ('current_assets', 'Current Assets'),
-            ('current_liabilities', 'Current Liabilities'),
-            ('cash', 'Cash and Cash Equivalents'),
-            ('inventory', 'Inventory'),
-            ('receivables', 'Accounts Receivable')
-        ]
+        ]  # Limited to 5 key metrics for trend analysis
         
         for key, label in targets:
             curr = curr_dict.get(key)
@@ -2157,17 +2166,33 @@ SG&A expenses consume {ratio:.2f}% of revenue. {'✅ Highly efficient cost struc
             if curr and prev and float(prev.value) != 0:
                 growth = (float(curr.value) - float(prev.value)) / abs(float(prev.value)) * 100
                 
-                is_outlier = abs(growth) > 50
-                outlier_note = " ⚠️ Significant fluctuation detected." if is_outlier else ""
+                curr_b = float(curr.value) / 1e9
+                prev_b = float(prev.value) / 1e9
+                change_b = curr_b - prev_b
                 
+                is_outlier = abs(growth) > 50
+                
+                response = f"""[Definition]
+Year-over-Year (YoY) growth measures the percentage change in a financial metric from one fiscal year to the next. It is a fundamental indicator of business momentum and is critical for forecasting and valuation.
+
+[Synthesis]
+- {self.fiscal_year} {label}: {ScaleProcessor.format_currency(curr.value)}
+- {prev_year} {label}: {ScaleProcessor.format_currency(prev.value)}
+- Change: {'+' if change_b >= 0 else ''}{change_b:.3f}B
+
+[Symbolic Reasoning]
+$$YoY\\ Growth = \\frac{{Current\\ Year - Prior\\ Year}}{{|Prior\\ Year|}} \\times 100\\%$$
+
+$$= \\frac{{{curr_b:.3f}B - {prev_b:.3f}B}}{{|{prev_b:.3f}B|}} \\times 100\\% = {growth:+.2f}\\%$$
+
+[Professional Insight]
+{label} {'increased' if growth > 0 else 'decreased'} by {abs(growth):.2f}% YoY. {'⚠️ Significant fluctuation detected - investigate underlying drivers.' if is_outlier else '✅ Strong growth momentum indicates positive business trends.' if growth >= 10 else '✅ Stable performance within expected range.' if growth >= 0 else '⚠️ Decline warrants attention to operational factors.'}
+"""
                 qa_list.append({
-                    "question": f"Analyze the Year-over-Year (YoY) growth of {label} for {self.company_name} in {curr_year}.",
-                    "response": f"""[Definition]: YoY Growth calculated as (Current Year - Prior Year) / Prior Year * 100.
-[Extraction]: Current Year ({curr_year}) {self.scale_processor.format_currency(curr.value)}, Prior Year ({prev_year}) {self.scale_processor.format_currency(prev.value)}
-[Calculation]: ({float(curr.value):,.0f} - {float(prev.value):,.0f}) / {float(prev.value):,.0f} * 100 = {growth:+.2f}%
-[Interpretation]: {label} {'increased' if growth > 0 else 'decreased'} by {abs(growth):.2f}%.{outlier_note} {'✅ High growth.' if growth >= 10 else 'Stable performance.'}""",
+                    "question": f"Calculate and analyze the Year-over-Year growth of {label} for {self.company_name} and assess its business momentum.",
+                    "response": response,
                     "type": "trend_analysis",
-                    "context": f"Current {label}: {self.scale_processor.format_currency(curr.value)}, Prior {label}: {self.scale_processor.format_currency(prev.value)}"
+                    "context": f"Current {label}: {ScaleProcessor.format_currency(curr.value)}, Prior {label}: {ScaleProcessor.format_currency(prev.value)}"
                 })
         
         return qa_list
