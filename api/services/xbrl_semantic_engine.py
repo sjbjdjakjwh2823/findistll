@@ -980,6 +980,34 @@ class ExpertCoTGenerator:
             "and Administrative expenses. Lower ratios indicate greater operational efficiency and "
             "better cost control, contributing directly to higher operating margins."
         ),
+        'gross_margin': (
+            "Gross Profit Margin measures the percentage of revenue remaining after deducting cost of goods sold. "
+            "It reflects pricing power and production efficiency - the most fundamental profitability measure."
+        ),
+        'net_profit_margin': (
+            "Net Profit Margin represents the percentage of revenue converted to bottom-line profit after all expenses. "
+            "It's the ultimate measure of operational efficiency and overall profitability."
+        ),
+        'roic': (
+            "Return on Invested Capital (ROIC) measures how efficiently a company generates profits from its capital base, "
+            "excluding non-interest-bearing liabilities. It's a key metric for assessing value creation vs. cost of capital."
+        ),
+        'working_capital_turnover': (
+            "Working Capital Turnover measures how efficiently a company uses its working capital "
+            "(current assets minus current liabilities) to generate revenue. Higher turnover indicates more efficient use of short-term capital."
+        ),
+        'dio': (
+            "Days Inventory Outstanding (DIO) measures the average number of days inventory is held before being sold. "
+            "Lower DIO indicates faster inventory turnover and less capital tied up in stock."
+        ),
+        'asset_intensity': (
+            "Asset Intensity (inverse of Asset Turnover) measures how much capital is required to generate $1 of revenue. "
+            "Higher asset intensity indicates capital-heavy business models; lower indicates asset-light operations."
+        ),
+        'operating_leverage': (
+            "Operating Leverage represents the proportion of gross profit retained after operating expenses. "
+            "It measures how efficiently a company converts gross profit into operating profit."
+        ),
     }
     
     @classmethod
@@ -2202,6 +2230,9 @@ $$Financial\ Scale = Total\ Assets\ (""" + ScaleProcessor.format_currency(total_
         # Post-Processing
         def clean_text(text: str) -> str:
             if not text: return ""
+            # Enforce strict English headers for Input field
+            text = text.replace("컬럼", "Column").replace("계정과목", "Account")
+            text = text.replace("금액", "Amount").replace("기간", "Period")
             return self.scale_processor.fix_label_typos(text) # Ensures English
         
         # Reasoning Q&A - Main content
@@ -2496,29 +2527,32 @@ A Financial Performance Executive Summary provides senior leadership and investo
                 equity_multiplier = float(total_assets.value) / float(equity.value)
                 roe_dupont = profit_margin * asset_turnover * equity_multiplier * 100
                 
-                response = f"""[Definition]
-DuPont Analysis decomposes Return on Equity into three drivers: profitability (Net Profit Margin), efficiency (Asset Turnover), and leverage (Equity Multiplier). This reveals whether ROE is driven by operational excellence or financial engineering.
-
-[Synthesis]
-- Income Statement: Net Income = {ScaleProcessor.format_currency(net_income.value)}
-- Income Statement: Revenues = {ScaleProcessor.format_currency(revenue.value)}
-- Balance Sheet: Total Assets = {ScaleProcessor.format_currency(total_assets.value)}
-- Balance Sheet: Total Equity = {ScaleProcessor.format_currency(equity.value)}
-
-[Symbolic Reasoning]
-$$ROE = \\underbrace{{\\frac{{Net\\ Income}}{{Revenue}}}}_{{{profit_margin:.4f}}} \\times \\underbrace{{\\frac{{Revenue}}{{Assets}}}}_{{{asset_turnover:.2f}}} \\times \\underbrace{{\\frac{{Assets}}{{Equity}}}}_{{{equity_multiplier:.2f}}}$$
-
-$$= {profit_margin:.4f} \\times {asset_turnover:.2f} \\times {equity_multiplier:.2f} = {roe_dupont:.2f}\\%$$
-
-[Professional Insight]
-{IndustryInsightEngine.get_insight(industry, 'roe', roe_dupont)}
-
-**Primary ROE Driver**: {'Profitability (high margin)' if profit_margin > 0.15 else 'Asset Efficiency' if asset_turnover > 1.0 else 'Financial Leverage'}
-"""
+                # DuPont Analysis - Expert CoT
+                response = ExpertCoTGenerator.generate(
+                    metric_name='roe',
+                    formula_latex=r"ROE = \frac{Net\ Income}{Revenue} \times \frac{Revenue}{Assets} \times \frac{Assets}{Equity}",
+                    data_sources=[
+                        ("Income Statement", "Net Income", net_income.value),
+                        ("Income Statement", "Revenues", revenue.value),
+                        ("Balance Sheet", "Total Assets", total_assets.value),
+                        ("Balance Sheet", "Total Equity", equity.value),
+                    ],
+                    calculation_steps=[
+                        f"Profit Margin $= \\frac{{{float(net_income.value)/1e9:.3f}B}}{{{float(revenue.value)/1e9:.3f}B}} = {profit_margin:.4f}$",
+                        f"Asset Turnover $= \\frac{{{float(revenue.value)/1e9:.3f}B}}{{{float(total_assets.value)/1e9:.3f}B}} = {asset_turnover:.2f}x$",
+                        f"Equity Multiplier $= \\frac{{{float(total_assets.value)/1e9:.3f}B}}{{{float(equity.value)/1e9:.3f}B}} = {equity_multiplier:.2f}x$",
+                        f"$ROE = {profit_margin:.4f} \\times {asset_turnover:.2f} \\times {equity_multiplier:.2f} = {roe_dupont:.2f}\\%$"
+                    ],
+                    result=roe_dupont,
+                    industry=industry,
+                    company_name=self.company_name
+                )
                 qa_list.append({
                     "question": f"Using DuPont Analysis, decompose {self.company_name}'s ROE into its three fundamental drivers and identify which component contributes most.",
-                    "response": response, "type": "cross_table_analysis",
-                    "context": f"Profit Margin: {profit_margin:.2%}, Asset Turnover: {asset_turnover:.2f}x, Equity Multiplier: {equity_multiplier:.2f}x"
+                    "response": response,
+                    "type": "cross_table_analysis",
+                    "context": f"Profit Margin: {profit_margin:.2%}, Asset Turnover: {asset_turnover:.2f}x, Equity Multiplier: {equity_multiplier:.2f}x",
+                    "concept": "dupont_analysis"
                 })
             except: pass
         
@@ -2528,25 +2562,29 @@ $$= {profit_margin:.4f} \\times {asset_turnover:.2f} \\times {equity_multiplier:
             gp_b = float(gross_profit.value) / 1e9
             rev_b = float(revenue.value) / 1e9
             
-            response = f"""[Definition]
-Gross Profit Margin measures the percentage of revenue remaining after deducting cost of goods sold. It reflects pricing power and production efficiency - the most fundamental profitability measure.
-
-[Synthesis]
-- Income Statement: Revenues = {ScaleProcessor.format_currency(revenue.value)}
-- Income Statement: Gross Profit = {ScaleProcessor.format_currency(gross_profit.value)}
-
-[Symbolic Reasoning]
-$$Gross\\ Profit\\ Margin = \\frac{{Gross\\ Profit}}{{Revenues}} \\times 100\\%$$
-
-$$= \\frac{{{gp_b:.3f}B}}{{{rev_b:.3f}B}} \\times 100\\% = {gpm:.2f}\\%$$
-
-[Professional Insight]
-{gpm:.2f}% gross margin indicates {'exceptional pricing power and/or cost advantages' if gpm > 50 else 'healthy markup over production costs' if gpm > 30 else 'competitive pricing environment with thin margins'}.
-"""
+            verify_result = ScaleProcessor.verify_calculation("Gross Margin", gross_profit.value, revenue.value, gpm / 100)
+            
+            response = ExpertCoTGenerator.generate(
+                metric_name='gross_margin', # Need to ensure definition exists, or map to closest
+                formula_latex=r"Gross\ Profit\ Margin = \frac{Gross\ Profit}{Revenues} \times 100\%",
+                data_sources=[
+                    ("Income Statement", "Gross Profit", gross_profit.value),
+                    ("Income Statement", "Revenues", revenue.value),
+                ],
+                calculation_steps=[
+                    f"$= \\frac{{{gp_b:.3f}B}}{{{rev_b:.3f}B}} \\times 100\\% = {gpm:.2f}\\%$"
+                ],
+                result=gpm,
+                industry=industry,
+                company_name=self.company_name,
+                verification_result=verify_result
+            )
             qa_list.append({
                 "question": f"Analyze {self.company_name}'s Gross Profit Margin and assess its pricing power and production cost efficiency.",
-                "response": response, "type": "cross_table_analysis",
-                "context": f"Gross Profit: {ScaleProcessor.format_currency(gross_profit.value)}, Revenues: {ScaleProcessor.format_currency(revenue.value)}"
+                "response": response,
+                "type": "cross_table_analysis",
+                "context": f"Gross Profit: {ScaleProcessor.format_currency(gross_profit.value)}, Revenues: {ScaleProcessor.format_currency(revenue.value)}",
+                "concept": "gross_margin"
             })
         
         # 5. Net Profit Margin - IS analysis
@@ -2555,25 +2593,29 @@ $$= \\frac{{{gp_b:.3f}B}}{{{rev_b:.3f}B}} \\times 100\\% = {gpm:.2f}\\%$$
             ni_b = float(net_income.value) / 1e9
             rev_b = float(revenue.value) / 1e9
             
-            response = f"""[Definition]
-Net Profit Margin represents the percentage of revenue converted to bottom-line profit after all expenses. It's the ultimate measure of operational efficiency and overall profitability.
-
-[Synthesis]
-- Income Statement: Revenues = {ScaleProcessor.format_currency(revenue.value)}
-- Income Statement: Net Income = {ScaleProcessor.format_currency(net_income.value)}
-
-[Symbolic Reasoning]
-$$Net\\ Profit\\ Margin = \\frac{{Net\\ Income}}{{Revenues}} \\times 100\\%$$
-
-$$= \\frac{{{ni_b:.3f}B}}{{{rev_b:.3f}B}} \\times 100\\% = {npm:.2f}\\%$$
-
-[Professional Insight]
-{npm:.2f}% net margin indicates {'exceptional profitability reflecting strong competitive moat' if npm > 20 else 'solid profitability with effective cost management' if npm > 10 else 'standard margins with opportunity for efficiency improvement'}.
-"""
+            verify_result = ScaleProcessor.verify_calculation("Net Profit Margin", net_income.value, revenue.value, npm / 100)
+            
+            response = ExpertCoTGenerator.generate(
+                metric_name='net_profit_margin',
+                formula_latex=r"Net\ Profit\ Margin = \frac{Net\ Income}{Revenues} \times 100\%",
+                data_sources=[
+                    ("Income Statement", "Net Income", net_income.value),
+                    ("Income Statement", "Revenues", revenue.value),
+                ],
+                calculation_steps=[
+                    f"$= \\frac{{{ni_b:.3f}B}}{{{rev_b:.3f}B}} \\times 100\\% = {npm:.2f}\\%$"
+                ],
+                result=npm,
+                industry=industry,
+                company_name=self.company_name,
+                verification_result=verify_result
+            )
             qa_list.append({
                 "question": f"Calculate the Net Profit Margin for {self.company_name} and evaluate how efficiently revenue converts to bottom-line profit.",
-                "response": response, "type": "cross_table_analysis",
-                "context": f"Net Income: {ScaleProcessor.format_currency(net_income.value)}, Revenues: {ScaleProcessor.format_currency(revenue.value)}"
+                "response": response,
+                "type": "cross_table_analysis",
+                "context": f"Net Income: {ScaleProcessor.format_currency(net_income.value)}, Revenues: {ScaleProcessor.format_currency(revenue.value)}",
+                "concept": "net_profit_margin"
             })
         
         # 6. ROIC (Return on Invested Capital) - Cross-table
@@ -2589,31 +2631,39 @@ $$= \\frac{{{ni_b:.3f}B}}{{{rev_b:.3f}B}} \\times 100\\% = {npm:.2f}\\%$$
                     nopat_b = nopat / 1e9
                     ic_b = invested_capital / 1e9
                     
-                    response = f"""[Definition]
-Return on Invested Capital (ROIC) measures how efficiently a company generates profits from its capital base, excluding non-interest-bearing liabilities. It's a key metric for assessing value creation vs. cost of capital.
-
-[Synthesis]
-- Income Statement: Operating Income = {ScaleProcessor.format_currency(operating_income.value)}
-- Balance Sheet: Total Assets = {ScaleProcessor.format_currency(total_assets.value)}
-- Balance Sheet: Current Liabilities = {ScaleProcessor.format_currency(current_liabilities.value)}
-- Estimated Tax Rate: 25%
-
-[Symbolic Reasoning]
-$$NOPAT = Operating\\ Income \\times (1 - Tax\\ Rate) = {float(operating_income.value)/1e9:.3f}B \\times 0.75 = {nopat_b:.3f}B$$
-
-$$Invested\\ Capital = Total\\ Assets - Current\\ Liabilities = {float(total_assets.value)/1e9:.3f}B - {float(current_liabilities.value)/1e9:.3f}B = {ic_b:.3f}B$$
-
-$$ROIC = \\frac{{NOPAT}}{{Invested\\ Capital}} \\times 100\\% = \\frac{{{nopat_b:.3f}B}}{{{ic_b:.3f}B}} \\times 100\\% = {roic:.2f}\\%$$
-
-[Professional Insight]
-ROIC of {roic:.2f}% {'exceeds typical cost of capital (10%), indicating value creation' if roic > 10 else 'is near cost of capital, indicating break-even value creation' if roic > 6 else 'is below cost of capital, suggesting value destruction'}.
-"""
-                    qa_list.append({
-                        "question": f"Calculate the Return on Invested Capital (ROIC) for {self.company_name} and assess whether the company creates shareholder value.",
-                        "response": response, "type": "cross_table_analysis",
-                        "context": f"NOPAT: {ScaleProcessor.format_currency(Decimal(str(nopat)))}, Invested Capital: {ScaleProcessor.format_currency(Decimal(str(invested_capital)))}"
-                    })
-            except: pass
+                # ROIC Analysis - Expert CoT
+                verify_result = ScaleProcessor.verify_calculation("ROIC", Decimal(nopat), Decimal(invested_capital), roic / 100)
+                
+                response = ExpertCoTGenerator.generate(
+                    metric_name='roic', 
+                    formula_latex=r"ROIC = \frac{NOPAT}{Invested\ Capital} \times 100\%",
+                    data_sources=[
+                        ("Income Statement", "Operating Income", operating_income.value),
+                        ("Balance Sheet", "Total Assets", total_assets.value),
+                        ("Balance Sheet", "Current Liabilities", current_liabilities.value),
+                        ("Derived", "NOPAT (Est. Tax 25%)", Decimal(str(nopat))),
+                        ("Derived", "Invested Capital", Decimal(str(invested_capital))),
+                    ],
+                    calculation_steps=[
+                        f"$NOPAT = {float(operating_income.value)/1e9:.3f}B \\times (1 - 0.25) = {nopat_b:.3f}B$",
+                        f"$Invested\\ Capital = {float(total_assets.value)/1e9:.3f}B - {float(current_liabilities.value)/1e9:.3f}B = {ic_b:.3f}B$",
+                        f"$= \\frac{{{nopat_b:.3f}B}}{{{ic_b:.3f}B}} \\times 100\\% = {roic:.2f}\\%$"
+                    ],
+                    result=roic,
+                    industry=industry,
+                    company_name=self.company_name,
+                    verification_result=verify_result
+                )
+                
+                qa_list.append({
+                    "question": f"Calculate the Return on Invested Capital (ROIC) for {self.company_name} and assess whether the company creates shareholder value.",
+                    "response": response,
+                    "type": "cross_table_analysis",
+                    "context": f"NOPAT: {ScaleProcessor.format_currency(Decimal(str(nopat)))}, Invested Capital: {ScaleProcessor.format_currency(Decimal(str(invested_capital)))}",
+                    "concept": "roic"
+                })
+            except Exception as e:
+                pass
         
         # 7. Working Capital Turnover - Cross-table: IS + BS
         if revenue and current_assets and current_liabilities:
@@ -2624,30 +2674,37 @@ ROIC of {roic:.2f}% {'exceeds typical cost of capital (10%), indicating value cr
                     wc_b = working_capital / 1e9
                     rev_b = float(revenue.value) / 1e9
                     
-                    response = f"""[Definition]
-Working Capital Turnover measures how efficiently a company uses its working capital (current assets minus current liabilities) to generate revenue. Higher turnover indicates more efficient use of short-term capital.
+                # Working Capital Turnover - Expert CoT
+                verify_result = ScaleProcessor.verify_calculation("Working Capital Turnover", revenue.value, Decimal(working_capital), wc_turnover)
+                
+                response = ExpertCoTGenerator.generate(
+                    metric_name='working_capital_turnover',
+                    formula_latex=r"Working\ Capital\ Turnover = \frac{Revenues}{Current\ Assets - Current\ Liabilities}",
+                    data_sources=[
+                        ("Income Statement", "Revenues", revenue.value),
+                        ("Balance Sheet", "Current Assets", current_assets.value),
+                        ("Balance Sheet", "Current Liabilities", current_liabilities.value),
+                        ("Derived", "Working Capital", Decimal(str(working_capital))),
+                    ],
+                    calculation_steps=[
+                        f"$Working\\ Capital = {float(current_assets.value)/1e9:.3f}B - {float(current_liabilities.value)/1e9:.3f}B = {wc_b:.3f}B$",
+                        f"$= \\frac{{{rev_b:.3f}B}}{{{wc_b:.3f}B}} = {wc_turnover:.2f}x$"
+                    ],
+                    result=wc_turnover,
+                    industry=industry,
+                    company_name=self.company_name,
+                    verification_result=verify_result
+                )
 
-[Synthesis]
-- Income Statement: Revenues = {ScaleProcessor.format_currency(revenue.value)}
-- Balance Sheet: Current Assets = {ScaleProcessor.format_currency(current_assets.value)}
-- Balance Sheet: Current Liabilities = {ScaleProcessor.format_currency(current_liabilities.value)}
-
-[Symbolic Reasoning]
-$$Working\\ Capital = Current\\ Assets - Current\\ Liabilities$$
-
-$$= {float(current_assets.value)/1e9:.3f}B - {float(current_liabilities.value)/1e9:.3f}B = {wc_b:.3f}B$$
-
-$$Working\\ Capital\\ Turnover = \\frac{{Revenues}}{{Working\\ Capital}} = \\frac{{{rev_b:.3f}B}}{{{wc_b:.3f}B}} = {wc_turnover:.2f}x$$
-
-[Professional Insight]
-Working capital turnover of {wc_turnover:.2f}x indicates {'highly efficient working capital management' if wc_turnover > 10 else 'effective utilization of short-term capital' if wc_turnover > 5 else 'opportunity to optimize working capital allocation'}.
-"""
-                    qa_list.append({
-                        "question": f"Analyze the Working Capital Turnover for {self.company_name} and evaluate its short-term capital efficiency.",
-                        "response": response, "type": "cross_table_analysis",
-                        "context": f"Working Capital: {ScaleProcessor.format_currency(Decimal(str(working_capital)))}, Revenue: {ScaleProcessor.format_currency(revenue.value)}"
-                    })
-            except: pass
+                qa_list.append({
+                    "question": f"Analyze the Working Capital Turnover for {self.company_name} and evaluate its short-term capital efficiency.",
+                    "response": response,
+                    "type": "cross_table_analysis",
+                    "context": f"Working Capital: {ScaleProcessor.format_currency(Decimal(str(working_capital)))}, Revenue: {ScaleProcessor.format_currency(revenue.value)}",
+                    "concept": "working_capital_turnover"
+                })
+            except Exception as e:
+                pass
         
         # 8. Days Inventory Outstanding (DIO) - Cross-table: BS + IS
         if inventory and cogs and float(cogs.value) > 0:
@@ -2659,27 +2716,33 @@ Working capital turnover of {wc_turnover:.2f}x indicates {'highly efficient work
             avg_inv_b = float(avg_inv) / 1e9
             cogs_b = float(cogs.value) / 1e9
             
-            response = f"""[Definition]
-Days Inventory Outstanding (DIO) measures the average number of days inventory is held before being sold. Lower DIO indicates faster inventory turnover and less capital tied up in stock.
+            # DIO Analysis - Expert CoT
+            verify_result = ScaleProcessor.verify_calculation("DIO", avg_inv, cogs.value, dio / 365)
+            
+            response = ExpertCoTGenerator.generate(
+                metric_name='dio', 
+                formula_latex=r"DIO = \frac{Average\ Inventory}{Cost\ of\ Goods\ Sold} \times 365",
+                data_sources=[
+                    ("Income Statement", "Cost of Goods Sold", cogs.value),
+                    ("Balance Sheet (Current)", "Inventory", inventory.value),
+                    ("Balance Sheet (Prior)", "Beginning Inventory", py_inventory.value if py_inventory else Decimal(0)),
+                ],
+                calculation_steps=[
+                    inv_desc,
+                    f"$= \\frac{{{avg_inv_b:.3f}B}}{{{cogs_b:.3f}B}} \\times 365 = {dio:.1f}\\ days$"
+                ],
+                result=dio,
+                industry=industry,
+                company_name=self.company_name,
+                verification_result=verify_result
+            )
 
-[Synthesis]
-- Balance Sheet (Current): Inventory = {ScaleProcessor.format_currency(inventory.value)}
-- Balance Sheet (Prior): Beginning Inventory = {ScaleProcessor.format_currency(py_inventory.value) if py_inventory else 'N/A'}
-- Income Statement: Cost of Goods Sold = {ScaleProcessor.format_currency(cogs.value)}
-- {inv_desc}
-
-[Symbolic Reasoning]
-$$DIO = \\frac{{Average\\ Inventory}}{{Cost\\ of\\ Goods\\ Sold}} \\times 365$$
-
-$$= \\frac{{{avg_inv_b:.3f}B}}{{{cogs_b:.3f}B}} \\times 365 = {dio:.1f}\\ days$$
-
-[Professional Insight]
-DIO of {dio:.1f} days indicates {'very efficient inventory management' if dio < 30 else 'standard inventory cycle' if dio < 60 else 'longer inventory holding period - may indicate obsolescence risk or seasonal stockpiling'}.
-"""
             qa_list.append({
                 "question": f"Calculate Days Inventory Outstanding for {self.company_name} and assess inventory management efficiency.",
-                "response": response, "type": "cross_table_analysis",
-                "context": f"Average Inventory: {ScaleProcessor.format_currency(avg_inv)}, COGS: {ScaleProcessor.format_currency(cogs.value)}"
+                "response": response,
+                "type": "cross_table_analysis",
+                "context": f"Average Inventory: {ScaleProcessor.format_currency(avg_inv)}, COGS: {ScaleProcessor.format_currency(cogs.value)}",
+                "concept": "dio"
             })
         
         # 9. Asset Intensity - Cross-table: BS / IS
@@ -2688,25 +2751,31 @@ DIO of {dio:.1f} days indicates {'very efficient inventory management' if dio < 
             assets_b = float(total_assets.value) / 1e9
             rev_b = float(revenue.value) / 1e9
             
-            response = f"""[Definition]
-Asset Intensity (inverse of Asset Turnover) measures how much capital is required to generate $1 of revenue. Higher asset intensity indicates capital-heavy business models; lower indicates asset-light operations.
+            # Asset Intensity - Expert CoT
+            verify_result = ScaleProcessor.verify_calculation("Asset Intensity", total_assets.value, revenue.value, asset_intensity)
+            
+            response = ExpertCoTGenerator.generate(
+                metric_name='asset_intensity',
+                formula_latex=r"Asset\ Intensity = \frac{Total\ Assets}{Revenues}",
+                data_sources=[
+                    ("Income Statement", "Revenues", revenue.value),
+                    ("Balance Sheet", "Total Assets", total_assets.value),
+                ],
+                calculation_steps=[
+                    f"$= \\frac{{{assets_b:.3f}B}}{{{rev_b:.3f}B}} = {asset_intensity:.2f}x$"
+                ],
+                result=asset_intensity,
+                industry=industry,
+                company_name=self.company_name,
+                verification_result=verify_result
+            )
 
-[Synthesis]
-- Balance Sheet: Total Assets = {ScaleProcessor.format_currency(total_assets.value)}
-- Income Statement: Revenues = {ScaleProcessor.format_currency(revenue.value)}
-
-[Symbolic Reasoning]
-$$Asset\\ Intensity = \\frac{{Total\\ Assets}}{{Revenues}}$$
-
-$$= \\frac{{{assets_b:.3f}B}}{{{rev_b:.3f}B}} = {asset_intensity:.2f}x$$
-
-[Professional Insight]
-Asset intensity of {asset_intensity:.2f}x means ${asset_intensity:.2f} of assets is required to generate $1 of revenue. {'This asset-light model enables higher returns on capital.' if asset_intensity < 0.5 else 'This capital intensity is typical for the industry.' if asset_intensity < 1.5 else 'This capital-heavy model requires significant investment to support growth.'}
-"""
             qa_list.append({
                 "question": f"Evaluate {self.company_name}'s Asset Intensity ratio and analyze its capital requirements relative to revenue generation.",
-                "response": response, "type": "cross_table_analysis",
-                "context": f"Total Assets: {ScaleProcessor.format_currency(total_assets.value)}, Revenues: {ScaleProcessor.format_currency(revenue.value)}"
+                "response": response,
+                "type": "cross_table_analysis",
+                "context": f"Total Assets: {ScaleProcessor.format_currency(total_assets.value)}, Revenues: {ScaleProcessor.format_currency(revenue.value)}",
+                "concept": "asset_intensity"
             })
         
         # 10. Operating Leverage Analysis - Cross-table  
@@ -2715,25 +2784,31 @@ Asset intensity of {asset_intensity:.2f}x means ${asset_intensity:.2f} of assets
             op_b = float(operating_income.value) / 1e9
             gp_b = float(gross_profit.value) / 1e9
             
-            response = f"""[Definition]
-Operating Leverage represents the proportion of gross profit retained after operating expenses. It measures how efficiently a company converts gross profit into operating profit.
+            # Operating Leverage - Expert CoT
+            verify_result = ScaleProcessor.verify_calculation("Operating Leverage", operating_income.value, gross_profit.value, op_leverage / 100)
+            
+            response = ExpertCoTGenerator.generate(
+                metric_name='operating_leverage',
+                formula_latex=r"Operating\ Leverage = \frac{Operating\ Income}{Gross\ Profit} \times 100\%",
+                data_sources=[
+                    ("Income Statement", "Gross Profit", gross_profit.value),
+                    ("Income Statement", "Operating Income", operating_income.value),
+                ],
+                calculation_steps=[
+                    f"$= \\frac{{{op_b:.3f}B}}{{{gp_b:.3f}B}} \\times 100\\% = {op_leverage:.2f}\\%$"
+                ],
+                result=op_leverage,
+                industry=industry,
+                company_name=self.company_name,
+                verification_result=verify_result
+            )
 
-[Synthesis]
-- Income Statement: Gross Profit = {ScaleProcessor.format_currency(gross_profit.value)}
-- Income Statement: Operating Income = {ScaleProcessor.format_currency(operating_income.value)}
-
-[Symbolic Reasoning]
-$$Operating\\ Leverage\\ Ratio = \\frac{{Operating\\ Income}}{{Gross\\ Profit}} \\times 100\\%$$
-
-$$= \\frac{{{op_b:.3f}B}}{{{gp_b:.3f}B}} \\times 100\\% = {op_leverage:.2f}\\%$$
-
-[Professional Insight]
-{op_leverage:.2f}% of gross profit is retained as operating income. {'Excellent operating leverage with controlled SG&A costs.' if op_leverage > 70 else 'Solid operating efficiency with balanced expense structure.' if op_leverage > 50 else 'Operating expenses consume significant gross profit - opportunity for cost optimization.'}
-"""
             qa_list.append({
                 "question": f"Analyze {self.company_name}'s Operating Leverage and evaluate how efficiently gross profit converts to operating income.",
-                "response": response, "type": "cross_table_analysis",
-                "context": f"Gross Profit: {ScaleProcessor.format_currency(gross_profit.value)}, Operating Income: {ScaleProcessor.format_currency(operating_income.value)}"
+                "response": response,
+                "type": "cross_table_analysis",
+                "context": f"Gross Profit: {ScaleProcessor.format_currency(gross_profit.value)}, Operating Income: {ScaleProcessor.format_currency(operating_income.value)}",
+                "concept": "operating_leverage"
             })
         
         return qa_list
