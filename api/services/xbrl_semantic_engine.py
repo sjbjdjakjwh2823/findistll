@@ -332,6 +332,7 @@ class XBRLSemanticEngine:
 
     def _generate_reasoning_qa(self, facts: List[SemanticFact]) -> List[Dict[str, str]]:
         """Calculates YoY trends and generates CoT responses."""
+        print(f"DEBUG: Starting processing {len(facts)} facts")
         qa_pairs = []
         
         # Group by concept to find CY/PY pairs
@@ -358,7 +359,7 @@ class XBRLSemanticEngine:
             )
             
             # STRICT DEBUG & APPEND VERIFICATION
-            print(f"DEBUG: Fact Generated for {concept} | Growth Formula Present: {'$$Growth' in response}")
+            print(f"DEBUG: Generated QA for {concept}: {bool(response)}")
             
             if response:
                 print(f"DEBUG: Appending QA Pair for {concept} to reasoning_qa list.")
