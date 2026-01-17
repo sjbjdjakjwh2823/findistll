@@ -1,17 +1,17 @@
 """
-FinDistill XBRL Semantic Engine
+FinDistill XBRL Semantic Engine v11.0 (Enterprise Edition)
 
-범용 XBRL 재무 지능 엔진 - AI 학습용 고차원 지식 생성
+Universal XBRL Financial Intelligence Engine - AI Training Data Generation
 
-핵심 기능:
-1. 시맨틱 결합 파싱 (Joint Parsing): _lab.xml 우선 파싱 → 라벨 매핑
-2. 수치 스케일 표준화: decimals 속성에 따른 정확한 단위 환산
-3. 컨텍스트 필터링: 연결재무제표 우선 타겟팅
-4. 추론형 Q&A 생성: CoT 포맷의 고품질 학습 데이터
-5. 구조화된 재무제표 마크다운 생성
+Core Features:
+1. Semantic Joint Parsing: _lab.xml priority parsing -> label mapping
+2. Value Scale Standardization: Accurate unit conversion based on decimals attribute
+3. Context Filtering: Consolidated financial statement targeting
+4. Reasoning Q&A Generation: High-quality CoT format training data
+5. Structured Financial Report Markdown Generation
 
 Author: FinDistill AI Engine
-Version: 1.0.0
+Version: 11.0.0
 """
 
 import re
@@ -34,35 +34,35 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class SemanticFact:
-    """시맨틱 라벨이 적용된 재무 팩트"""
-    concept: str               # 원본 기술적 태그 (예: us-gaap:Assets)
-    label: str                 # 인간 친화적 라벨 (예: 자산)
-    value: Decimal             # 표준화된 수치 값
-    raw_value: str             # 원본 값 (스케일 적용 전)
-    unit: str                  # 화폐 단위
-    period: str                # 기간 (YYYY 또는 YYYY-MM-DD)
-    context_ref: str           # 컨텍스트 참조 ID
-    decimals: Optional[int]    # 소수점 자릿수 / 스케일
-    hierarchy: str             # 재무제표 계층 (예: 재무상태표 > 자산)
-    is_consolidated: bool      # 연결재무제표 여부
-    segment: Optional[str]     # 세그먼트 정보 (있는 경우)
+    """Semantic labeled financial fact"""
+    concept: str               # Original technical tag (e.g., us-gaap:Assets)
+    label: str                 # Human-friendly label (e.g., Total Assets)
+    value: Decimal             # Standardized numeric value
+    raw_value: str             # Original value (before scale)
+    unit: str                  # Currency unit
+    period: str                # Period (YYYY or YYYY-MM-DD)
+    context_ref: str           # Context reference ID
+    decimals: Optional[int]    # Decimal places / Scale
+    hierarchy: str             # Financial statement hierarchy (e.g., Balance Sheet > Assets)
+    is_consolidated: bool      # Consolidated statement indicator
+    segment: Optional[str]     # Segment info (if available)
     
 
 @dataclass
 class ParsedContext:
-    """파싱된 XBRL 컨텍스트"""
+    """Parsed XBRL Context"""
     id: str
     entity: Optional[str] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     instant: Optional[str] = None
-    is_consolidated: bool = True  # 기본값: 연결
+    is_consolidated: bool = True  # Default: Consolidated
     segment_members: List[str] = field(default_factory=list)
 
 
 @dataclass
 class XBRLIntelligenceResult:
-    """XBRL 지능 엔진 출력 결과"""
+    """XBRL Intelligence Engine Output Result"""
     success: bool
     company_name: str
     fiscal_year: str
@@ -76,17 +76,17 @@ class XBRLIntelligenceResult:
 
 
 # ============================================================
-# SCALE PROCESSOR (v3 - Self-Healing)
+# SCALE PROCESSOR (v11.0 - Self-Healing)
 # ============================================================
 
 class ScaleProcessor:
     """
-    수치 스케일 처리기 (v11.0) - Expert Financial Analysis Engine
+    Numeric Scale Processing기 (v11.0) - Expert Financial Analysis Engine
     
-    🔴 지능형 수치 보정 (Self-Healing):
-    1. 원본 값이 이미 큰 절대값(≥10^6)이고 decimals가 음수면 곱셈 중단
-    2. 최종값이 10^15 초과 시 자동 역산(Reverse Scaling)
-    3. 모든 수치를 Billion($10^9) 단위로 표준화 (STRICT)
+    🔴 Intelligent 수치 보정 (Self-Healing):
+    1. Original Value이 이미 큰 절대Value(≥10^6)이고 decimals가 음수면 곱셈 중단
+    2. 최종Value이 10^15 over 시 자동 Reverse Calculation(Reverse Scaling)
+    3. 모든 수치를 Billion($10^9) Unit로 Standardization (STRICT)
     
     🆕 v11.0 Features:
     - Strict Billion ($B$) Unit Only Policy
@@ -94,11 +94,11 @@ class ScaleProcessor:
     - Arithmetic Cross-Check Verification
     - Time-Series Average Calculation
     
-    입력: 다양한 형식의 XBRL 수치
-    출력: 합리적 범위(~$1T)의 표준화된 수치
+    Input: 다양한 형식의 XBRL 수치
+    Output: 합리적 범위(~$1T)의 Standardization된 수치
     """
     
-    # 표준화 목표 단위
+    # Standardization 목표 Unit
     STANDARD_UNIT_BILLION = Decimal('1e9')   # $1B = 10^9
     STANDARD_UNIT_MILLION = Decimal('1e6')   # $1M = 10^6
     
@@ -109,13 +109,13 @@ class ScaleProcessor:
     PRECISION_INSIGNIFICANT = Decimal('1e3') # Values below $1K are insignificant
     
     # 합리적 재무 수치 범위
-    MAX_REASONABLE_VALUE = Decimal('1e13')   # 10조 (Apple 총자산 ~$400B의 10배)
+    MAX_REASONABLE_VALUE = Decimal('1e13')   # 10조 (Apple 총Assets ~$400B의 10배)
     MIN_REASONABLE_VALUE = Decimal('1')
     
-    # 이중 곱셈 방지를 위한 원본값 임계치
-    RAW_VALUE_LARGE_THRESHOLD = Decimal('1e6')  # 원본이 100만 이상이면 이미 실제값
+    # 이중 곱셈 방지를 위한 OriginalValue 임계치
+    RAW_VALUE_LARGE_THRESHOLD = Decimal('1e6')  # Original이 100only or more이면 이미 실제Value
     
-    # 잘못된 값 패턴 (URL, 날짜 등)
+    # 잘못된 Value 패턴 (URL, 날짜 등)
     INVALID_VALUE_PATTERNS = [
         r'^https?://',
         r'\.org/',
@@ -129,7 +129,7 @@ class ScaleProcessor:
     
     @classmethod
     def is_valid_numeric_value(cls, raw_value: str) -> bool:
-        """유효한 재무 수치 여부 확인"""
+        """유효한 재무 수치 여부 Check"""
         if not raw_value:
             return False
         
@@ -154,15 +154,15 @@ class ScaleProcessor:
         apply_unit_scale: bool = True
     ) -> Tuple[Decimal, str, bool]:
         """
-        Self-Healing 수치 표준화
+        Self-Healing 수치 Standardization
         
         Returns:
-            (표준화된 값, 처리 설명, 유효성 여부)
+            (Standardization된 Value, Process 설명, 유효성 여부)
         
         핵심 로직:
-        1. 원본값이 이미 크면(≥10^6) 스케일링 건너뛰기
-        2. 스케일링 후 범위 초과 시 역산(Reverse Scaling)
-        3. 표준 단위(Billion/Million)으로 정규화
+        1. OriginalValue이 이미 크면(≥10^6) Scaling 건너뛰기
+        2. Scaling 후 Range Overflow 시 Reverse Calculation(Reverse Scaling)
+        3. 표준 Unit(Billion/Million)으로 Normalize
         """
         if not cls.is_valid_numeric_value(raw_value):
             return Decimal('0'), f"Invalid: {raw_value}", False
@@ -175,29 +175,29 @@ class ScaleProcessor:
             return Decimal('0'), f"Parse error: {raw_value}", False
         
         value = original_value
-        description = "원본"
+        description = "Original"
         
         # ═══════════════════════════════════════════════════════════
-        # STEP 1: 지능형 스케일링 판단 (Self-Healing Logic)
+        # STEP 1: Intelligent Scaling 판단 (Self-Healing Logic)
         # ═══════════════════════════════════════════════════════════
         abs_original = abs(original_value)
         
-        # 원본값이 이미 크면 (≥10^6) 스케일 적용하지 않음
-        # (Workiva 등 일부 플랫폼은 이미 절대값으로 기록)
+        # OriginalValue이 이미 크면 (≥10^6) 스케일 Apply하지 않음
+        # (Workiva 등 일부 플랫폼은 이미 절대Value으로 기록)
         skip_scaling = abs_original >= cls.RAW_VALUE_LARGE_THRESHOLD
         
         if skip_scaling and decimals:
             try:
                 dec_int = int(decimals)
                 if dec_int < 0:
-                    # 원본이 크고 decimals도 음수면 이미 실제값 → 스케일링 건너뛰기
+                    # Original이 크고 decimals도 음수면 이미 실제Value → Scaling 건너뛰기
                     logger.info(f"Self-Healing: Raw value {abs_original} already large, skipping decimals={decimals} scaling")
-                    description = f"Self-Heal: 원본 유지 (decimals={decimals} 무시)"
+                    description = f"Self-Heal: Original 유지 (decimals={decimals} 무시)"
             except ValueError:
                 pass
         
         # ═══════════════════════════════════════════════════════════
-        # STEP 2: 조건부 스케일링 (원본이 작을 때만)
+        # STEP 2: Conditional Scaling (Original이 작을 때only)
         # ═══════════════════════════════════════════════════════════
         if not skip_scaling and decimals:
             try:
@@ -207,25 +207,25 @@ class ScaleProcessor:
                     value = original_value * multiplier
                     
                     scale_map = {
-                        -3: "천 단위 (×1,000)",
-                        -6: "백만 단위 (×1,000,000)",
-                        -9: "십억 단위 (×1,000,000,000)",
+                        -3: "천 Unit (×1,000)",
+                        -6: "백only Unit (×1,000,000)",
+                        -9: "십억 Unit (×1,000,000,000)",
                     }
                     description = scale_map.get(dec_int, f"×10^{abs(dec_int)}")
             except ValueError:
                 pass
         
         # ═══════════════════════════════════════════════════════════
-        # STEP 3: Self-Healing 역산 (Range Overflow 자동 보정)
+        # STEP 3: Self-Healing Reverse Calculation (Range Overflow Auto-Correction)
         # ═══════════════════════════════════════════════════════════
         abs_value = abs(value)
         
         if abs_value > cls.MAX_REASONABLE_VALUE:
-            # 값이 비현실적으로 크면 자동 역산
+            # Value이 비현실적으로 크면 자동 Reverse Calculation
             reverse_factors = [
-                (Decimal('1e12'), "역산 ÷10^12 (조→십억)"),
-                (Decimal('1e9'), "역산 ÷10^9 (십억→백만)"),
-                (Decimal('1e6'), "역산 ÷10^6 (백만→원)"),
+                (Decimal('1e12'), "Reverse Calculation ÷10^12 (조→십억)"),
+                (Decimal('1e9'), "Reverse Calculation ÷10^9 (십억→백only)"),
+                (Decimal('1e6'), "Reverse Calculation ÷10^6 (백only→원)"),
             ]
             
             for factor, desc in reverse_factors:
@@ -236,10 +236,10 @@ class ScaleProcessor:
                     description = f"Self-Heal: {desc}"
                     break
             else:
-                # 여전히 범위 초과면 원본값 사용
+                # 여전히 Range Overflow면 OriginalValue 사용
                 logger.error(f"Self-Healing failed, using original: {original_value}")
                 value = original_value
-                description = "Self-Heal 실패 → 원본 사용"
+                description = "Self-Heal Failed → Original 사용"
         
         return value, description, True
     
@@ -400,32 +400,32 @@ class ScaleProcessor:
         # 1. Translation Map (Korean to English)
         translation_map = {
             # Comprehensive Income
-            '매출액': 'Revenues', '매출': 'Revenues', '수익': 'Revenues',
+            'Revenues': 'Revenues', '매출': 'Revenues', 'Revenues': 'Revenues',
             '매출원가': 'Cost of Goods Sold',
             '매출총이익': 'Gross Profit',
             '판매비와관리비': 'SG&A Expenses', '판관비': 'SG&A Expenses',
             '연구개발비': 'R&D Expenses',
-            '영업이익': 'Operating Income',
-            '당기순이익': 'Net Income',
-            '법인세비용': 'Income Tax Expense',
-            '금융수익': 'Financial Income', '금융비용': 'Financial Costs',
+            'Operating Income': 'Operating Income',
+            'Net Income': 'Net Income',
+            '법인세Expenses': 'Income Tax Expense',
+            '금융Revenues': 'Financial Income', '금융Expenses': 'Financial Costs',
             
             # Financial Position
-            '자산총계': 'Total Assets', '자산': 'Total Assets',
-            '유동자산': 'Current Assets',
-            '현금및현금성자산': 'Cash and Cash Equivalents',
+            'Total Assets': 'Total Assets', 'Assets': 'Total Assets',
+            'Current Assets': 'Current Assets',
+            '현금및현금성Assets': 'Cash and Cash Equivalents',
             '매출채권': 'Accounts Receivable',
-            '재고자산': 'Inventory',
-            '비유동자산': 'Non-current Assets',
-            '유형자산': 'Property, Plant and Equipment',
+            '재고Assets': 'Inventory',
+            '비Current Assets': 'Non-current Assets',
+            '유형Assets': 'Property, Plant and Equipment',
             
-            '부채총계': 'Total Liabilities', '부채': 'Total Liabilities',
-            '유동부채': 'Current Liabilities',
-            '비유동부채': 'Non-current Liabilities',
+            'Total Liabilities': 'Total Liabilities', 'Liabilities': 'Total Liabilities',
+            'Current Liabilities': 'Current Liabilities',
+            '비Current Liabilities': 'Non-current Liabilities',
             
-            '자본총계': 'Total Equity', '자본': 'Total Equity',
+            'Total Equity': 'Total Equity', 'Equity': 'Total Equity',
             '이익잉여금': 'Retained Earnings',
-            '자본금': 'Common Stock',
+            'Equity금': 'Common Stock',
         }
         
         # Apply Translation (Exact Match First)
@@ -449,20 +449,20 @@ class ScaleProcessor:
         equity: Optional[Decimal]
     ) -> Tuple[bool, str]:
         """
-        재무등식 검증: Assets = Liabilities + Equity
+        Financial Equation Verification: Assets = Liabilities + Equity
         
         Returns:
-            (검증 통과 여부, 검증 메시지)
+            (Verification 통과 여부, Verification 메시지)
         """
         if not assets or not liabilities or not equity:
-            return True, "데이터 부족으로 검증 생략"
+            return True, "데이터 부족으로 Verification 생략"
         
         expected = liabilities + equity
         difference = abs(assets - expected)
         tolerance = abs(assets) * Decimal('0.01')  # 1% 허용 오차
 
         if difference <= tolerance:
-            return True, f"✅ 재무등식 검증 통과: Assets({cls.format_currency(assets)}) ≈ L+E({cls.format_currency(expected)})"
+            return True, f"✅ Financial Equation Verification 통과: Assets({cls.format_currency(assets)}) ≈ L+E({cls.format_currency(expected)})"
         else:
             return False, f"⚠️ 재무등식 불일치: Assets({cls.format_currency(assets)}) ≠ L+E({cls.format_currency(expected)}), 차이: {cls.format_currency(difference)}"
 
@@ -472,11 +472,11 @@ class ScaleProcessor:
 
 class ContextFilter:
     """
-    컨텍스트 필터링기
+    Context Filter링기
     
     연결재무제표(Consolidated) vs 별도재무제표 구분:
-    - 연결 컨텍스트 우선 타겟팅
-    - 세그먼트 멤버 분석
+    - 연결 컨텍스트 Priority 타겟팅
+    - Segment 멤버 Analysis
     """
     
     # 연결재무제표 식별 패턴
@@ -495,7 +495,7 @@ class ContextFilter:
         r'parent\s*only',
     ]
     
-    # 제외할 세그먼트 패턴 (특정 세그먼트는 전체 재무가 아님)
+    # Exclude할 Segment 패턴 (특정 Segment는 전체 재무가 아님)
     SEGMENT_EXCLUDE_PATTERNS = [
         r'segment',
         r'geographic',
@@ -522,21 +522,21 @@ class ContextFilter:
             if re.search(pattern, context_text, re.IGNORECASE):
                 return False, f"별도재무제표 패턴 감지: {pattern}"
         
-        # 2. 세그먼트 제외 체크
+        # 2. Segment Exclude 체크
         for pattern in cls.SEGMENT_EXCLUDE_PATTERNS:
             if re.search(pattern, context_text, re.IGNORECASE):
-                return False, f"세그먼트 데이터: {pattern}"
+                return False, f"Segment 데이터: {pattern}"
         
         # 3. 연결재무제표 명시 체크
         for pattern in cls.CONSOLIDATED_PATTERNS:
             if re.search(pattern, context_text, re.IGNORECASE):
                 return True, f"연결재무제표 패턴 감지: {pattern}"
         
-        # 4. 기본값: 세그먼트 멤버가 없으면 연결로 추정
+        # 4. Default: Segment 멤버가 없으면 연결로 추정
         if not context.segment_members:
-            return True, "세그먼트 없음 - 연결 추정"
+            return True, "Segment None - 연결 추정"
         
-        return True, "기본값 - 연결 추정"
+        return True, "Default - 연결 추정"
     
     @classmethod
     def filter_consolidated_priority(
@@ -545,24 +545,24 @@ class ContextFilter:
         include_separate: bool = False
     ) -> List[SemanticFact]:
         """
-        연결재무제표 데이터 우선 필터링
+        연결재무제표 데이터 Priority Filtering
         
         Args:
             facts: 전체 팩트 리스트
-            include_separate: 별도재무제표도 포함할지 여부
+            include_separate: 별도재무제표도 Include할지 여부
         
         Returns:
-            필터링된 팩트 리스트 (연결 우선)
+            Filtering된 팩트 리스트 (연결 Priority)
         """
         if include_separate:
             # 연결 먼저, 별도 나중 정렬
             return sorted(facts, key=lambda f: (not f.is_consolidated, f.concept))
         
-        # 연결재무제표만 반환
+        # 연결재무제표only Return
         consolidated = [f for f in facts if f.is_consolidated]
         
         if not consolidated:
-            logger.warning("연결재무제표 데이터 없음 - 전체 데이터 반환")
+            logger.warning("연결재무제표 데이터 None - 전체 데이터 Return")
             return facts
         
         return consolidated
@@ -573,51 +573,51 @@ class ContextFilter:
 # ============================================================
 
 class CoreFinancialConcepts:
-    """핵심 재무 개념 정의"""
+    """Core Financial Concepts 정의"""
     
-    # 재무상태표 핵심 항목
+    # Balance Sheet 핵심 Item
     BALANCE_SHEET = {
-        # 자산
-        "Assets": "자산총계",
-        "CurrentAssets": "유동자산",
-        "NoncurrentAssets": "비유동자산",
-        "CashAndCashEquivalents": "현금및현금성자산",
-        "Inventories": "재고자산",
+        # Assets
+        "Assets": "Total Assets",
+        "CurrentAssets": "Current Assets",
+        "NoncurrentAssets": "비Current Assets",
+        "CashAndCashEquivalents": "현금및현금성Assets",
+        "Inventories": "재고Assets",
         "TradeReceivables": "매출채권",
-        "PropertyPlantAndEquipment": "유형자산",
-        "IntangibleAssets": "무형자산",
+        "PropertyPlantAndEquipment": "유형Assets",
+        "IntangibleAssets": "무형Assets",
         
-        # 부채
-        "Liabilities": "부채총계",
-        "CurrentLiabilities": "유동부채",
-        "NoncurrentLiabilities": "비유동부채",
+        # Liabilities
+        "Liabilities": "Total Liabilities",
+        "CurrentLiabilities": "Current Liabilities",
+        "NoncurrentLiabilities": "비Current Liabilities",
         "TradePayables": "매입채무",
         "ShortTermBorrowings": "단기차입금",
-        "LongTermDebt": "장기부채",
+        "LongTermDebt": "장기Liabilities",
         
-        # 자본
-        "Equity": "자본총계",
-        "IssuedCapital": "자본금",
+        # Equity
+        "Equity": "Total Equity",
+        "IssuedCapital": "Equity금",
         "RetainedEarnings": "이익잉여금",
-        "SharePremium": "주식발행초과금",
+        "SharePremium": "주식발행over금",
     }
     
-    # 손익계산서 핵심 항목
+    # Income Statement 핵심 Item
     INCOME_STATEMENT = {
-        "Revenue": "매출액",
+        "Revenue": "Revenues",
         "CostOfSales": "매출원가",
         "GrossProfit": "매출총이익",
         "SellingGeneralAndAdministrativeExpense": "판매비와관리비",
-        "OperatingProfit": "영업이익",
-        "FinanceIncome": "금융수익",
-        "FinanceCosts": "금융비용",
-        "ProfitBeforeTax": "법인세비용차감전순이익",
-        "IncomeTaxExpense": "법인세비용",
-        "ProfitLoss": "당기순이익",
-        "NetIncome": "당기순이익",
+        "OperatingProfit": "Operating Income",
+        "FinanceIncome": "금융Revenues",
+        "FinanceCosts": "금융Expenses",
+        "ProfitBeforeTax": "법인세Expenses차감전순이익",
+        "IncomeTaxExpense": "법인세Expenses",
+        "ProfitLoss": "Net Income",
+        "NetIncome": "Net Income",
     }
     
-    # 현금흐름표 핵심 항목
+    # Cash Flow Statement 핵심 Item
     CASH_FLOW = {
         "CashFlowsFromOperatingActivities": "영업활동현금흐름",
         "CashFlowsFromInvestingActivities": "투자활동현금흐름",
@@ -627,7 +627,7 @@ class CoreFinancialConcepts:
     # 통합 매핑
     ALL_CONCEPTS = {**BALANCE_SHEET, **INCOME_STATEMENT, **CASH_FLOW}
     
-    # US-GAAP 확장 매핑 (복잡한 태그명을 영문 표준 라벨로)
+    # US-GAAP 확장 매핑 (복잡한 Tag명을 영문 표준 Label로)
     US_GAAP_LABELS = {
         "EquitySecuritiesFvNiCurrentAndNoncurrent": "Equity Securities (Fair Value)",
         "AvailableForSaleSecuritiesDebtSecurities": "Available-for-Sale Debt Securities",
@@ -675,7 +675,7 @@ class CoreFinancialConcepts:
     @classmethod
     def get_label(cls, concept: str) -> str:
         """
-        개념에서 인간 친화적 라벨 추출
+        Concept에서 인간 친화적 Label Extract
         
         Enhanced: CamelCase 분리 및 US-GAAP 확장 매핑
         """
@@ -684,17 +684,17 @@ class CoreFinancialConcepts:
         for prefix in cls.NAMESPACE_PREFIXES:
             clean = clean.replace(f"{prefix}_", "").replace(f"{prefix}:", "")
         
-        # _나 : 뒤의 이름만 추출
+        # _나 : 뒤의 Nameonly Extract
         if '_' in clean:
             clean = clean.split('_')[-1]
         if ':' in clean:
             clean = clean.split(':')[-1]
         
-        # 1. US-GAAP 확장 매핑 확인
+        # 1. US-GAAP 확장 매핑 Check
         if clean in cls.US_GAAP_LABELS:
             return cls.US_GAAP_LABELS[clean]
         
-        # 2. 핵심 매핑 확인
+        # 2. 핵심 매핑 Check
         if clean in cls.ALL_CONCEPTS:
             return cls.ALL_CONCEPTS[clean]
         
@@ -707,7 +707,7 @@ class CoreFinancialConcepts:
     
     @classmethod
     def is_core_financial(cls, concept: str) -> bool:
-        """핵심 재무 개념 여부 확인"""
+        """Core Financial Concepts 여부 Check"""
         clean = concept
         for prefix in cls.NAMESPACE_PREFIXES:
             clean = clean.replace(f"{prefix}_", "").replace(f"{prefix}:", "")
@@ -721,23 +721,23 @@ class CoreFinancialConcepts:
     
     @classmethod
     def get_hierarchy(cls, concept: str) -> str:
-        """재무제표 계층 반환"""
+        """재무제표 계층 Return"""
         clean = cls.get_label(concept)
         
         if clean in cls.BALANCE_SHEET.values():
-            if '자산' in clean:
-                return "재무상태표 > 자산"
-            elif '부채' in clean:
-                return "재무상태표 > 부채"
-            elif '자본' in clean:
-                return "재무상태표 > 자본"
-            return "재무상태표"
+            if 'Assets' in clean:
+                return "Balance Sheet > Assets"
+            elif 'Liabilities' in clean:
+                return "Balance Sheet > Liabilities"
+            elif 'Equity' in clean:
+                return "Balance Sheet > Equity"
+            return "Balance Sheet"
         
         if clean in cls.INCOME_STATEMENT.values():
-            return "포괄손익계산서"
+            return "포괄Income Statement"
         
         if clean in cls.CASH_FLOW.values():
-            return "현금흐름표"
+            return "Cash Flow Statement"
         
         return "기타"
 
@@ -1107,15 +1107,15 @@ class XBRLSemanticEngine:
     """
     XBRL 시맨틱 결합 엔진
     
-    범용 금융 AI 학습 데이터 생성을 위한 통합 파이프라인:
+    범용 금융 AI 학습 데이터 Generate을 위한 통합 파이프라인:
     
     워크플로우:
-    1. _lab.xml 우선 파싱 → 라벨 매핑 구축
-    2. _htm.xml 파싱 → 기술적 태그를 라벨로 치환
-    3. 수치 스케일 표준화 (decimals 처리)
-    4. 컨텍스트 필터링 (연결재무 우선)
-    5. 추론형 Q&A 생성 → CoT 포맷
-    6. 구조화된 마크다운 리포트 생성
+    1. _lab.xml Priority 파싱 → Label Mapping 구축
+    2. _htm.xml 파싱 → 기술적 Tag를 Label로 치환
+    3. 수치 스케일 Standardization (decimals Process)
+    4. Context Filter링 (Consolidated Priority)
+    5. Reasoning Q&A Generation → CoT 포맷
+    6. 구조화된 Generate Markdown Report
     """
     
     def __init__(self, company_name: str = "", fiscal_year: str = "", sic_code: Optional[str] = None):
@@ -1143,10 +1143,10 @@ class XBRLSemanticEngine:
         instance_content: Optional[bytes] = None
     ) -> XBRLIntelligenceResult:
         """
-        시맨틱 결합 파싱 수행
+        시맨틱 Joint Parsing 수행
         
         Args:
-            label_content: _lab.xml 내용 (선택적, 없으면 기본 라벨 사용)
+            label_content: _lab.xml 내용 (Optional적, 없으면 Default Label 사용)
             instance_content: _htm.xml 또는 XBRL 인스턴스 내용
         
         Returns:
@@ -1165,22 +1165,22 @@ class XBRLSemanticEngine:
                 self._parse_instance(instance_content)
                 self.parse_log.append(f"Parsed {len(self.facts)} facts from instance")
             
-            # 3. 핵심 재무 데이터 필터링
+            # 3. 핵심 재무 데이터 Filtering
             core_facts = self._filter_core_financials()
             self.parse_log.append(f"Filtered to {len(core_facts)} core financial facts")
             
-            # 4. 수치 데이터 검증
+            # 4. 수치 데이터 Verification
             if not core_facts:
-                return self._build_empty_result("수치 데이터가 추출되지 않았습니다.")
+                return self._build_empty_result("수치 데이터가 Extract되지 않았습니다.")
             
-            # 5. 추론형 Q&A 생성
+            # 5. Reasoning Q&A Generation
             reasoning_qa = self._generate_reasoning_qa(core_facts)
             self.parse_log.append(f"Generated {len(reasoning_qa)} reasoning Q&A pairs")
             
-            # 6. 마크다운 리포트 생성
+            # 6. Generate Markdown Report
             markdown_report = self._generate_financial_report(core_facts)
             
-            # 7. JSONL 생성
+            # 7. JSONL Generate
             jsonl_data = self._generate_jsonl(core_facts, reasoning_qa)
             
             # 8. v11.0: Output Validation (Zero-Tolerance for Unit Errors)
@@ -1191,7 +1191,7 @@ class XBRLSemanticEngine:
             else:
                 self.parse_log.append("Output validation passed: All units in Billion ($B) format")
             
-            # 9. 주요 지표 추출
+            # 9. Extract Key Metrics
             key_metrics = self._extract_key_metrics(core_facts)
             
             return XBRLIntelligenceResult(
@@ -1210,10 +1210,10 @@ class XBRLSemanticEngine:
         except Exception as e:
             logger.error(f"Joint parsing failed: {e}")
             self.errors.append(str(e))
-            return self._build_empty_result(f"파싱 실패: {e}")
+            return self._build_empty_result(f"Parsing Failed: {e}")
     
     def _build_label_mapping(self, label_content: bytes) -> None:
-        """_lab.xml에서 라벨 매핑 구축"""
+        """from _lab.xml Label Mapping 구축"""
         try:
             from .label_linkbase_parser import LabelLinkbaseParser
             
@@ -1227,7 +1227,7 @@ class XBRLSemanticEngine:
                     if concept and label:
                         self.label_mapping[concept] = label
             
-            # 기본 라벨도 추가
+            # Default Label도 추가
             self.label_mapping.update(CoreFinancialConcepts.ALL_CONCEPTS)
             
         except ImportError:
@@ -1238,7 +1238,7 @@ class XBRLSemanticEngine:
             self.label_mapping = CoreFinancialConcepts.ALL_CONCEPTS.copy()
     
     def _parse_instance(self, content: bytes) -> None:
-        """XBRL 인스턴스 문서 파싱"""
+        """XBRL Instance Document Parsing"""
         import xml.etree.ElementTree as ET
         
         try:
@@ -1247,14 +1247,14 @@ class XBRLSemanticEngine:
             # 컨텍스트 파싱
             self._parse_contexts(root)
             
-            # 팩트 파싱
+            # Fact Parsing
             self._parse_facts(root)
             
         except ET.ParseError as e:
             self.errors.append(f"XML Parse Error: {e}")
     
     def _parse_contexts(self, root) -> None:
-        """컨텍스트 요소 파싱"""
+        """Context Element Parsing"""
         import xml.etree.ElementTree as ET
         
         for elem in root.iter():
@@ -1288,23 +1288,23 @@ class XBRLSemanticEngine:
     
     def _parse_facts(self, root) -> None:
         """
-        팩트 요소 파싱 및 시맨틱 라벨 적용
+        팩트 요소 파싱 및 시맨틱 Label Apply
         
         🔴 Fixed: 
         - ScaleProcessor.is_valid_numeric_value() 사용
-        - 3-tuple 반환값 처리 (value, desc, is_valid)
-        - URL/날짜 값 자동 필터링
+        - 3-tuple ReturnValue Process (value, desc, is_valid)
+        - URL/날짜 Value 자동 Filtering
         """
         import xml.etree.ElementTree as ET
         
         for elem in root.iter():
-            # 값이 있는 요소만
+            # Value이 있는 요소only
             if not elem.text or not elem.text.strip():
                 continue
             
             tag = elem.tag.split('}')[-1] if '}' in elem.tag else elem.tag
             
-            # 메타데이터 태그 제외
+            # 메타데이터 Tag Exclude
             if tag in ('context', 'unit', 'schemaRef', 'linkbaseRef', 'identifier',
                        'startDate', 'endDate', 'instant', 'measure', 'explicitMember',
                        'segment', 'entity', 'period'):
@@ -1320,21 +1320,21 @@ class XBRLSemanticEngine:
             if not ScaleProcessor.is_valid_numeric_value(raw_value):
                 continue
             
-            # 네임스페이스에서 전체 개념 이름 구축
+            # 네임스페이스에서 전체 Concept Name 구축
             namespace = elem.tag.split('}')[0].replace('{', '') if '}' in elem.tag else ''
             concept = self._build_concept_name(tag, namespace)
             
-            # 시맨틱 라벨 적용 (기술 태그 → 인간 친화적 라벨)
-            # 🔴 FIX: 오타 수정 적용 (이익익 → 이익)
+            # 시맨틱 Label Apply (기술 Tag → 인간 친화적 Label)
+            # 🔴 FIX: 오타 수정 Apply (이익익 → 이익)
             raw_label = self._apply_semantic_label(concept)
             label = ScaleProcessor.fix_label_typos(raw_label)
             
-            # 🔴 FIX: 스케일 처리 - 새 API 사용 (3-tuple)
+            # 🔴 FIX: 스케일 Process - 새 API 사용 (3-tuple)
             standardized_value, scale_desc, is_valid = ScaleProcessor.standardize_value(
                 raw_value, decimals, unit_ref
             )
             
-            # 유효하지 않은 값 스킵
+            # 유효하지 않은 Value 스킵
             if not is_valid:
                 self.parse_log.append(f"Skipped invalid value: {raw_value} for {concept}")
                 continue
@@ -1342,18 +1342,18 @@ class XBRLSemanticEngine:
             # 컨텍스트 정보
             ctx = self.contexts.get(context_ref, ParsedContext(id=context_ref))
             
-            # 기간 추출
+            # Period Extract
             period = ""
             if ctx.instant:
                 period = ctx.instant[:4]
             elif ctx.end_date:
                 period = ctx.end_date[:4]
             
-            # 회사명 추출 시도
+            # 회사명 Extract 시도
             if not self.company_name and ctx.entity:
                 self.company_name = ctx.entity
             
-            # 회계연도 추출
+            # 회계연도 Extract
             if not self.fiscal_year and period:
                 self.fiscal_year = period
             
@@ -1374,7 +1374,7 @@ class XBRLSemanticEngine:
             self.facts.append(fact)
     
     def _build_concept_name(self, tag: str, namespace: str) -> str:
-        """네임스페이스와 태그로 전체 개념 이름 구축"""
+        """네임스페이스와 Tag로 전체 Concept Name 구축"""
         if 'ifrs' in namespace.lower():
             return f"ifrs-full_{tag}"
         elif 'gaap' in namespace.lower():
@@ -1384,8 +1384,8 @@ class XBRLSemanticEngine:
         return tag
     
     def _apply_semantic_label(self, concept: str) -> str:
-        """기술적 태그에 인간 친화적 라벨 적용"""
-        # 1. 명시적 매핑 확인
+        """기술적 Tag에 인간 친화적 Label Apply"""
+        # 1. 명시적 매핑 Check
         if concept in self.label_mapping:
             return self.label_mapping[concept]
         
@@ -1398,35 +1398,35 @@ class XBRLSemanticEngine:
         return CoreFinancialConcepts.get_label(concept)
     
     def _is_numeric(self, value: str) -> bool:
-        """수치 여부 확인"""
+        """수치 여부 Check"""
         clean = value.replace(',', '').replace(' ', '').replace('-', '').replace('.', '')
         return clean.isdigit()
     
     def _filter_core_financials(self) -> List[SemanticFact]:
         """
-        핵심 재무 데이터 필터링
+        핵심 재무 데이터 Filtering
         
-        1. 연결재무제표 우선
-        2. 핵심 계정 과목 우선
-        3. 수치 데이터만
+        1. Consolidated Statement Priority
+        2. 핵심 계정 과목 Priority
+        3. 수치 데이터only
         """
-        # 연결재무제표 우선 필터링
+        # Consolidated Statement Priority Filtering
         filtered = self.context_filter.filter_consolidated_priority(self.facts)
         
-        # 핵심 재무 개념 필터링  
+        # Core Financial Concept Filtering  
         core = []
         other = []
         
         for fact in filtered:
             if CoreFinancialConcepts.is_core_financial(fact.concept):
                 core.append(fact)
-            elif fact.value != 0:  # 0이 아닌 값만
+            elif fact.value != 0:  # Non-zero Valueonly
                 other.append(fact)
         
-        # 핵심 우선, 기타 후순위
+        # Core priority, Others secondary
         result = core + other
         
-        # 금액 크기 순 정렬
+        # Sort by Amount Magnitude
         result.sort(key=lambda f: abs(float(f.value)), reverse=True)
         
         return result
@@ -1443,31 +1443,31 @@ class XBRLSemanticEngine:
         """
         qa_pairs = []
         
-        # 1. 유연한 라벨 매칭으로 fact_dict 구축
+        # 1. Flexible Label Matching으로 fact_dict 구축
         fact_dict = self._build_flexible_fact_dict(facts)
         
-        # 2. 핵심 비율 분석 Q&A (5-10개) - How/Why style
+        # 2. Core Ratio Analysis Q&A (5-10개) - How/Why style
         qa_pairs.extend(self._generate_ratio_analysis_qa(fact_dict, facts))
         
-        # 3. 자산 구성비 분석 Q&A (개별 항목별, 20개+) - Analytical
+        # 3. Assets Composition Analysis Q&A (개별 Item별, 20개+) - Analytical
         qa_pairs.extend(self._generate_composition_qa(fact_dict, facts))
         
         # 4. v11.0: Top Items REDUCED to 10% - Only 5 items (was 20)
         # Simple queries should be < 10% of total
         qa_pairs.extend(self._generate_top_items_qa(facts[:5]))
         
-        # 5. 재무 건전성 종합 평가 Q&A
+        # 5. Financial Health 종합 평가 Q&A
         qa = self._generate_financial_health_qa(fact_dict, facts)
         if qa:
             qa_pairs.append(qa)
             
-        # 6. 활동성 분석 Q&A (Expert CoT)
+        # 6. Activity Analysis Q&A (Expert CoT)
         qa_pairs.extend(self._generate_activity_analysis_qa(fact_dict, facts))
         
-        # 7. 효율성 분석 Q&A (Expert CoT)
+        # 7. Efficiency Analysis Q&A (Expert CoT)
         qa_pairs.extend(self._generate_efficiency_qa(fact_dict, facts))
         
-        # 8. 추세 분석 Q&A (YoY)
+        # 8. Trend Analysis Q&A (YoY)
         qa_pairs.extend(self._generate_trend_analysis_qa(facts))
         
         # 9. v11.0: Cross-Table Analysis (NEW - Multi-Statement Synthesis)
@@ -1478,28 +1478,28 @@ class XBRLSemanticEngine:
     
     def _build_flexible_fact_dict(self, facts: List[SemanticFact], target_period: str = None) -> Dict:
         """
-        유연한 라벨/개념 매칭을 위한 복합 딕셔너리 구축
+        유연한 Label/Concept 매칭을 위한 복합 딕셔너리 구축
         
         Args:
             facts: 팩트 리스트
-            target_period: 특정 기간(예: "2024") 데이터만 필터링 (None이면 모두)
+            target_period: 특정 Period(e.g., "2024") Data Only Filtering (None이면 All)
         """
         fact_dict = {}
         
-        # 핵심 항목 별칭 정의 (다양한 태그명 매핑)
+        # Core Item Alias Definitions (다양한 Tag명 매핑)
         ALIASES = {
-            'total_assets': ['Assets', 'TotalAssets', 'AssetsTotal', '자산총계', 'assets'],
-            'total_liabilities': ['Liabilities', 'TotalLiabilities', 'LiabilitiesTotal', '부채총계', 'liabilities'],
-            'total_equity': ['Equity', 'StockholdersEquity', 'TotalEquity', '자본총계', 'equity', 'ShareholdersEquity'],
-            'current_assets': ['CurrentAssets', 'AssetsCurrent', '유동자산', 'currentassets'],
-            'current_liabilities': ['CurrentLiabilities', 'LiabilitiesCurrent', '유동부채', 'currentliabilities'],
-            'noncurrent_assets': ['NoncurrentAssets', 'AssetsNoncurrent', '비유동자산'],
-            'revenue': ['Revenue', 'Revenues', 'NetSales', 'Sales', '매출액', 'TotalRevenue', 'RevenueFromContractWithCustomerExcludingAssessedTax'],
-            'net_income': ['NetIncome', 'ProfitLoss', 'NetIncomeLoss', '당기순이익', 'NetEarnings'],
+            'total_assets': ['Assets', 'TotalAssets', 'AssetsTotal', 'Total Assets', 'assets'],
+            'total_liabilities': ['Liabilities', 'TotalLiabilities', 'LiabilitiesTotal', 'Total Liabilities', 'liabilities'],
+            'total_equity': ['Equity', 'StockholdersEquity', 'TotalEquity', 'Total Equity', 'equity', 'ShareholdersEquity'],
+            'current_assets': ['CurrentAssets', 'AssetsCurrent', 'Current Assets', 'currentassets'],
+            'current_liabilities': ['CurrentLiabilities', 'LiabilitiesCurrent', 'Current Liabilities', 'currentliabilities'],
+            'noncurrent_assets': ['NoncurrentAssets', 'AssetsNoncurrent', '비Current Assets'],
+            'revenue': ['Revenue', 'Revenues', 'NetSales', 'Sales', 'Revenues', 'TotalRevenue', 'RevenueFromContractWithCustomerExcludingAssessedTax'],
+            'net_income': ['NetIncome', 'ProfitLoss', 'NetIncomeLoss', 'Net Income', 'NetEarnings'],
             'gross_profit': ['GrossProfit', '매출총이익', 'GrossMargin'],
-            'operating_income': ['OperatingIncome', 'OperatingProfit', '영업이익', 'IncomeFromOperations'],
-            'cash': ['Cash', 'CashAndCashEquivalents', 'CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents', '현금및현금성자산'],
-            'inventory': ['Inventory', 'Inventories', 'InventoryNet', '재고자산'],
+            'operating_income': ['OperatingIncome', 'OperatingProfit', 'Operating Income', 'IncomeFromOperations'],
+            'cash': ['Cash', 'CashAndCashEquivalents', 'CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents', '현금및현금성Assets'],
+            'inventory': ['Inventory', 'Inventories', 'InventoryNet', '재고Assets'],
             'receivables': ['AccountsReceivable', 'TradeReceivables', 'AccountsReceivableNetCurrent', '매출채권'],
             'cogs': ['CostOfGoodsAndServicesSold', 'CostOfRevenue', 'CostOfSales', '매출원가'],
             'rnd_expenses': ['ResearchAndDevelopmentExpense', 'ResearchAndDevelopment', 'ResearchAndDevelopmentExpenseExcludingAmortization', 'RndExpenese', '경상연구개발비'],
@@ -1507,17 +1507,17 @@ class XBRLSemanticEngine:
         }
         
         for fact in facts:
-            # 기간 필터링
+            # Period Filtering
             if target_period and fact.period != target_period:
                 continue
 
-            # 원본 라벨/개념으로 저장
+            # Original Label/Concept으로 Save
             key = f"{fact.label}_{fact.period}"
             fact_dict[key] = fact
             fact_dict[fact.label] = fact
             fact_dict[fact.concept] = fact
             
-            # 개념명의 마지막 부분으로도 저장 (us-gaap:Assets -> Assets)
+            # Concept명의 마지막 부분으로도 Save (us-gaap:Assets -> Assets)
             short_concept = fact.concept.split('_')[-1].split(':')[-1]
             fact_dict[short_concept] = fact
             fact_dict[short_concept.lower()] = fact
@@ -1526,17 +1526,17 @@ class XBRLSemanticEngine:
             for alias_key, patterns in ALIASES.items():
                 for pattern in patterns:
                     if pattern.lower() in short_concept.lower() or pattern.lower() == short_concept.lower():
-                        if alias_key not in fact_dict:  # 첫 매칭만
+                        if alias_key not in fact_dict:  # 첫 매칭only
                             fact_dict[alias_key] = fact
                         break
         
         return fact_dict
     
     def _generate_ratio_analysis_qa(self, fact_dict: Dict, facts: List[SemanticFact]) -> List[Dict]:
-        """비율 분석 Q&A 생성 (여러 종류)"""
+        """Ratio Analysis Q&A Generate (여러 종류)"""
         qa_list = []
         
-        # 1. 부채비율 (Debt Ratio)
+        # 1. Debt Ratio (Debt Ratio)
         liabilities = fact_dict.get('total_liabilities')
         equity = fact_dict.get('total_equity')
         industry = self.industry_code
@@ -1716,10 +1716,10 @@ $$= \\frac{{{cash_b:.3f}B}}{{{assets_b:.3f}B}} \\times 100\\% = {ratio:.2f}\\%$$
         
         # Asset-related items only
         asset_facts = [f for f in facts if 'asset' in f.label.lower() or 'asset' in f.concept.lower() 
-                       or '자산' in f.label]
+                       or 'Assets' in f.label]
         
         for fact in asset_facts[:10]:  # Limit to 10 items
-            if float(fact.value) > 0 and fact.label != '자산총계' and 'total' not in fact.label.lower():
+            if float(fact.value) > 0 and fact.label != 'Total Assets' and 'total' not in fact.label.lower():
                 ratio = float(fact.value) / total_val * 100
                 if ratio > 1.0:  # Only significant items (> 1%)
                     label = ScaleProcessor.fix_label_typos(fact.label)
@@ -1789,7 +1789,7 @@ This value ranks #{i} by absolute magnitude among all reported line items.
         return qa_list
     
     def _generate_financial_health_qa(self, fact_dict: Dict, facts: List[SemanticFact]) -> Optional[Dict]:
-        """종합 재무 건전성 평가 Q&A"""
+        """종합 Financial Health 평가 Q&A"""
         assets = fact_dict.get('total_assets')
         liabilities = fact_dict.get('total_liabilities')
         equity = fact_dict.get('total_equity')
@@ -1797,7 +1797,7 @@ This value ranks #{i} by absolute magnitude among all reported line items.
         if not assets or not liabilities:
             return None
         
-        # 🔴 FIX: 재무 등식(Sanity Check) 검증
+        # 🔴 FIX: 재무 등식(Sanity Check) Verification
         is_valid_eq, eq_msg = ScaleProcessor.validate_financial_equation(
             assets.value, liabilities.value, equity.value if equity else None
         )
@@ -2174,8 +2174,8 @@ SG&A expenses consume {ratio:.2f}% of revenue. {'✅ Highly efficient cost struc
     
     def _generate_debt_ratio_qa(self, facts: Dict) -> Optional[Dict[str, str]]:
         """Debt Ratio Q&A - v10.0 English"""
-        liabilities = facts.get('total_liabilities') or facts.get('부채총계') or facts.get('Liabilities')
-        equity = facts.get('total_equity') or facts.get('자본총계') or facts.get('Equity')
+        liabilities = facts.get('total_liabilities') or facts.get('Total Liabilities') or facts.get('Liabilities')
+        equity = facts.get('total_equity') or facts.get('Total Equity') or facts.get('Equity')
         
         if not liabilities or not equity or float(equity.value) == 0:
             return None
@@ -2194,8 +2194,8 @@ SG&A expenses consume {ratio:.2f}% of revenue. {'✅ Highly efficient cost struc
     
     def _generate_current_ratio_qa(self, facts: Dict) -> Optional[Dict[str, str]]:
         """Current Ratio Q&A - v10.0 English"""
-        current_assets = facts.get('current_assets') or facts.get('유동자산') or facts.get('CurrentAssets')
-        current_liabilities = facts.get('current_liabilities') or facts.get('유동부채') or facts.get('CurrentLiabilities')
+        current_assets = facts.get('current_assets') or facts.get('Current Assets') or facts.get('CurrentAssets')
+        current_liabilities = facts.get('current_liabilities') or facts.get('Current Liabilities') or facts.get('CurrentLiabilities')
         
         if not current_assets or not current_liabilities or float(current_liabilities.value) == 0:
             return None
@@ -2214,7 +2214,7 @@ SG&A expenses consume {ratio:.2f}% of revenue. {'✅ Highly efficient cost struc
     
     def _generate_gross_margin_qa(self, facts: Dict) -> Optional[Dict[str, str]]:
         """Gross Margin Q&A - v10.0 English"""
-        revenue = facts.get('revenue') or facts.get('매출액') or facts.get('Revenue')
+        revenue = facts.get('revenue') or facts.get('Revenues') or facts.get('Revenue')
         gross_profit = facts.get('gross_profit') or facts.get('매출총이익') or facts.get('GrossProfit')
         
         if not revenue or not gross_profit or float(revenue.value) == 0:
@@ -2234,8 +2234,8 @@ SG&A expenses consume {ratio:.2f}% of revenue. {'✅ Highly efficient cost struc
     
     def _generate_roe_qa(self, facts: Dict) -> Optional[Dict[str, str]]:
         """ROE Q&A - v10.0 English"""
-        net_income = facts.get('net_income') or facts.get('당기순이익') or facts.get('ProfitLoss') or facts.get('NetIncome')
-        equity = facts.get('total_equity') or facts.get('자본총계') or facts.get('Equity')
+        net_income = facts.get('net_income') or facts.get('Net Income') or facts.get('ProfitLoss') or facts.get('NetIncome')
+        equity = facts.get('total_equity') or facts.get('Total Equity') or facts.get('Equity')
         
         if not net_income or not equity or float(equity.value) == 0:
             return None
@@ -2254,9 +2254,9 @@ SG&A expenses consume {ratio:.2f}% of revenue. {'✅ Highly efficient cost struc
     
     def _generate_asset_composition_qa(self, facts: Dict) -> Optional[Dict[str, str]]:
         """Asset Composition Analysis - v10.0 English"""
-        total_assets = facts.get('total_assets') or facts.get('자산총계') or facts.get('Assets')
-        current_assets = facts.get('current_assets') or facts.get('유동자산') or facts.get('CurrentAssets')
-        noncurrent_assets = facts.get('non_current_assets') or facts.get('비유동자산') or facts.get('NoncurrentAssets')
+        total_assets = facts.get('total_assets') or facts.get('Total Assets') or facts.get('Assets')
+        current_assets = facts.get('current_assets') or facts.get('Current Assets') or facts.get('CurrentAssets')
+        noncurrent_assets = facts.get('non_current_assets') or facts.get('비Current Assets') or facts.get('NoncurrentAssets')
         
         if not total_assets:
             return None
@@ -2290,12 +2290,12 @@ SG&A expenses consume {ratio:.2f}% of revenue. {'✅ Highly efficient cost struc
         ]
         
         # Balance Sheet
-        balance_sheet_facts = [f for f in facts if '재무상태표' in f.hierarchy]
+        balance_sheet_facts = [f for f in facts if 'Balance Sheet' in f.hierarchy]
         if balance_sheet_facts:
             lines.extend(self._generate_balance_sheet_section(balance_sheet_facts))
         
         # Income Statement
-        income_facts = [f for f in facts if '손익계산서' in f.hierarchy or '포괄' in f.hierarchy]
+        income_facts = [f for f in facts if 'Income Statement' in f.hierarchy or '포괄' in f.hierarchy]
         if income_facts:
             lines.extend(self._generate_income_statement_section(income_facts))
         
@@ -2316,7 +2316,7 @@ SG&A expenses consume {ratio:.2f}% of revenue. {'✅ Highly efficient cost struc
         ]
         
         # Assets
-        asset_facts = [f for f in facts if '자산' in f.hierarchy]
+        asset_facts = [f for f in facts if 'Assets' in f.hierarchy]
         if asset_facts:
             lines.append("| **[Assets]** | |")
             for fact in sorted(asset_facts, key=lambda x: float(x.value), reverse=True):
@@ -2324,7 +2324,7 @@ SG&A expenses consume {ratio:.2f}% of revenue. {'✅ Highly efficient cost struc
                 lines.append(f"| {english_label} | {self.scale_processor.format_currency(fact.value)} |")
         
         # Liabilities
-        liability_facts = [f for f in facts if '부채' in f.hierarchy]
+        liability_facts = [f for f in facts if 'Liabilities' in f.hierarchy]
         if liability_facts:
             lines.append("| **[Liabilities]** | |")
             for fact in sorted(liability_facts, key=lambda x: float(x.value), reverse=True):
@@ -2332,7 +2332,7 @@ SG&A expenses consume {ratio:.2f}% of revenue. {'✅ Highly efficient cost struc
                 lines.append(f"| {english_label} | {self.scale_processor.format_currency(fact.value)} |")
         
         # Equity
-        equity_facts = [f for f in facts if '자본' in f.hierarchy]
+        equity_facts = [f for f in facts if 'Equity' in f.hierarchy]
         if equity_facts:
             lines.append("| **[Equity]** | |")
             for fact in sorted(equity_facts, key=lambda x: float(x.value), reverse=True):
@@ -2462,12 +2462,12 @@ These figures represent {self.company_name}'s financial footprint in {self.fisca
         
         # Mapped to English
         target_map = {
-            '자산총계': 'Total Assets', 'Assets': 'Total Assets', 'TotalAssets': 'Total Assets',
-            '부채총계': 'Total Liabilities', 'Liabilities': 'Total Liabilities', 'TotalLiabilities': 'Total Liabilities',
-            '자본총계': 'Total Equity', 'Equity': 'Total Equity', 'TotalEquity': 'Total Equity',
-            '매출액': 'Revenues', 'Revenues': 'Revenues', 'Revenue': 'Revenues',
-            '영업이익': 'Operating Income', 'OperatingIncome': 'Operating Income',
-            '당기순이익': 'Net Income', 'NetIncome': 'Net Income'
+            'Total Assets': 'Total Assets', 'Assets': 'Total Assets', 'TotalAssets': 'Total Assets',
+            'Total Liabilities': 'Total Liabilities', 'Liabilities': 'Total Liabilities', 'TotalLiabilities': 'Total Liabilities',
+            'Total Equity': 'Total Equity', 'Equity': 'Total Equity', 'TotalEquity': 'Total Equity',
+            'Revenues': 'Revenues', 'Revenues': 'Revenues', 'Revenue': 'Revenues',
+            'Operating Income': 'Operating Income', 'OperatingIncome': 'Operating Income',
+            'Net Income': 'Net Income', 'NetIncome': 'Net Income'
         }
         
         for fact in facts:
@@ -2728,13 +2728,13 @@ def process_xbrl_files(
     output_dir: Optional[str] = None
 ) -> XBRLIntelligenceResult:
     """
-    XBRL 파일 처리 편의 함수
+    XBRL File Process 편의 함수
     
     Args:
-        label_file_path: _lab.xml 파일 경로
-        instance_file_path: _htm.xml 또는 XBRL 인스턴스 파일 경로
-        company_name: 회사명 (선택)
-        output_dir: 출력 디렉토리 (선택, 지정 시 파일 저장)
+        label_file_path: _lab.xml File Path
+        instance_file_path: _htm.xml 또는 XBRL 인스턴스 File Path
+        company_name: 회사명 (Optional)
+        output_dir: Output 디렉토리 (Optional, 지정 시 File Save)
     
     Returns:
         XBRLIntelligenceResult
@@ -2753,17 +2753,17 @@ def process_xbrl_files(
     engine = XBRLSemanticEngine(company_name=company_name)
     result = engine.process_joint(label_content, instance_content)
     
-    # 파일 저장
+    # File Save
     if output_dir and result.success:
         import os
         os.makedirs(output_dir, exist_ok=True)
         
-        # 마크다운 저장
+        # 마크다운 Save
         md_path = os.path.join(output_dir, f"{company_name or 'report'}_financial.md")
         with open(md_path, 'w', encoding='utf-8') as f:
             f.write(result.financial_report_md)
         
-        # JSONL 저장
+        # JSONL Save
         jsonl_path = os.path.join(output_dir, f"{company_name or 'report'}_qa.jsonl")
         with open(jsonl_path, 'w', encoding='utf-8') as f:
             f.write('\n'.join(result.jsonl_data))
