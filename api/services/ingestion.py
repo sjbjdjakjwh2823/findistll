@@ -331,8 +331,10 @@ class FileIngestionService:
             tables = self._build_financial_tables(facts_list)
 
             # CRITICAL DEBUG: Verify Data Pipe before return
-            qa_count = len(result.reasoning_qa)
-            print(f"CRITICAL DEBUG: Final QA List Size = {qa_count}")
+            import copy
+            final_qa = copy.deepcopy(result.reasoning_qa)
+            qa_count = len(final_qa)
+            print(f"V11.5 DATA FOUND: {qa_count} items ready for export")
             
             return {
                 "title": f"XBRL: {result.company_name or filename}",
@@ -340,7 +342,7 @@ class FileIngestionService:
                 "tables": tables,
                 "key_metrics": result.key_metrics,
                 "facts": facts_list,
-                "reasoning_qa": result.reasoning_qa, # CRITICAL: Hardcoded pass-through
+                "reasoning_qa": final_qa, # CRITICAL: Deep copy pass-through
                 "jsonl_data": result.jsonl_data,  # v11.5: Pass pre-verified JSONL
                 "financial_report_md": result.financial_report_md,
                 "parse_log": [],
