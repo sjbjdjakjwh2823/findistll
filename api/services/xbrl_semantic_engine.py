@@ -148,9 +148,12 @@ class XBRLSemanticEngine:
     Features strict English enforcement and poison pill verification.
     """
     
-    def __init__(self, company_name: str = "Target Corp", fiscal_year: str = "2024"):
+import os
+
+    def __init__(self, company_name: str = "Target Corp", fiscal_year: str = "2024", file_path: str = "unknown_file"):
         self.company_name = company_name
         self.fiscal_year = fiscal_year
+        self.file_path = file_path
         self.facts: List[SemanticFact] = []
         self.reasoning_qa: List[Dict[str, str]] = []
         self.errors: List[str] = []
@@ -329,10 +332,13 @@ class XBRLSemanticEngine:
                         context_ref=ctx_ref,
                         decimals=dec_int
                     ))
+        print(f"TRACE 1: Found {len(facts)} facts in XML")
         return facts
 
     def _generate_reasoning_qa(self, facts: List[SemanticFact]) -> List[Dict[str, str]]:
         """Calculates YoY trends and generates CoT responses."""
+        print(f"ENV CHECK: LLM_API_KEY_PRESENT = {bool(os.getenv('GEMINI_API_KEY'))}")
+        print(f"ENV CHECK: XML_FILE_PATH = {self.file_path}")
         print(f"TRACE: Total facts found in XML = {len(facts)}")
         self.reasoning_qa = []
         
@@ -343,6 +349,7 @@ class XBRLSemanticEngine:
             concept_groups[f.concept][f.period] = f
             
         for concept, periods in concept_groups.items():
+            print(f"TRACE 2: Processing concept {concept}...")
             cy_f = periods.get("CY")
             py_f = periods.get("PY")
             
@@ -360,7 +367,7 @@ class XBRLSemanticEngine:
             )
             
             # STRICT DEBUG & APPEND VERIFICATION
-            print(f"TRACE: Created QA for {concept} -> Success: {bool(response)}")
+            print(f"TRACE 3: Generation for {concept} successful: {bool(response)}")
             
             if response:
                 self.reasoning_qa.append({
@@ -368,6 +375,7 @@ class XBRLSemanticEngine:
                     "response": response,
                     "type": "trend"
                 })
+                print(f"TRACE 4: Current list size in Engine: {len(self.reasoning_qa)}")
         
         # Comprehensive Summary as Mandatory CoT
         if facts:

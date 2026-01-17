@@ -289,7 +289,8 @@ class FileIngestionService:
         # Initialize XBRLSemanticEngine and perform structural parsing.
         engine = XBRLSemanticEngine(
             company_name="",  # Extracted during parsing
-            fiscal_year=""    # Extracted during parsing
+            fiscal_year="",    # Extracted during parsing
+            file_path=filename
         )
         
         try:
@@ -335,6 +336,7 @@ class FileIngestionService:
             final_qa = copy.deepcopy(result.reasoning_qa)
             qa_count = len(final_qa)
             print(f"V11.5 DATA RECOVERED: [{qa_count}] ROWS READY")
+            print(f"TRACE 5: Final data count being sent to Exporter: {qa_count}")
             
             return {
                 "title": f"XBRL: {result.company_name or filename}",
