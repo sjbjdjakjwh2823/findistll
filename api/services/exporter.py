@@ -9,8 +9,13 @@ Exports normalized financial data to:
 """
 
 import json
+import logging
 from typing import Dict, Any
 from datetime import datetime
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class DataExporter:
     """Exports financial data to various formats for AI training."""
@@ -48,8 +53,11 @@ class DataExporter:
         if not lines:
              raise ValueError("CRITICAL ERROR: JSONL line generation failed despite presence of reasoning_qa.")
 
+        if not lines:
+             raise ValueError("CRITICAL ERROR: JSONL line generation failed despite presence of reasoning_qa.")
+
         # EXPLICIT CONFIRMATION LOG
-        print(f"V11.5 DATA PIPE RESTORED: {len(lines)} ROWS WRITTEN")
+        print(f"V11.5 SUCCESS: {len(lines)} CoT Rows Written to Disk")
         
         return "\n".join(lines)
     
