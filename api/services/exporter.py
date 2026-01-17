@@ -53,11 +53,8 @@ class DataExporter:
         if not lines:
              raise ValueError("CRITICAL ERROR: JSONL line generation failed despite presence of reasoning_qa.")
 
-        if not lines:
-             raise ValueError("CRITICAL ERROR: JSONL line generation failed despite presence of reasoning_qa.")
-
         # EXPLICIT CONFIRMATION LOG
-        print(f"V11.5 SUCCESS: {len(lines)} CoT Rows Written to Disk")
+        print(f"V11.5 EXPORT READY: {len(lines)} Rows Found")
         
         return "\n".join(lines)
     

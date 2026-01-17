@@ -340,7 +340,7 @@ class FileIngestionService:
                 "tables": tables,
                 "key_metrics": result.key_metrics,
                 "facts": facts_list,
-                "reasoning_qa": result.reasoning_qa,
+                "reasoning_qa": result.reasoning_qa, # CRITICAL: Hardcoded pass-through
                 "jsonl_data": result.jsonl_data,  # v11.5: Pass pre-verified JSONL
                 "financial_report_md": result.financial_report_md,
                 "parse_log": [],
