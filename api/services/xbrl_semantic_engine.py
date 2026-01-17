@@ -125,17 +125,17 @@ class ExpertCoTGenerator:
             formula = f"$$Growth = \\frac{{{cy_val:.3f} - {py_val:.3f}}}{{{abs(py_val):.3f}}} \\times 100\\% = {growth:+.2f}\\%$$"
         else:
             growth = 0.0
-            formula = f"$$Growth = \\text{{N/A (Prior data missing)}}$$"
+            formula = f"$$Growth = \\text{{N/A (Historical comparison unavailable)}}$$"
         
         # 4. [Professional Insight]
         trend = "positive" if growth > 0 else "negative"
         momentum = "acceleration" if growth > 0 else "deceleration"
         insight = f"{company_name} shows a {trend} momentum in {metric_name.replace('_', ' ')}. "
-        if py_val is not None:
+        if py_val is not None and py_val != 0:
             insight += f"The {growth:+.2f}% growth indicates {momentum} in profitability and market dominance within the {industry} sector."
         else:
             insight += f"Current performance is representative of structural trends in {industry}, though longer-term trajectory requires prior period validation."
-
+            
         return (
             "[Definition]\n" + definition_text + "\n\n" +
             "[Synthesis]\n" + synthesis + "\n\n" +
@@ -288,20 +288,27 @@ class XBRLSemanticEngine:
                     ctx_date_list.append((ctx_id, date_str))
         
         # Sort unique dates to find CY and PY
+        # Sort unique dates to find CY and PY
         sorted_unique = sorted(list(unique_dates), reverse=True)
         if not sorted_unique: return {}
         
         cy_date = sorted_unique[0]
         cy_year = cy_date[:4]
         
-        # Find first date from a different year for strict YoY
+        # Flexible Timeline: Try to find different year, otherwise fallback to next available date
         py_date = None
+        
+        # 1. Try to find a date from a previous year
         for d in sorted_unique[1:]:
-            if d[:4] != cy_year:
+            if d[:4] < cy_year: # strictly previous year
                 py_date = d
                 break
-                
-        print(f"TRACE: Context Mapping -> CY: {cy_date} (Year {cy_year}), PY: {py_date} (Year {py_date[:4] if py_date else 'N/A'})")
+        
+        # 2. If no previous year found, take the next most recent date (could be same year, quarterly)
+        if not py_date and len(sorted_unique) > 1:
+            py_date = sorted_unique[1]
+            
+        print(f"TRACE: Context Mapping -> CY: {cy_date}, PY: {py_date if py_date else 'N/A'}")
         
         for cid, dstr in ctx_date_list:
             if dstr == cy_date:
@@ -362,16 +369,20 @@ class XBRLSemanticEngine:
             cy_f = periods.get("CY")
             py_f = periods.get("PY")
             
-            # Use CY if available, otherwise PY if it exists alone
+            # Force Generation: Always process if we have a CY value
             target_f = cy_f if cy_f else py_f
             if not target_f: continue
             
             c_val = cy_f.value if cy_f else target_f.value
             p_val = py_f.value if py_f else None
             
+            # Identity Check: Should not compare same value as YoY
+            if p_val == c_val:
+                p_val = None # Treat as missing prior data for growth calc
+            
             print(f"TRACE: Values for {concept} -> CY: {c_val}, PY: {p_val}")
 
-            # Force CoT through ExpertCoTGenerator
+            # Force CoT through ExpertCoTGenerator - Forced call
             response = ExpertCoTGenerator.generate(
                 metric_name=concept,
                 company_name=self.company_name,
