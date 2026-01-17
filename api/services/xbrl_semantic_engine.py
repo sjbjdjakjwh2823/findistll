@@ -734,12 +734,12 @@ class CoreFinancialConcepts:
             return "Balance Sheet"
         
         if clean in cls.INCOME_STATEMENT.values():
-            return "포괄Income Statement"
+            return "Income Statement" # Unify to "Income Statement"
         
         if clean in cls.CASH_FLOW.values():
             return "Cash Flow Statement"
         
-        return "기타"
+        return "Others"
 
 
 # ============================================================
@@ -2126,12 +2126,12 @@ $$Financial\ Scale = Total\ Assets\ (""" + ScaleProcessor.format_currency(total_
             lines.extend(self._generate_balance_sheet_section(balance_sheet_facts))
         
         # Income Statement
-        income_facts = [f for f in facts if 'Income Statement' in f.hierarchy or '포괄' in f.hierarchy]
+        income_facts = [f for f in facts if 'Income Statement' in f.hierarchy] # English Only
         if income_facts:
             lines.extend(self._generate_income_statement_section(income_facts))
         
         # Cash Flow
-        cash_flow_facts = [f for f in facts if '현금흐름' in f.hierarchy]
+        cash_flow_facts = [f for f in facts if 'Cash Flow' in f.hierarchy] # English Only
         if cash_flow_facts:
             lines.extend(self._generate_cash_flow_section(cash_flow_facts))
         
@@ -2317,6 +2317,9 @@ A Financial Performance Executive Summary provides senior leadership and investo
             }
             jsonl_lines.insert(0, json.dumps(summary_entry, ensure_ascii=False))  # Insert as FIRST entry
         
+        # v11.0 Strict Validation
+        self._validate_output_units(jsonl_lines)
+        
         return jsonl_lines
     
     def _extract_key_metrics(self, facts: List[SemanticFact]) -> Dict[str, Any]:
@@ -2407,8 +2410,13 @@ A Financial Performance Executive Summary provides senior leadership and investo
             # 3. Korean text check
             if re.search(r'[\u3131-\u318E\uAC00-\uD7A3]', line):
                 results['language_check']['passed'] = False
-                results['language_check']['errors'].append(f"Line {i+1}: Korean text detected")
-        
+                msg = f"Line {i+1}: Korean text detected"
+                results['language_check']['errors'].append(msg)
+                
+                # Strict Mode Enforcement
+                if STRICT_V11_MODE:
+                    raise RuntimeError(f"STRICT_V11_MODE VIOLATION: Korean text detected in output! {line[:100]}...")
+
         all_passed = all(
             r['passed'] for k, r in results.items() 
             if isinstance(r, dict) and 'passed' in r
@@ -2813,6 +2821,11 @@ A Financial Performance Executive Summary provides senior leadership and investo
         
         return qa_list
 
+
+# ============================================================
+# CONSTANTS & CONFIGURATION
+# ============================================================
+STRICT_V11_MODE = True  # Enforce Universal Expert CoT & English Output
 
 # ============================================================
 # CONVENIENCE FUNCTIONS
