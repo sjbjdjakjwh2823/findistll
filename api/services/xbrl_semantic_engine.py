@@ -357,11 +357,15 @@ class XBRLSemanticEngine:
                 py_val=py_f.value if py_f else None
             )
             
-            qa_pairs.append({
-                "question": f"Analyze the year-over-year (YoY) trend of {concept}.",
-                "response": response,
-                "type": "trend"
-            })
+            # STRICT DEBUG & APPEND VERIFICATION
+            print(f"DEBUG: Fact Generated for {concept} | Growth Formula Present: {'$$Growth' in response}")
+            
+            if response:
+                qa_pairs.append({
+                    "question": f"Analyze the year-over-year (YoY) trend of {concept}.",
+                    "response": response,
+                    "type": "trend"
+                })
         
         # Comprehensive Summary as Mandatory CoT
         if facts:
@@ -374,6 +378,9 @@ class XBRLSemanticEngine:
                 py_val=None,
                 definition_text=f"The Financial Performance Summary for {self.company_name} provides an aggregate view of key indicators retrieved from the v11.5 XBRL stream."
             )
+            
+            print(f"DEBUG: Fact Generated for SUMMARY | Definition Present: {'[Definition]' in summary_response}")
+            
             qa_pairs.insert(0, {
                 "question": "Provide an executive summary of the document and its year-over-year (YoY) trajectory.",
                 "response": summary_response,
