@@ -112,17 +112,25 @@ class ScaleProcessor:
             
             # 1. [Definition]
             if not definition_text:
-                definition_text = f"The {metric_name.replace('_', ' ').title()} measures a corporation's performance by revealing its financial standing from the {industry} perspective."
+                definition_text = (
+                    f"The {metric_name.replace('_', ' ').title()} measures a corporation's performance "
+                    f"by revealing its financial standing from the {industry} perspective."
+                )
             
             # 2. [Synthesis]
             cy_str = f"CY ({datetime.now().year}): {ScaleProcessor.format_currency(cy_val)}"
-            py_str = f"PY ({datetime.now().year - 1}): " + (ScaleProcessor.format_currency(py_val) if py_val is not None else "N/A (Prior data missing)")
+            py_str = f"PY ({datetime.now().year - 1}): " + (
+                ScaleProcessor.format_currency(py_val) if py_val is not None else "N/A (Prior data missing)"
+            )
             synthesis = f"{cy_str}, {py_str}."
             
             # 3. [Symbolic Reasoning]
             if py_val is not None and py_val != 0:
                 growth = float((cy_val - py_val) / abs(py_val) * 100)
-                formula = f"$$Growth = \\frac{{{cy_val:.3f} - {py_val:.3f}}}{{{abs(py_val):.3f}}} \\times 100\\% = {growth:+.2f}\\%$$"
+                formula = (
+                    f"$$Growth = \\frac{{{cy_val:.3f} - {py_val:.3f}}}{{{abs(py_val):.3f}}} "
+                    f"\\times 100\\% = {growth:+.2f}\\%$$"
+                )
             else:
                 growth = 0.0
                 formula = f"$$Growth = \\text{{N/A (Historical comparison unavailable)}}$$"
@@ -133,9 +141,15 @@ class ScaleProcessor:
             insight = f"{company_name} shows a {trend} momentum in {metric_name.replace('_', ' ')}. "
             
             if py_val is not None and py_val != 0:
-                insight += f"The {growth:+.2f}% growth indicates {momentum} in profitability and market dominance within the {industry} sector."
+                insight += (
+                    f"The {growth:+.2f}% growth indicates {momentum} in profitability "
+                    f"and market dominance within the {industry} sector."
+                )
             else:
-                insight += f"Current performance is representative of structural trends in {industry}, though longer-term trajectory requires prior period validation."
+                insight += (
+                    f"Current performance is representative of structural trends in {industry}, "
+                    "though longer-term trajectory requires prior period validation."
+                )
                 
             # V13.1 Insight Nuance: Contextualizing Non-Standard Figures
             abs_val = abs(cy_val)
@@ -195,7 +209,10 @@ class ScaleProcessor:
             
             for qa in reasoning_qa:
                 entry = {
-                    "instruction": f"Analyze the year-over-year (YoY) trend of {self.company_name}, focusing on its {qa.get('type', 'financial')} metrics.",
+                    "instruction": (
+                        f"Analyze the year-over-year (YoY) trend of {self.company_name}, "
+                        f"focusing on its {qa.get('type', 'financial')} metrics."
+                    ),
                     "input": f"{self.company_name} {self.fiscal_year} Financial Data",
                     "output": qa["response"],
                     "metadata": {
@@ -503,7 +520,10 @@ class ScaleProcessor:
                      "type": "summary"
                  })
     
-            logger.warning(f"V13.0 COMPLETE: BUILD SUCCESS & YoY ACTIVE {len(self.reasoning_qa)} CHAINS FROM {len(facts)} FACTS")
+            logger.warning(
+                f"V13.0 COMPLETE: BUILD SUCCESS & YoY ACTIVE {len(self.reasoning_qa)} "
+                f"CHAINS FROM {len(facts)} FACTS"
+            )
             print(f"V13.0 COMPLETE: BUILD SUCCESS & YoY ACTIVE {len(facts)} FACTS")
             return self.reasoning_qa
     
