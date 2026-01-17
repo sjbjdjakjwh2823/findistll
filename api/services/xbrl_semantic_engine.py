@@ -7,13 +7,13 @@ into English-only CoT JSONL datasets for LLM training.
 CRITICAL: 100% Zero-Base Reconstruction. All legacy logic and Korean markers removed.
 """
 
-import re
 import os
+import re
 import json
 import logging
-from typing import Dict, Any, List, Optional, Tuple, Set
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
+from typing import Dict, Any, List, Optional, Tuple, Set
 from dataclasses import dataclass, field
 
 # Configure logging
@@ -148,27 +148,27 @@ class ExpertCoTGenerator:
         abs_val = abs(cy_val)
         
         if cy_val == 0:
-                insight += (
-                    " **Note: This zero-balance entry indicates inactive status "
-                    "or no reported figures for this period.**"
-                )
+            insight += (
+                " **Note: This zero-balance entry indicates inactive status "
+                "or no reported figures for this period.**"
+            )
         elif abs_val < 10:
-                insight += (
-                    f" **Note: The value {abs_val} suggests this metric may represent "
-                    "an operational count, ratio, or categorical flag "
-                    "rather than a direct monetary figure.**"
-                )
+            insight += (
+                f" **Note: The value {abs_val} suggests this metric may represent "
+                "an operational count, ratio, or categorical flag "
+                "rather than a direct monetary figure.**"
+            )
         elif abs_val < Decimal("0.001"):
-                insight += (
-                    " **Note: This analysis represents a broad Data Exploration Phase. "
-                    "Value magnitude warrants verification of unit scale "
-                    "(e.g., Millions vs Billions) or indicates an emerging metric.**"
-                )
+            insight += (
+                " **Note: This analysis represents a broad Data Exploration Phase. "
+                "Value magnitude warrants verification of unit scale "
+                "(e.g., Millions vs Billions) or indicates an emerging metric.**"
+            )
         elif py_val is None:
-                insight += (
-                    " **Note: Historical data missing necessitates caution "
-                    "in trend extrapolation.**"
-                )
+            insight += (
+                " **Note: Historical data missing necessitates caution "
+                "in trend extrapolation.**"
+            )
             
         return (
             "[Definition]\n" + definition_text + "\n\n" +
@@ -179,7 +179,7 @@ class ExpertCoTGenerator:
 
 class XBRLSemanticEngine:
     """
-    Primary engine for distalizing financial XML into JSONL.
+    Primary engine for distillation financial XML into JSONL.
     Features strict English enforcement and poison pill verification.
     """
     
@@ -218,7 +218,7 @@ class XBRLSemanticEngine:
             
             # Poison Pill Check (Strict v11.5)
             if korean_pattern.search(line):
-                logger.error(f"POISON PILL TRIGGERED: Korean detected in output -> {line}")  # noqa: E501
+                logger.error(f"POISON PILL TRIGGERED: Korean detected in output -> {line}")
                 raise RuntimeError("KOREAN_DETECTED")
             
             jsonl_lines.append(line)
@@ -313,7 +313,6 @@ class XBRLSemanticEngine:
         Precision YoY Mapping using 365-day target window.
         """
         from collections import Counter
-        from datetime import datetime
         
         context_map = {}
         date_counts = Counter()
@@ -347,8 +346,8 @@ class XBRLSemanticEngine:
         try:
             cy_dt = datetime.strptime(cy_date_str, "%Y-%m-%d")
         except ValueError:
-                cy_dt = None
-                logger.warning(f"V13.0 DATE PARSE FAIL: {cy_date_str}")
+            cy_dt = None
+            logger.warning(f"V13.0 DATE PARSE FAIL: {cy_date_str}")
 
         # 3. Identify PY (Target: ~1 year prior with 30-day flexibility)
         py_date_str = None
@@ -364,10 +363,10 @@ class XBRLSemanticEngine:
                     
                     # Target: 330 to 390 days (approx 1 year)
                     if 300 <= days_diff <= 400:
-                            gap_score = abs(days_diff - 365)
-                            if gap_score < best_gap:
-                                best_gap = gap_score
-                                py_date_str = d_str
+                        gap_score = abs(days_diff - 365)
+                        if gap_score < best_gap:
+                            best_gap = gap_score
+                            py_date_str = d_str
                 except ValueError:
                     continue
         
@@ -377,11 +376,11 @@ class XBRLSemanticEngine:
             # Filter out CY and dates too close (< 90 days)
             candidates = []
             for d in sorted_dates:
-                    if d == cy_date_str: continue
-                    try:
-                        if cy_dt and (cy_dt - datetime.strptime(d, "%Y-%m-%d")).days > 90:
-                            candidates.append(d)
-                    except: pass
+                if d == cy_date_str: continue
+                try:
+                    if cy_dt and (cy_dt - datetime.strptime(d, "%Y-%m-%d")).days > 90:
+                        candidates.append(d)
+                except: pass
             
             if candidates:
                 py_date_str = candidates[-1] # The oldest available date
@@ -440,12 +439,16 @@ class XBRLSemanticEngine:
                 decimals=dec_int
             ))
 
-        logger.warning(f"TRACE 1: Found {len(facts)} facts in XML (V13.0 Greedy Parsing)")  # noqa: E501
+        logger.warning(f"TRACE 1: Found {len(facts)} facts in XML (V13.0 Greedy Parsing)")
         return facts
 
     def _generate_reasoning_qa(self, facts: List[SemanticFact]) -> List[Dict[str, str]]:
         """Calculates YoY trends and generates CoT responses."""
-        logger.warning(f"ENV CHECK: LLM_API_KEY_PRESENT = {bool(os.getenv('GEMINI_API_KEY'))}")  # noqa: E501
+        
+        # ENV CHECK logger split
+        has_key = bool(os.getenv('GEMINI_API_KEY'))
+        logger.warning(f"ENV CHECK: LLM_API_KEY_PRESENT = {has_key}")
+        
         logger.warning(f"TRACE: Total facts found in XML = {len(facts)}")
         self.reasoning_qa = []
         
@@ -509,18 +512,20 @@ class XBRLSemanticEngine:
             
         # [Strict Data Check]
         if not self.reasoning_qa and facts:
-                logger.warning("No specific YoY pairs found, but facts exist. Generating coverage report.")  # noqa: E501
-                self.reasoning_qa.append({
-                    "question": "Document Overview",
-                    "response": summary_response if 'summary_response' in locals() else "Data extraction complete but disjointed.",
-                    "type": "summary"
-                })
+            logger.warning(
+                "No specific YoY pairs found, but facts exist. Generating coverage report."
+            )
+            self.reasoning_qa.append({
+                "question": "Document Overview",
+                "response": summary_response if 'summary_response' in locals() else "Data extraction complete.",
+                "type": "summary"
+            })
 
         logger.warning(
             f"V13.0 COMPLETE: BUILD SUCCESS & YoY ACTIVE {len(self.reasoning_qa)} "
             f"CHAINS FROM {len(facts)} FACTS"
         )
-        print(f"V13.0 COMPLETE: BUILD SUCCESS & YoY ACTIVE {len(facts)} FACTS")  # noqa: E501
+        print(f"V13.0 COMPLETE: BUILD SUCCESS & YoY ACTIVE {len(facts)} FACTS")
         return self.reasoning_qa
 
     def process_mock(self) -> XBRLIntelligenceResult:
