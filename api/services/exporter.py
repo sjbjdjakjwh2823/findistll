@@ -16,52 +16,29 @@ class DataExporter:
     """Exports financial data to various formats for AI training."""
     
     def to_jsonl(self, data: Dict[str, Any]) -> str:
-        """Convert to JSONL format for LLM fine-tuning."""
-        lines = []
+        """
+        Convert to JSONL format exclusively using reasoning_qa.
+        Surgical removal: legacy short-form logic (Row 2+) removed.
+        """
+        # Note: reasoning_qa already contains summary and trend pairs in 4-step CoT format.
+        reasoning_qa = data.get("reasoning_qa", [])
         
-        # Summary instruction
-        lines.append(json.dumps({
-            "instruction": "Summarize the key financial findings in this document.",
-            "input": data.get("title", "Financial Document"),
-            "output": data.get("summary", "No summary available")
-        }, ensure_ascii=False))
-        
-        # Table extraction instructions
-        for table in data.get("tables", []):
-            table_name = table.get("name", "Table")
-            headers = table.get("headers", [])
-            rows = table.get("rows", [])
+        # If the backend engine provided JSONL data directly (with Poison Pill already applied), reuse it.
+        # This occurs in the v11.5 strict pipeline.
+        if "jsonl_data" in data and data["jsonl_data"]:
+            return "\n".join(data["jsonl_data"])
             
-            if rows:
-                table_text = self._table_to_text(table)
-                lines.append(json.dumps({
-                    "instruction": f"Analyze the data in the '{table_name}' table.",
-                    "input": table_text,
-                    "output": f"This table contains {len(headers)} columns and {len(rows)} data rows."
-                }, ensure_ascii=False))
-                
-                # Create Q&A pairs for each row
-                for row in rows[:10]:
-                    if len(headers) > 0 and len(row) > 0:
-                        # Safe zip handling
-                        pairs = []
-                        for h, v in zip(headers, row):
-                            pairs.append(f"{h}: {v}")
-                        
-                        lines.append(json.dumps({
-                            "instruction": f"In '{table_name}', find the data where '{headers[0]}' is '{row[0]}'.",
-                            "input": table_text,
-                            "output": ", ".join(pairs)
-                        }, ensure_ascii=False))
-        
-        # Key metrics instructions
-        for metric, value in data.get("key_metrics", {}).items():
-            lines.append(json.dumps({
-                "instruction": f"Extract the value for {metric} from the financial statement.",
+        # Fallback for data structures without pre-generated JSONL
+        lines = []
+        for qa in reasoning_qa:
+            entry = {
+                "instruction": qa.get("question", "Analyze the financial data."),
                 "input": data.get("title", "Financial Document"),
-                "output": f"{metric}: {value}"
-            }, ensure_ascii=False))
-        
+                "output": qa.get("response", ""),
+                "metadata": data.get("metadata", {})
+            }
+            lines.append(json.dumps(entry, ensure_ascii=False))
+            
         return "\n".join(lines)
     
     def to_markdown(self, data: Dict[str, Any]) -> str:
