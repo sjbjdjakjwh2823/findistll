@@ -187,6 +187,7 @@ class FinancialNormalizer:
         
         # Try to parse
         try:
+            multiplier = 1
             result = float(cleaned) * multiplier
             if is_negative:
                 result = -result

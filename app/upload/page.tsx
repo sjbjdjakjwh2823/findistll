@@ -89,7 +89,7 @@ export default function UploadPage() {
         // Get auth token
         const token = localStorage.getItem('access_token');
         if (!token) {
-            setToast({ message: '로그인이 필요합니다.', type: 'error' });
+            setToast({ message: 'Authentication required. Please log in.', type: 'error' });
             setLoading(false);
             return;
         }
@@ -123,7 +123,7 @@ export default function UploadPage() {
                 updatedFiles[i].error = errorMsg;
 
                 // Show toast for conversion errors
-                setToast({ message: `변환 오류: ${errorMsg}`, type: 'error' });
+                setToast({ message: `Conversion error: ${errorMsg}`, type: 'error' });
             }
 
             setFiles([...updatedFiles]);
@@ -134,7 +134,7 @@ export default function UploadPage() {
         // Show success toast if any file succeeded
         const successCount = updatedFiles.filter(f => f.status === 'success').length;
         if (successCount > 0) {
-            setToast({ message: `${successCount}개 파일 변환 완료!`, type: 'success' });
+            setToast({ message: `${successCount} file(s) processed successfully!`, type: 'success' });
         }
     };
 
@@ -170,10 +170,10 @@ export default function UploadPage() {
             window.URL.revokeObjectURL(blobUrl);
             document.body.removeChild(a);
 
-            setToast({ message: '다운로드 완료!', type: 'success' });
+            setToast({ message: 'Download complete!', type: 'success' });
         } catch (error: any) {
             console.error('Download failed:', error);
-            setToast({ message: `다운로드 실패: ${error.message}`, type: 'error' });
+            setToast({ message: `Download failed: ${error.message}`, type: 'error' });
         }
     };
 
