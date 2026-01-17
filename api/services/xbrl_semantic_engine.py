@@ -2443,41 +2443,70 @@ $$= \\frac{{{curr_b:.3f}B - {prev_b:.3f}B}}{{|{prev_b:.3f}B|}} \\times 100\\% = 
             }
             jsonl_lines.append(json.dumps(entry, ensure_ascii=False))
         
-        # v11.0: Simple Facts REMOVED - No more "What is X?" questions
-        # Instead, include context summary only if absolutely needed
-        # This ensures simple queries < 10%
+        # v11.0: Financial Performance Executive Summary (First JSONL Entry)
+        # Removed: System logs like "Starting joint parsing at..."
+        # Added: Professional executive summary with key metrics in Billion units
         
-        # Optional: Add 1 summary entry with key metrics (interpretive format)
         if facts:
-            key_facts = facts[:5]
-            metrics_summary = []
-            for fact in key_facts:
-                label = self.scale_processor.fix_label_typos(fact.label)
-                val_norm = ScaleProcessor.format_currency_strict_billion(fact.value)
-                metrics_summary.append(f"- {label}: {val_norm}")
+            # Build fact dictionary for structured access
+            fact_dict = self._build_flexible_fact_dict(facts)
             
-            summary_entry = {
-                "instruction": f"What are the key financial highlights for {self.company_name} in fiscal year {self.fiscal_year}, and what do they reveal about the company's financial position?",
-                "input": "\n".join(metrics_summary),
-                "output": f"""[Definition]
-Key financial highlights provide a snapshot of a company's financial position, scale, and operational performance at a point in time.
+            # Extract key metrics
+            total_assets = fact_dict.get('total_assets')
+            revenue = fact_dict.get('revenue')
+            operating_income = fact_dict.get('operating_income')
+            net_income = fact_dict.get('net_income')
+            equity = fact_dict.get('total_equity')
+            liabilities = fact_dict.get('total_liabilities')
+            
+            # Format values in Billions
+            assets_str = ScaleProcessor.format_currency_strict_billion(total_assets.value) if total_assets else "N/A"
+            rev_str = ScaleProcessor.format_currency_strict_billion(revenue.value) if revenue else "N/A"
+            op_income_str = ScaleProcessor.format_currency_strict_billion(operating_income.value) if operating_income else "N/A"
+            ni_str = ScaleProcessor.format_currency_strict_billion(net_income.value) if net_income else "N/A"
+            eq_str = ScaleProcessor.format_currency_strict_billion(equity.value) if equity else "N/A"
+            liab_str = ScaleProcessor.format_currency_strict_billion(liabilities.value) if liabilities else "N/A"
+            
+            # Calculate key ratios if data available
+            op_margin = (float(operating_income.value) / float(revenue.value) * 100) if operating_income and revenue and float(revenue.value) > 0 else None
+            debt_ratio = (float(liabilities.value) / float(total_assets.value) * 100) if liabilities and total_assets and float(total_assets.value) > 0 else None
+            
+            # Build executive summary in professional prose
+            executive_summary = f"""[Definition]
+A Financial Performance Executive Summary provides senior leadership and investors with a concise overview of the company's fiscal year results, highlighting scale, profitability, and financial health metrics.
 
 [Synthesis]
-{chr(10).join(metrics_summary)}
+{self.company_name} Fiscal Year {self.fiscal_year} Key Performance Indicators:
+- Total Assets: {assets_str}
+- Revenues: {rev_str}
+- Operating Income: {op_income_str}
+- Net Income: {ni_str}
+- Total Equity: {eq_str}
+- Total Liabilities: {liab_str}
+
+[Symbolic Reasoning]
+$$Operating\\ Margin = \\frac{{Operating\\ Income}}{{Revenues}} \\times 100\\% = {op_margin:.2f}\\%$$ (if applicable)
+
+$$Debt\\ Ratio = \\frac{{Total\\ Liabilities}}{{Total\\ Assets}} \\times 100\\% = {debt_ratio:.2f}\\%$$ (if applicable)
 
 [Professional Insight]
-These figures represent {self.company_name}'s financial footprint in {self.fiscal_year}. The scale of total assets and revenues indicates the company's market position, while the relationship between assets, liabilities, and equity reveals its capital structure and risk profile.
-""",
+{self.company_name} concluded fiscal year {self.fiscal_year} with total assets of {assets_str}, reflecting the company's operational scale and capital base. {"Revenue of " + rev_str + " demonstrates the company's market presence and sales execution capability. " if revenue else ""}{"Operating income of " + op_income_str + (" representing a " + f"{op_margin:.1f}%" + " operating margin, indicates " + ("strong" if op_margin > 20 else "solid" if op_margin > 10 else "moderate") + " operational efficiency. ") if operating_income and op_margin else ""}{"The balance of " + eq_str + " in shareholders' equity against " + liab_str + " in liabilities reflects a " + ("conservative" if debt_ratio < 40 else "balanced" if debt_ratio < 60 else "leveraged") + " capital structure." if equity and liabilities and debt_ratio else ""}
+"""
+            
+            summary_entry = {
+                "instruction": f"Provide a Financial Performance Executive Summary for {self.company_name} for fiscal year {self.fiscal_year}.",
+                "input": f"Company: {self.company_name}, Fiscal Year: {self.fiscal_year}",
+                "output": executive_summary,
                 "metadata": {
                     "company": self.company_name,
                     "fiscal_year": self.fiscal_year,
-                    "type": "summary",
+                    "type": "executive_summary",
                     "source": "xbrl_semantic_engine_v11",
                     "format": "fin_r1_cot",
                     "unit_policy": "strict_billion"
                 }
             }
-            jsonl_lines.append(json.dumps(summary_entry, ensure_ascii=False))
+            jsonl_lines.insert(0, json.dumps(summary_entry, ensure_ascii=False))  # Insert as FIRST entry
         
         return jsonl_lines
     
