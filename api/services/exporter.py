@@ -28,6 +28,11 @@ class DataExporter:
         if "jsonl_data" in data and data["jsonl_data"]:
             return "\n".join(data["jsonl_data"])
             
+        if not reasoning_qa:
+            # STOP EXECUTION if no data is present. Do not create 0-byte or empty status files.
+            logger.error("CRITICAL: reasoning_qa is empty. Aborting export.")
+            raise ValueError("CRITICAL ERROR: Reasoning QA list is empty. Engine failed to generate data.")
+
         # Fallback for data structures without pre-generated JSONL
         lines = []
         for qa in reasoning_qa:
@@ -39,24 +44,12 @@ class DataExporter:
             }
             lines.append(json.dumps(entry, ensure_ascii=False))
             
-        # Final check: if no lines generated, try to report error or summary
-        # Final check: if no lines generated, try to report error or summary
+        # Final check: Double validation
         if not lines:
-            print("WARNING: No lines generated from reasoning_qa. Attempting fallback.")
-            error_msg = data.get("summary", "No processable financial data found.")
-            if isinstance(data.get("parse_log"), list) and data["parse_log"]:
-                 error_msg += " Errors: " + "; ".join(str(e) for e in data["parse_log"])
-            
-            # Even in fallback, we write a valid JSONL line
-            lines.append(json.dumps({
-                "instruction": "System Status Report",
-                "input": data.get("title", "Unknown Document"),
-                "output": f"Conversion returned no data. Reason: {error_msg}",
-                "metadata": {"status": "empty_result"}
-            }, ensure_ascii=False))
+             raise ValueError("CRITICAL ERROR: JSONL line generation failed despite presence of reasoning_qa.")
 
         # EXPLICIT CONFIRMATION LOG
-        print(f"RECOVERY SUCCESS: {len(lines)} entries written to JSONL")
+        print(f"V11.5 DATA PIPE RESTORED: {len(lines)} ROWS WRITTEN")
         
         return "\n".join(lines)
     

@@ -329,6 +329,10 @@ class FileIngestionService:
             
             # Convert to table format
             tables = self._build_financial_tables(facts_list)
+
+            # CRITICAL DEBUG: Verify Data Pipe before return
+            qa_count = len(result.reasoning_qa)
+            print(f"CRITICAL DEBUG: Final QA List Size = {qa_count}")
             
             return {
                 "title": f"XBRL: {result.company_name or filename}",
