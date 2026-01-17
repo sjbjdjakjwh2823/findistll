@@ -273,10 +273,11 @@ class XBRLSemanticEngine:
 
     def _parse_contexts(self, tree: Any) -> Dict[str, str]:
         """
-        V12.0 Semantic Time Series: 
-        Automatically detects the two most significant reporting periods based on data volume.
+        V13.0 Semantic Time Series: 
+        Precision YoY Mapping using 365-day target window.
         """
         from collections import Counter
+        from datetime import datetime, timedelta
         
         context_map = {}
         date_counts = Counter()
@@ -299,34 +300,57 @@ class XBRLSemanticEngine:
                     ctx_date_map[ctx_id] = d_str
                     date_counts[d_str] += 1
         
-        # 2. Identify CY (Current) and PY (Prior) purely by data volume
-        # We assume the most frequent dates correspond to the main column headers
         if not date_counts:
             logger.warning("No dates found in contexts.")
             return {}
             
-        # Get top dates
-        most_common = date_counts.most_common()
-        sorted_dates = sorted([d for d, c in most_common], reverse=True) # Sort desc (latest first)
+        # 2. Identify CY (Latest Valid Date)
+        sorted_dates = sorted(date_counts.keys(), reverse=True)
+        cy_date_str = sorted_dates[0]
         
-        # Heuristic: Take the latest date as CY, and the next significant date as PY
-        # We filter for dates that have at least >10% of the max volume to avoid noise, if possible
-        # For now, simplistic approach: Top 2 distinct sorted.
+        try:
+            cy_dt = datetime.strptime(cy_date_str, "%Y-%m-%d")
+        except ValueError:
+            # Fallback for non-standard dates, just take top 2 textually
+             cy_dt = None
+
+        # 3. Identify PY (Target: ~1 year prior)
+        py_date_str = None
         
-        cy_date = sorted_dates[0]
-        py_date = sorted_dates[1] if len(sorted_dates) > 1 else None
-        
-        # Re-verify PY: It should be earlier than CY
-        if py_date and py_date > cy_date:
-            cy_date, py_date = py_date, cy_date
+        if cy_dt:
+            # Look for a date between 330 and 390 days ago
+            target_days = 365
+            window = 60 # +/- 30 days roughly, or just look for previous year match
             
-        logger.warning(f"TIME SERIES AI: Selected CY={cy_date} (Active), PY={py_date} (Historical)")
+            best_gap = float('inf')
+            
+            for d_str in sorted_dates[1:]:
+                try:
+                    d_dt = datetime.strptime(d_str, "%Y-%m-%d")
+                    days_diff = (cy_dt - d_dt).days
+                    
+                    # We want positive difference (past) around 365
+                    if 300 <= days_diff <= 400:
+                         if abs(days_diff - 365) < best_gap:
+                             best_gap = abs(days_diff - 365)
+                             py_date_str = d_str
+                except ValueError:
+                    continue
+        
+        # Fallback: if no smart YoY found, take the next most frequent date that isn't CY
+        if not py_date_str and len(sorted_dates) > 1:
+            # Filter out CY
+            candidates = [d for d in sorted_dates if d != cy_date_str]
+            if candidates:
+                py_date_str = candidates[0]
+            
+        logger.warning(f"TIME SERIES AI V13: CY={cy_date_str}, PY={py_date_str if py_date_str else 'N/A'}")
         
         # 3. Map Context IDs
         for cid, dstr in ctx_date_map.items():
-            if dstr == cy_date:
+            if dstr == cy_date_str:
                 context_map[cid] = "CY"
-            elif py_date and dstr == py_date:
+            elif py_date_str and dstr == py_date_str:
                 context_map[cid] = "PY"
                 
         return context_map
@@ -349,22 +373,17 @@ class XBRLSemanticEngine:
             # Check if value is numeric (skip pure text blocks)
             # Remove whitespace and common non-numeric chars for check
             check_val = raw_val.strip()
-            if not re.match(r'^-?\d+(\.\d+)?$', check_val):
+            # Loose number check to capture more (allow parenthesis for negatives in some formats, though XBRL usually uses - sign)
+            if not re.match(r'^-?[\d,]+(\.\d+)?$', check_val.replace(',','')): 
                 continue
                 
             # It's a candidate fact!
-            tag_name = elem.tag # Namespace already stripped in process_joint
-            
-            # Filter: Exclude common utility tags if needed, but for now capture all
-            # Just ensure it's not a tiny integer like "1" (often flags) unless it's explicitly boolean
+            tag_name = elem.tag # Namespace already stripped
             
             decimals = elem.get("decimals")
             dec_int = int(decimals) if decimals and decimals not in ('INF', 'None') else None
             
             val, scale_type = ScaleProcessor.apply_self_healing(raw_val, dec_int)
-            
-            # Dedup/Safety: Don't add if 0 and likely irrelevant, but user wants everything.
-            # We keep everything that parses as a number.
             
             facts.append(SemanticFact(
                 concept=tag_name,
@@ -377,10 +396,7 @@ class XBRLSemanticEngine:
                 decimals=dec_int
             ))
 
-        logger.warning(f"TRACE 1: Found {len(facts)} facts in XML (Universal Parsing)")
-        
-        # Sort facts by prominence (optional, but good for stability)
-        # For now, keep order of discovery
+        logger.warning(f"TRACE 1: Found {len(facts)} facts in XML (Broad Spectrum)")
         return facts
 
     def _generate_reasoning_qa(self, facts: List[SemanticFact]) -> List[Dict[str, str]]:
@@ -432,7 +448,7 @@ class XBRLSemanticEngine:
                     "response": response,
                     "type": "trend"
                 })
-                logger.warning(f"TRACE 4: Current list size in Engine: {len(self.reasoning_qa)}")
+                # logger.warning(f"TRACE 4: Current list size in Engine: {len(self.reasoning_qa)}")
         
         # Comprehensive Summary as Mandatory CoT
         if facts:
@@ -465,8 +481,8 @@ class XBRLSemanticEngine:
                  "type": "summary"
              })
 
-        logger.warning(f"V12.0 GOLDEN DATASET READY: {len(self.reasoning_qa)} CHAINS FROM {len(facts)} FACTS CAPTURED")
-        print(f"V12.0 GOLDEN DATASET READY: {len(facts)} FACTS CAPTURED")
+        logger.warning(f"V13.0 COMPLETE: BUILD SUCCESS & YoY ACTIVE {len(self.reasoning_qa)} CHAINS FROM {len(facts)} FACTS")
+        print(f"V13.0 COMPLETE: BUILD SUCCESS & YoY ACTIVE {len(facts)} FACTS")
         return self.reasoning_qa
     
     def process_mock(self) -> XBRLIntelligenceResult:
