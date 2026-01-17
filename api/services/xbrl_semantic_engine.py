@@ -1539,176 +1539,251 @@ class XBRLSemanticEngine:
         # 1. 부채비율 (Debt Ratio)
         liabilities = fact_dict.get('total_liabilities')
         equity = fact_dict.get('total_equity')
+        industry = self.industry_code
         
+        # 1. Debt-to-Equity Ratio - 4-Step CoT
         if liabilities and equity and float(equity.value) != 0:
             ratio = float(liabilities.value) / float(equity.value) * 100
+            liab_b = float(liabilities.value) / 1e9
+            eq_b = float(equity.value) / 1e9
+            
+            verify_result = ScaleProcessor.verify_calculation(
+                "Debt-to-Equity", liabilities.value, equity.value, ratio / 100
+            )
+            
+            response = f"""[Definition]
+The Debt-to-Equity Ratio measures financial leverage by comparing total liabilities to shareholders' equity. It indicates the extent to which a company finances its operations through debt versus wholly-owned funds. Higher ratios suggest greater financial risk but potentially higher returns.
+
+[Synthesis]
+- Balance Sheet: Total Liabilities = {ScaleProcessor.format_currency(liabilities.value)}
+- Balance Sheet: Total Equity = {ScaleProcessor.format_currency(equity.value)}
+- Reporting Period: {self.fiscal_year}
+
+[Symbolic Reasoning]
+$$Debt\\ to\\ Equity = \\frac{{Total\\ Liabilities}}{{Total\\ Equity}} \\times 100\\%$$
+
+$$= \\frac{{{liab_b:.3f}B}}{{{eq_b:.3f}B}} \\times 100\\% = {ratio:.2f}\\%$$
+
+[Professional Insight]
+{IndustryInsightEngine.get_insight(industry, 'debt_ratio', ratio)}
+
+[Verification]
+{verify_result[1]}
+"""
             qa_list.append({
-                "question": f"Calculate the Debt-to-Equity Ratio for {self.company_name or 'this company'} in {self.fiscal_year}.",
-                "response": f"""## Debt-to-Equity Ratio Analysis
-
-### Formula
-$$\\text{{Debt Ratio}} = \\frac{{\\text{{Total Liabilities}}}}{{\\text{{Total Equity}}}} \\times 100$$
-
-### Calculation
-- Total Liabilities: {ScaleProcessor.format_currency(liabilities.value)}
-- Total Equity: {ScaleProcessor.format_currency(equity.value)}
-
-$$\\text{{Debt Ratio}} = \\frac{{{float(liabilities.value):,.0f}}}{{{float(equity.value):,.0f}}} \\times 100 = {ratio:.2f}\\%$$
-
-### Result: **{ratio:.2f}%**
-
-### Interpretation
-{'⚠️ High leverage (>200%). Interest burden and debt repayment capacity require attention.' if ratio > 200 else '✅ Healthy leverage ratio. Financial structure is stable.' if ratio <= 100 else 'Moderate leverage. Within acceptable range but monitor closely.'}
-""",
+                "question": f"Calculate the Debt-to-Equity Ratio for {self.company_name} and evaluate its capital structure risk.",
+                "response": response,
                 "type": "ratio_analysis"
             })
         
-        # 2. 부채-자산 비율 (Debt-to-Assets)
+        # 2. Debt-to-Assets Ratio - 4-Step CoT
         assets = fact_dict.get('total_assets')
         if liabilities and assets and float(assets.value) != 0:
             ratio = float(liabilities.value) / float(assets.value) * 100
+            liab_b = float(liabilities.value) / 1e9
+            assets_b = float(assets.value) / 1e9
+            
+            response = f"""[Definition]
+The Debt-to-Assets Ratio indicates what proportion of a company's assets are financed through debt. It's a key measure of financial solvency and long-term stability.
+
+[Synthesis]
+- Balance Sheet: Total Liabilities = {ScaleProcessor.format_currency(liabilities.value)}
+- Balance Sheet: Total Assets = {ScaleProcessor.format_currency(assets.value)}
+
+[Symbolic Reasoning]
+$$Debt\\ to\\ Assets = \\frac{{Total\\ Liabilities}}{{Total\\ Assets}} \\times 100\\%$$
+
+$$= \\frac{{{liab_b:.3f}B}}{{{assets_b:.3f}B}} \\times 100\\% = {ratio:.2f}\\%$$
+
+[Professional Insight]
+{ratio:.1f}% of assets are debt-financed while {100-ratio:.1f}% are equity-financed. {'This conservative structure provides significant buffer against market volatility.' if ratio < 40 else 'This moderate leverage reflects balanced financing.' if ratio < 60 else 'Higher leverage may amplify returns but increases financial risk.'}
+"""
             qa_list.append({
-                "question": f"What percentage of {self.company_name or 'the company'}'s total assets are financed by debt?",
-                "response": f"""## Debt-to-Assets Ratio
-
-### Formula
-$$\\text{{Debt-to-Assets}} = \\frac{{\\text{{Total Liabilities}}}}{{\\text{{Total Assets}}}} \\times 100$$
-
-### Calculation
-- Total Liabilities: {ScaleProcessor.format_currency(liabilities.value)}
-- Total Assets: {ScaleProcessor.format_currency(assets.value)}
-
-### Result: **{ratio:.2f}%**
-
-### Interpretation
-This means {ratio:.1f}% of the company's assets are financed through debt, while {100-ratio:.1f}% are financed through equity.
-""",
+                "question": f"Analyze what percentage of {self.company_name}'s assets are debt-financed and assess solvency implications.",
+                "response": response,
                 "type": "ratio_analysis"
             })
         
-        # 3. 유동비율 (Current Ratio)
+        # 3. Current Ratio - 4-Step CoT
         current_assets = fact_dict.get('current_assets')
         current_liabilities = fact_dict.get('current_liabilities')
         
         if current_assets and current_liabilities and float(current_liabilities.value) != 0:
             ratio = float(current_assets.value) / float(current_liabilities.value)
+            ca_b = float(current_assets.value) / 1e9
+            cl_b = float(current_liabilities.value) / 1e9
+            
+            verify_result = ScaleProcessor.verify_calculation(
+                "Current Ratio", current_assets.value, current_liabilities.value, ratio
+            )
+            
+            response = f"""[Definition]
+The Current Ratio assesses short-term liquidity by comparing current assets (expected to convert to cash within one year) to current liabilities (due within one year). It indicates ability to meet near-term obligations.
+
+[Synthesis]
+- Balance Sheet: Current Assets = {ScaleProcessor.format_currency(current_assets.value)}
+- Balance Sheet: Current Liabilities = {ScaleProcessor.format_currency(current_liabilities.value)}
+
+[Symbolic Reasoning]
+$$Current\\ Ratio = \\frac{{Current\\ Assets}}{{Current\\ Liabilities}}$$
+
+$$= \\frac{{{ca_b:.3f}B}}{{{cl_b:.3f}B}} = {ratio:.2f}x$$
+
+[Professional Insight]
+{IndustryInsightEngine.get_insight(industry, 'current_ratio', ratio)}
+
+[Verification]
+{verify_result[1]}
+"""
             qa_list.append({
-                "question": f"Evaluate the short-term liquidity position using the Current Ratio.",
-                "response": f"""## Current Ratio Analysis
-
-### Formula
-$$\\text{{Current Ratio}} = \\frac{{\\text{{Current Assets}}}}{{\\text{{Current Liabilities}}}}$$
-
-### Calculation
-- Current Assets: {ScaleProcessor.format_currency(current_assets.value)}
-- Current Liabilities: {ScaleProcessor.format_currency(current_liabilities.value)}
-
-### Result: **{ratio:.2f}x**
-
-### Interpretation
-{'✅ Strong liquidity (>2.0x). Company can easily cover short-term obligations.' if ratio >= 2.0 else '⚠️ Weak liquidity (<1.0x). May face difficulty meeting short-term obligations.' if ratio < 1.0 else 'Adequate liquidity. Can meet short-term obligations.'}
-""",
+                "question": f"Evaluate {self.company_name}'s short-term liquidity position using the Current Ratio.",
+                "response": response,
                 "type": "ratio_analysis"
             })
         
-        # 4. 자기자본비율 (Equity Ratio)
+        # 4. Equity Ratio - 4-Step CoT
         if equity and assets and float(assets.value) != 0:
             ratio = float(equity.value) / float(assets.value) * 100
+            eq_b = float(equity.value) / 1e9
+            assets_b = float(assets.value) / 1e9
+            
+            response = f"""[Definition]
+The Equity Ratio indicates the proportion of total assets financed by shareholders' equity. It reflects financial independence and the extent to which assets are owned outright rather than borrowed.
+
+[Synthesis]
+- Balance Sheet: Total Equity = {ScaleProcessor.format_currency(equity.value)}
+- Balance Sheet: Total Assets = {ScaleProcessor.format_currency(assets.value)}
+
+[Symbolic Reasoning]
+$$Equity\\ Ratio = \\frac{{Total\\ Equity}}{{Total\\ Assets}} \\times 100\\%$$
+
+$$= \\frac{{{eq_b:.3f}B}}{{{assets_b:.3f}B}} \\times 100\\% = {ratio:.2f}\\%$$
+
+[Professional Insight]
+Shareholders own {ratio:.1f}% of total assets outright. {'This strong equity base provides substantial financial flexibility and resilience.' if ratio > 50 else 'Moderate equity ownership indicates balanced leverage.' if ratio > 30 else 'Lower equity ratio suggests higher reliance on debt financing.'}
+"""
             qa_list.append({
-                "question": f"What is the Equity Ratio and what does it indicate about financial stability?",
-                "response": f"""## Equity Ratio Analysis
-
-### Formula
-$$\\text{{Equity Ratio}} = \\frac{{\\text{{Total Equity}}}}{{\\text{{Total Assets}}}} \\times 100$$
-
-### Calculation
-- Total Equity: {ScaleProcessor.format_currency(equity.value)}
-- Total Assets: {ScaleProcessor.format_currency(assets.value)}
-
-### Result: **{ratio:.2f}%**
-
-### Interpretation
-An equity ratio of {ratio:.1f}% means shareholders own {ratio:.1f}% of total assets outright, indicating {'strong' if ratio > 50 else 'moderate' if ratio > 30 else 'lower'} financial independence.
-""",
+                "question": f"Calculate the Equity Ratio for {self.company_name} and assess its financial independence.",
+                "response": response,
                 "type": "ratio_analysis"
             })
         
-        # 5. 현금 비중
+        # 5. Cash Ratio - 4-Step CoT
         cash = fact_dict.get('cash')
         if cash and assets and float(assets.value) != 0:
             ratio = float(cash.value) / float(assets.value) * 100
+            cash_b = float(cash.value) / 1e9
+            assets_b = float(assets.value) / 1e9
+            
+            response = f"""[Definition]
+The Cash Ratio (Cash to Assets) measures liquidity by showing what percentage of total assets are held in cash and cash equivalents. Higher ratios indicate greater immediate liquidity.
+
+[Synthesis]
+- Balance Sheet: Cash & Equivalents = {ScaleProcessor.format_currency(cash.value)}
+- Balance Sheet: Total Assets = {ScaleProcessor.format_currency(assets.value)}
+
+[Symbolic Reasoning]
+$$Cash\\ Ratio = \\frac{{Cash}}{{Total\\ Assets}} \\times 100\\%$$
+
+$$= \\frac{{{cash_b:.3f}B}}{{{assets_b:.3f}B}} \\times 100\\% = {ratio:.2f}\\%$$
+
+[Professional Insight]
+{ratio:.1f}% of assets are held in liquid form. {'High cash position provides flexibility for strategic investments, acquisitions, or shareholder returns.' if ratio > 20 else 'Moderate cash reserves indicate balanced capital allocation.' if ratio > 10 else 'Lower cash reserves may indicate aggressive investment or efficient cash management.'}
+"""
             qa_list.append({
-                "question": f"What percentage of total assets is held as cash and cash equivalents?",
-                "response": f"""## Cash Position Analysis
-
-### Calculation
-- Cash & Equivalents: {ScaleProcessor.format_currency(cash.value)}
-- Total Assets: {ScaleProcessor.format_currency(assets.value)}
-
-### Cash Ratio: **{ratio:.2f}%**
-
-### Interpretation
-The company maintains {ratio:.1f}% of assets in liquid form. {'High cash position provides flexibility for investments or acquisitions.' if ratio > 20 else 'Moderate cash position.' if ratio > 10 else 'Lower cash reserves; company may be investing aggressively or returning cash to shareholders.'}
-""",
+                "question": f"Analyze the cash position of {self.company_name} relative to its asset base.",
+                "response": response,
                 "type": "ratio_analysis"
             })
         
         return qa_list
     
     def _generate_composition_qa(self, fact_dict: Dict, facts: List[SemanticFact]) -> List[Dict]:
-        """개별 항목의 총자산 대비 구성비 Q&A 생성"""
+        """
+        v11.0: Asset Composition Analysis - 4-Step CoT Format
+        
+        All outputs enforce: [Definition] → [Synthesis] → [Symbolic Reasoning] → [Professional Insight]
+        """
         qa_list = []
+        industry = self.industry_code
         
         total_assets = fact_dict.get('total_assets')
         if not total_assets or float(total_assets.value) == 0:
             return qa_list
         
         total_val = float(total_assets.value)
+        total_b = total_val / 1e9
         
-        # 자산 관련 항목들의 구성비 분석
+        # Asset-related items only
         asset_facts = [f for f in facts if 'asset' in f.label.lower() or 'asset' in f.concept.lower() 
                        or '자산' in f.label]
         
-        for fact in asset_facts[:15]:  # 상위 15개
+        for fact in asset_facts[:10]:  # Limit to 10 items
             if float(fact.value) > 0 and fact.label != '자산총계' and 'total' not in fact.label.lower():
                 ratio = float(fact.value) / total_val * 100
-                if ratio > 0.1:  # 0.1% 이상만
+                if ratio > 1.0:  # Only significant items (> 1%)
+                    label = ScaleProcessor.fix_label_typos(fact.label)
+                    val_b = float(fact.value) / 1e9
+                    
+                    response = f"""[Definition]
+Asset composition analysis examines the relative weight of individual asset categories within total assets. This reveals the company's asset allocation strategy and operational priorities.
+
+[Synthesis]
+- Balance Sheet: {label} = {ScaleProcessor.format_currency(fact.value)}
+- Balance Sheet: Total Assets = {ScaleProcessor.format_currency(total_assets.value)}
+- Reporting Period: {self.fiscal_year}
+
+[Symbolic Reasoning]
+$$Composition\\ Ratio = \\frac{{Asset\\ Item}}{{Total\\ Assets}} \\times 100\\%$$
+
+$$= \\frac{{{val_b:.3f}B}}{{{total_b:.3f}B}} \\times 100\\% = {ratio:.2f}\\%$$
+
+[Professional Insight]
+{label} represents {ratio:.2f}% of total assets. {'This significant allocation suggests strategic importance to operations.' if ratio > 10 else 'This moderate allocation reflects balanced asset management.' if ratio > 5 else 'This smaller allocation is typical for this asset category.'}
+"""
                     qa_list.append({
-                        "question": f"What is the proportion of {fact.label} to total assets?",
-                        "response": f"""## Asset Composition: {fact.label}
-
-### Values
-- {fact.label}: {ScaleProcessor.format_currency(fact.value)}
-- Total Assets: {ScaleProcessor.format_currency(total_assets.value)}
-
-### Composition Ratio: **{ratio:.2f}%**
-
-This item represents {ratio:.2f}% of total assets ({self.fiscal_year}).
-""",
+                        "question": f"Evaluate the composition of {label} within {self.company_name}'s total asset base and assess its strategic significance.",
+                        "response": response,
                         "type": "composition_analysis"
                     })
         
         return qa_list
     
     def _generate_top_items_qa(self, top_facts: List[SemanticFact]) -> List[Dict]:
-        """상위 N개 항목에 대한 개별 Q&A 생성"""
-        qa_list = []
+        """
+        v11.0: Top Items Q&A - HARD LIMIT to < 5% of total output
         
-        for i, fact in enumerate(top_facts, 1):
+        Maximum 2 items only. Uses 4-step CoT format.
+        """
+        qa_list = []
+        industry = self.industry_code
+        
+        # HARD LIMIT: Maximum 2 simple lookups (< 5% of ~50 total Q&A)
+        for i, fact in enumerate(top_facts[:2], 1):
+            label = ScaleProcessor.fix_label_typos(fact.label)
+            val_b = float(fact.value) / 1e9
+            
+            response = f"""[Definition]
+{label} represents a key financial metric reported in {self.company_name}'s {self.fiscal_year} financial statements. Understanding this value provides insight into the company's scale and financial position.
+
+[Synthesis]
+- Financial Statement: {fact.hierarchy}
+- Account: {label}
+- Reporting Period: {fact.period}
+- Consolidation: {'Consolidated' if fact.is_consolidated else 'Standalone'}
+
+[Symbolic Reasoning]
+$$Value = {val_b:.3f}B$$
+
+This value ranks #{i} by absolute magnitude among all reported line items.
+
+[Professional Insight]
+{IndustryInsightEngine.get_insight(industry, 'asset_turnover', val_b) if val_b > 10 else f"This {label} of {ScaleProcessor.format_currency(fact.value)} reflects the company's operational scale in the {industry} sector."}
+"""
             qa_list.append({
-                "question": f"What is the value of {fact.label} in the {self.fiscal_year} financial statements?",
-                "response": f"""## {fact.label}
-
-### Value: **{ScaleProcessor.format_currency(fact.value)}**
-
-### Details
-- Period: {fact.period}
-- Category: {fact.hierarchy}
-- Consolidated: {'Yes' if fact.is_consolidated else 'No'}
-
-This is ranked #{i} by absolute value among all reported items.
-""",
-                "type": "item_lookup"
+                "question": f"Analyze the significance of {label} ({ScaleProcessor.format_currency(fact.value)}) in {self.company_name}'s financial position.",
+                "response": response,
+                "type": "item_analysis"  # Changed from item_lookup
             })
         
         return qa_list
