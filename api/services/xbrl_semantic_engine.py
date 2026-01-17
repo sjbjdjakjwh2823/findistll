@@ -115,7 +115,7 @@ class ScaleProcessor:
     # 이중 곱셈 방지를 위한 OriginalValue 임계치
     RAW_VALUE_LARGE_THRESHOLD = Decimal('1e6')  # Original이 100only or more이면 이미 실제Value
     
-    # 잘못된 Value 패턴 (URL, 날짜 등)
+    # Invalid Value Patterns (URL, Date, etc.)
     INVALID_VALUE_PATTERNS = [
         r'^https?://',
         r'\.org/',
@@ -129,7 +129,7 @@ class ScaleProcessor:
     
     @classmethod
     def is_valid_numeric_value(cls, raw_value: str) -> bool:
-        """유효한 재무 수치 여부 Check"""
+        """Check if value is a valid numeric financial figure"""
         if not raw_value:
             return False
         
@@ -236,10 +236,10 @@ class ScaleProcessor:
                     description = f"Self-Heal: {desc}"
                     break
             else:
-                # 여전히 Range Overflow면 OriginalValue 사용
+                # If still overflow, use original
                 logger.error(f"Self-Healing failed, using original: {original_value}")
                 value = original_value
-                description = "Self-Heal Failed → Original 사용"
+                description = "Self-Heal Failed -> Using Original"
         
         return value, description, True
     
@@ -517,26 +517,26 @@ class ContextFilter:
             ' '.join(context.segment_members)
         ]).lower()
         
-        # 1. 별도재무제표 명시 체크
+        # 1. Check for Separate Financial Statements
         for pattern in cls.SEPARATE_PATTERNS:
             if re.search(pattern, context_text, re.IGNORECASE):
-                return False, f"별도재무제표 패턴 감지: {pattern}"
+                return False, f"Separate statement pattern detected: {pattern}"
         
-        # 2. Segment Exclude 체크
+        # 2. Check for Segment Exclusions
         for pattern in cls.SEGMENT_EXCLUDE_PATTERNS:
             if re.search(pattern, context_text, re.IGNORECASE):
-                return False, f"Segment 데이터: {pattern}"
+                return False, f"Segment data excluded: {pattern}"
         
-        # 3. 연결재무제표 명시 체크
+        # 3. Check for Consolidated Financial Statements
         for pattern in cls.CONSOLIDATED_PATTERNS:
             if re.search(pattern, context_text, re.IGNORECASE):
-                return True, f"연결재무제표 패턴 감지: {pattern}"
+                return True, f"Consolidated pattern detected: {pattern}"
         
-        # 4. Default: Segment 멤버가 없으면 연결로 추정
+        # 4. Default: Assume consolidated if no segment members
         if not context.segment_members:
-            return True, "Segment None - 연결 추정"
+            return True, "No segment members - Assumed Consolidated"
         
-        return True, "Default - 연결 추정"
+        return True, "Default - Assumed Consolidated"
     
     @classmethod
     def filter_consolidated_priority(
@@ -575,53 +575,53 @@ class ContextFilter:
 class CoreFinancialConcepts:
     """Core Financial Concepts 정의"""
     
-    # Balance Sheet 핵심 Item
+    # Key Balance Sheet Items
     BALANCE_SHEET = {
         # Assets
         "Assets": "Total Assets",
         "CurrentAssets": "Current Assets",
-        "NoncurrentAssets": "비Current Assets",
-        "CashAndCashEquivalents": "현금및현금성Assets",
-        "Inventories": "재고Assets",
-        "TradeReceivables": "매출채권",
-        "PropertyPlantAndEquipment": "유형Assets",
-        "IntangibleAssets": "무형Assets",
+        "NoncurrentAssets": "Non-current Assets",
+        "CashAndCashEquivalents": "Cash and Cash Equivalents",
+        "Inventories": "Inventory",
+        "TradeReceivables": "Accounts Receivable",
+        "PropertyPlantAndEquipment": "Property, Plant and Equipment",
+        "IntangibleAssets": "Intangible Assets",
         
         # Liabilities
         "Liabilities": "Total Liabilities",
         "CurrentLiabilities": "Current Liabilities",
-        "NoncurrentLiabilities": "비Current Liabilities",
-        "TradePayables": "매입채무",
-        "ShortTermBorrowings": "단기차입금",
-        "LongTermDebt": "장기Liabilities",
+        "NoncurrentLiabilities": "Non-current Liabilities",
+        "TradePayables": "Accounts Payable",
+        "ShortTermBorrowings": "Short-term Borrowings",
+        "LongTermDebt": "Long-term Debt",
         
         # Equity
         "Equity": "Total Equity",
-        "IssuedCapital": "Equity금",
-        "RetainedEarnings": "이익잉여금",
-        "SharePremium": "주식발행over금",
+        "IssuedCapital": "Common Stock",
+        "RetainedEarnings": "Retained Earnings",
+        "SharePremium": "Share Premium",
     }
     
-    # Income Statement 핵심 Item
+    # Key Income Statement Items
     INCOME_STATEMENT = {
         "Revenue": "Revenues",
-        "CostOfSales": "매출원가",
-        "GrossProfit": "매출총이익",
-        "SellingGeneralAndAdministrativeExpense": "판매비와관리비",
+        "CostOfSales": "Cost of Sales",
+        "GrossProfit": "Gross Profit",
+        "SellingGeneralAndAdministrativeExpense": "SG&A Expenses",
         "OperatingProfit": "Operating Income",
-        "FinanceIncome": "금융Revenues",
-        "FinanceCosts": "금융Expenses",
-        "ProfitBeforeTax": "법인세Expenses차감전순이익",
-        "IncomeTaxExpense": "법인세Expenses",
+        "FinanceIncome": "Financial Income",
+        "FinanceCosts": "Financial Costs",
+        "ProfitBeforeTax": "Profit Before Tax",
+        "IncomeTaxExpense": "Income Tax Expense",
         "ProfitLoss": "Net Income",
         "NetIncome": "Net Income",
     }
     
-    # Cash Flow Statement 핵심 Item
+    # Key Cash Flow Statement Items
     CASH_FLOW = {
-        "CashFlowsFromOperatingActivities": "영업활동현금흐름",
-        "CashFlowsFromInvestingActivities": "투자활동현금흐름",
-        "CashFlowsFromFinancingActivities": "재무활동현금흐름",
+        "CashFlowsFromOperatingActivities": "Cash Flows from Operating Activities",
+        "CashFlowsFromInvestingActivities": "Cash Flows from Investing Activities",
+        "CashFlowsFromFinancingActivities": "Cash Flows from Financing Activities",
     }
     
     # 통합 매핑
@@ -975,6 +975,11 @@ class ExpertCoTGenerator:
             "It indicates management's effectiveness in generating returns from equity capital. "
             "DuPont analysis can decompose ROE into margin, turnover, and leverage components."
         ),
+        'sga_efficiency': (
+            "SG&A Efficiency Ratio measures the percentage of revenue consumed by Selling, General, "
+            "and Administrative expenses. Lower ratios indicate greater operational efficiency and "
+            "better cost control, contributing directly to higher operating margins."
+        ),
     }
     
     @classmethod
@@ -1105,17 +1110,17 @@ class OutputValidator:
 
 class XBRLSemanticEngine:
     """
-    XBRL 시맨틱 결합 엔진
+    XBRL Semantic Engine
     
-    범용 금융 AI 학습 데이터 Generate을 위한 통합 파이프라인:
+    Unified pipeline for generating financial AI training data:
     
-    워크플로우:
-    1. _lab.xml Priority 파싱 → Label Mapping 구축
-    2. _htm.xml 파싱 → 기술적 Tag를 Label로 치환
-    3. 수치 스케일 Standardization (decimals Process)
-    4. Context Filter링 (Consolidated Priority)
-    5. Reasoning Q&A Generation → CoT 포맷
-    6. 구조화된 Generate Markdown Report
+    Workflow:
+    1. Parse _lab.xml Priority -> Build Label Mapping
+    2. Parse _htm.xml -> Replace technical Tags with Labels
+    3. Numeric Scale Standardization (decimals Process)
+    4. Context Filtering (Consolidated Priority)
+    5. Reasoning Q&A Generation -> CoT Format
+    6. Structured Markdown Report Generation
     """
     
     def __init__(self, company_name: str = "", fiscal_year: str = "", sic_code: Optional[str] = None):
@@ -1143,35 +1148,35 @@ class XBRLSemanticEngine:
         instance_content: Optional[bytes] = None
     ) -> XBRLIntelligenceResult:
         """
-        시맨틱 Joint Parsing 수행
+        Perform Semantic Joint Parsing
         
         Args:
-            label_content: _lab.xml 내용 (Optional적, 없으면 Default Label 사용)
-            instance_content: _htm.xml 또는 XBRL 인스턴스 내용
+            label_content: _lab.xml content (Optional, use default if missing)
+            instance_content: _htm.xml or XBRL instance content
         
         Returns:
-            XBRLIntelligenceResult: 완전한 AI 학습 데이터
+            XBRLIntelligenceResult: Complete AI training data
         """
         self.parse_log.append(f"Starting joint parsing at {datetime.now().isoformat()}")
         
         try:
-            # 1. Label Linkbase 파싱 (있으면)
+            # 1. Parse Label Linkbase (if available)
             if label_content:
                 self._build_label_mapping(label_content)
                 self.parse_log.append(f"Built label mapping with {len(self.label_mapping)} entries")
             
-            # 2. Instance Document 파싱
+            # 2. Parse Instance Document
             if instance_content:
                 self._parse_instance(instance_content)
                 self.parse_log.append(f"Parsed {len(self.facts)} facts from instance")
             
-            # 3. 핵심 재무 데이터 Filtering
+            # 3. Filter Core Financial Data
             core_facts = self._filter_core_financials()
             self.parse_log.append(f"Filtered to {len(core_facts)} core financial facts")
             
-            # 4. 수치 데이터 Verification
+            # 4. Verify Numeric Data
             if not core_facts:
-                return self._build_empty_result("수치 데이터가 Extract되지 않았습니다.")
+                return self._build_empty_result("Numeric data could not be extracted.")
             
             # 5. Reasoning Q&A Generation
             reasoning_qa = self._generate_reasoning_qa(core_facts)
@@ -1180,7 +1185,7 @@ class XBRLSemanticEngine:
             # 6. Generate Markdown Report
             markdown_report = self._generate_financial_report(core_facts)
             
-            # 7. JSONL Generate
+            # 7. Generate JSONL
             jsonl_data = self._generate_jsonl(core_facts, reasoning_qa)
             
             # 8. v11.0: Output Validation (Zero-Tolerance for Unit Errors)
@@ -1194,6 +1199,16 @@ class XBRLSemanticEngine:
             # 9. Extract Key Metrics
             key_metrics = self._extract_key_metrics(core_facts)
             
+            # Extract Financial Summary from JSONL if available
+            final_summary = "Financial summary not available."
+            if jsonl_data:
+                try:
+                    first_entry = json.loads(jsonl_data[0])
+                    if first_entry.get('metadata', {}).get('type') == 'executive_summary':
+                         final_summary = first_entry.get('output', "Summary extraction failed.")
+                except Exception:
+                    pass
+            
             return XBRLIntelligenceResult(
                 success=True,
                 company_name=self.company_name,
@@ -1203,7 +1218,7 @@ class XBRLSemanticEngine:
                 financial_report_md=markdown_report,
                 jsonl_data=jsonl_data,
                 key_metrics=key_metrics,
-                parse_summary="; ".join(self.parse_log[-5:]),
+                parse_summary=final_summary,
                 errors=self.errors
             )
             
@@ -2038,7 +2053,7 @@ $$Financial\ Scale = Total\ Assets\ (""" + ScaleProcessor.format_currency(total_
             sga_b = float(sga.value) / 1e9
             
             response = ExpertCoTGenerator.generate(
-                metric_name='operating_margin', # Reuse definition key as generic efficiency
+                metric_name='sga_efficiency',
                 formula_latex=r"SG\&A\ Ratio = \frac{SG\&A\ Expenses}{Revenues} \times 100\%",
                 data_sources=[
                     ("Income Statement", "Revenues", revenue.value),
