@@ -361,6 +361,7 @@ class XBRLSemanticEngine:
             print(f"DEBUG: Fact Generated for {concept} | Growth Formula Present: {'$$Growth' in response}")
             
             if response:
+                print(f"DEBUG: Appending QA Pair for {concept} to reasoning_qa list.")
                 qa_pairs.append({
                     "question": f"Analyze the year-over-year (YoY) trend of {concept}.",
                     "response": response,
