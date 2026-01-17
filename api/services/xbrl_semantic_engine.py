@@ -1440,6 +1440,7 @@ class XBRLSemanticEngine:
         2. ALL instructions use English templates: "Analyze...", "Calculate...", "Evaluate..."
         3. ALL outputs MUST go through ExpertCoTGenerator.generate() - NO EXCEPTIONS
         4. 4-step CoT format mandatory: [Definition]-[Synthesis]-[Symbolic Reasoning]-[Professional Insight]
+        5. Financial Performance Summary included
         """
         qa_pairs = []
         industry = self.industry_code
@@ -1483,7 +1484,8 @@ class XBRLSemanticEngine:
             qa_pairs.append({
                 "question": f"Calculate the Debt-to-Equity Ratio for {self.company_name} and evaluate its capital structure risk.",
                 "response": response,
-                "type": "ratio_analysis"
+                "type": "ratio_analysis",
+                "concept": "debt_ratio" # For deduplication
             })
         
         # ============================================================
@@ -1511,7 +1513,8 @@ class XBRLSemanticEngine:
             qa_pairs.append({
                 "question": f"Evaluate {self.company_name}'s short-term liquidity position using the Current Ratio.",
                 "response": response,
-                "type": "ratio_analysis"
+                "type": "ratio_analysis",
+                "concept": "current_ratio"
             })
         
         # ============================================================
@@ -1539,7 +1542,8 @@ class XBRLSemanticEngine:
             qa_pairs.append({
                 "question": f"Analyze {self.company_name}'s operating profitability and pricing power through Operating Margin.",
                 "response": response,
-                "type": "profitability_analysis"
+                "type": "profitability_analysis",
+                "concept": "operating_margin"
             })
         
         # ============================================================
@@ -1567,7 +1571,8 @@ class XBRLSemanticEngine:
             qa_pairs.append({
                 "question": f"Calculate the Net Profit Margin for {self.company_name} and assess overall profitability efficiency.",
                 "response": response,
-                "type": "profitability_analysis"
+                "type": "profitability_analysis",
+                "concept": "net_profit_margin"
             })
         
         # ============================================================
@@ -1595,7 +1600,8 @@ class XBRLSemanticEngine:
             qa_pairs.append({
                 "question": f"Evaluate {self.company_name}'s financial independence through the Equity Ratio.",
                 "response": response,
-                "type": "ratio_analysis"
+                "type": "ratio_analysis",
+                "concept": "equity_ratio"
             })
         
         # ============================================================
@@ -1623,32 +1629,83 @@ class XBRLSemanticEngine:
             qa_pairs.append({
                 "question": f"Analyze {self.company_name}'s Gross Profit Margin to assess production cost efficiency and pricing power.",
                 "response": response,
-                "type": "profitability_analysis"
+                "type": "profitability_analysis",
+                "concept": "gross_margin"
             })
         
         # ============================================================
-        # Add Cross-Table Analysis (via ExpertCoTGenerator - already implemented)
+        # FINANCIAL PERFORMANCE SUMMARY (New Requirement)
+        # ============================================================
+        if total_assets and revenue and operating_income:
+            # We use a custom generation here but formatted as CoT
+            summary_response = r"""[Definition]
+Financial Performance Summary provides a concise overview of the company's scale and core profitability. It highlights Total Assets (financial position), Revenues (business scale), and Operating Income (core earnings power).
+
+[Synthesis]
+- Balance Sheet: Total Assets = """ + ScaleProcessor.format_currency(total_assets.value) + r"""
+- Income Statement: Revenues = """ + ScaleProcessor.format_currency(revenue.value) + r"""
+- Income Statement: Operating Income = """ + ScaleProcessor.format_currency(operating_income.value) + r"""
+
+[Symbolic Reasoning]
+$$Financial\ Scale = Total\ Assets\ (""" + ScaleProcessor.format_currency(total_assets.value) + r""") + Revenues\ (""" + ScaleProcessor.format_currency(revenue.value) + r")$$ " + "\n" + r"$$Core\ Profitability = Operating\ Income\ (""" + ScaleProcessor.format_currency(operating_income.value) + r")$$" + "\n\n" + f"""[Professional Insight]
+{self.company_name} demonstrates significant financial scale with {ScaleProcessor.format_currency(total_assets.value)} in assets and {ScaleProcessor.format_currency(revenue.value)} in revenue. The operating income of {ScaleProcessor.format_currency(operating_income.value)} indicates {'strong core profitability' if float(operating_income.value) > 0 else 'operational challenges'}."""
+            
+            qa_pairs.append({
+                "question": f"Provide a Financial Performance Summary for {self.company_name}, highlighting Total Assets, Revenues, and Operating Income.",
+                "response": summary_response,
+                "type": "summary",
+                "concept": "financial_summary"
+            })
+
+        # ============================================================
+        # Add Cross-Table Analysis
         # ============================================================
         qa_pairs.extend(self._generate_cross_table_qa(fact_dict, facts))
         
         # ============================================================
-        # Add Activity Analysis (via ExpertCoTGenerator - already implemented)
+        # Add Activity Analysis
         # ============================================================
         qa_pairs.extend(self._generate_activity_analysis_qa(fact_dict, facts))
+
+        # ============================================================
+        # Add Efficiency Analysis
+        # ============================================================
+        qa_pairs.extend(self._generate_efficiency_qa(fact_dict, facts))
         
-        return qa_pairs
+        # ============================================================
+        # DEDUPLICATION LOGIC (Fixed)
+        # ============================================================
+        unique_qa_pairs = []
+        seen_concepts = set()
+        seen_questions = set()
+        
+        for qa in qa_pairs:
+            # Check concept duplication if concept is tagged
+            concept = qa.get('concept')
+            if concept and concept in seen_concepts:
+                continue
+                
+            # Check exact question duplication
+            q_text = qa.get('question', '').strip()
+            if q_text and q_text in seen_questions:
+                continue
+                
+            if concept:
+                seen_concepts.add(concept)
+            if q_text:
+                seen_questions.add(q_text)
+                
+            unique_qa_pairs.append(qa)
+        
+        return unique_qa_pairs
     
     def _build_flexible_fact_dict(self, facts: List[SemanticFact], target_period: str = None) -> Dict:
         """
-        유연한 Label/Concept 매칭을 위한 복합 딕셔너리 구축
-        
-        Args:
-            facts: 팩트 리스트
-            target_period: 특정 Period(e.g., "2024") Data Only Filtering (None이면 All)
+        Flexible Label/Concept Matching Dict Construction
         """
         fact_dict = {}
         
-        # Core Item Alias Definitions (다양한 Tag명 매핑)
+        # Core Item Alias Definitions
         ALIASES = {
             'total_assets': ['Assets', 'TotalAssets', 'AssetsTotal', 'Total Assets', 'assets'],
             'total_liabilities': ['Liabilities', 'TotalLiabilities', 'LiabilitiesTotal', 'Total Liabilities', 'liabilities'],
@@ -1656,16 +1713,16 @@ class XBRLSemanticEngine:
             'current_assets': ['CurrentAssets', 'AssetsCurrent', 'Current Assets', 'currentassets'],
             'current_liabilities': ['CurrentLiabilities', 'LiabilitiesCurrent', 'Current Liabilities', 'currentliabilities'],
             'noncurrent_assets': ['NoncurrentAssets', 'AssetsNoncurrent', '비Current Assets'],
-            'revenue': ['Revenue', 'Revenues', 'NetSales', 'Sales', 'Revenues', 'TotalRevenue', 'RevenueFromContractWithCustomerExcludingAssessedTax'],
+            'revenue': ['Revenue', 'Revenues', 'NetSales', 'Sales', 'TotalRevenue', 'RevenueFromContractWithCustomerExcludingAssessedTax'],
             'net_income': ['NetIncome', 'ProfitLoss', 'NetIncomeLoss', 'Net Income', 'NetEarnings'],
-            'gross_profit': ['GrossProfit', '매출총이익', 'GrossMargin'],
+            'gross_profit': ['GrossProfit', 'GrossMargin'],
             'operating_income': ['OperatingIncome', 'OperatingProfit', 'Operating Income', 'IncomeFromOperations'],
-            'cash': ['Cash', 'CashAndCashEquivalents', 'CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents', '현금및현금성Assets'],
-            'inventory': ['Inventory', 'Inventories', 'InventoryNet', '재고Assets'],
-            'receivables': ['AccountsReceivable', 'TradeReceivables', 'AccountsReceivableNetCurrent', '매출채권'],
-            'cogs': ['CostOfGoodsAndServicesSold', 'CostOfRevenue', 'CostOfSales', '매출원가'],
-            'rnd_expenses': ['ResearchAndDevelopmentExpense', 'ResearchAndDevelopment', 'ResearchAndDevelopmentExpenseExcludingAmortization', 'RndExpenese', '경상연구개발비'],
-            'sga_expenses': ['SellingGeneralAndAdministrativeExpense', 'SellingGeneralAndAdministrative', 'SGA', '판관비', '판매비와관리비'],
+            'cash': ['Cash', 'CashAndCashEquivalents', 'CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents'],
+            'inventory': ['Inventory', 'Inventories', 'InventoryNet'],
+            'receivables': ['AccountsReceivable', 'TradeReceivables', 'AccountsReceivableNetCurrent'],
+            'cogs': ['CostOfGoodsAndServicesSold', 'CostOfRevenue', 'CostOfSales'],
+            'rnd_expenses': ['ResearchAndDevelopmentExpense', 'ResearchAndDevelopment', 'ResearchAndDevelopmentExpenseExcludingAmortization'],
+            'sga_expenses': ['SellingGeneralAndAdministrativeExpense', 'SellingGeneralAndAdministrative', 'SGA'],
         }
         
         for fact in facts:
@@ -1673,339 +1730,37 @@ class XBRLSemanticEngine:
             if target_period and fact.period != target_period:
                 continue
 
-            # Original Label/Concept으로 Save
+            # Save by Original Label/Concept
             key = f"{fact.label}_{fact.period}"
             fact_dict[key] = fact
             fact_dict[fact.label] = fact
             fact_dict[fact.concept] = fact
             
-            # Concept명의 마지막 부분으로도 Save (us-gaap:Assets -> Assets)
+            # Save by Short Concept (us-gaap:Assets -> Assets)
             short_concept = fact.concept.split('_')[-1].split(':')[-1]
             fact_dict[short_concept] = fact
             fact_dict[short_concept.lower()] = fact
             
-            # 별칭 매핑 체크
+            # Alias Matching
             for alias_key, patterns in ALIASES.items():
                 for pattern in patterns:
                     if pattern.lower() in short_concept.lower() or pattern.lower() == short_concept.lower():
-                        if alias_key not in fact_dict:  # 첫 매칭only
+                        if alias_key not in fact_dict:  # First match only
                             fact_dict[alias_key] = fact
                         break
         
         return fact_dict
+
+    # [DELETED] All legacy methods removed including _generate_asset_composition_qa
+
     
-    def _generate_ratio_analysis_qa(self, fact_dict: Dict, facts: List[SemanticFact]) -> List[Dict]:
-        """Ratio Analysis Q&A Generate (여러 종류)"""
-        qa_list = []
-        
-        # 1. Debt Ratio (Debt Ratio)
-        liabilities = fact_dict.get('total_liabilities')
-        equity = fact_dict.get('total_equity')
-        industry = self.industry_code
-        
-        # 1. Debt-to-Equity Ratio - 4-Step CoT
-        if liabilities and equity and float(equity.value) != 0:
-            ratio = float(liabilities.value) / float(equity.value) * 100
-            liab_b = float(liabilities.value) / 1e9
-            eq_b = float(equity.value) / 1e9
-            
-            verify_result = ScaleProcessor.verify_calculation(
-                "Debt-to-Equity", liabilities.value, equity.value, ratio / 100
-            )
-            
-            response = f"""[Definition]
-The Debt-to-Equity Ratio measures financial leverage by comparing total liabilities to shareholders' equity. It indicates the extent to which a company finances its operations through debt versus wholly-owned funds. Higher ratios suggest greater financial risk but potentially higher returns.
-
-[Synthesis]
-- Balance Sheet: Total Liabilities = {ScaleProcessor.format_currency(liabilities.value)}
-- Balance Sheet: Total Equity = {ScaleProcessor.format_currency(equity.value)}
-- Reporting Period: {self.fiscal_year}
-
-[Symbolic Reasoning]
-$$Debt\\ to\\ Equity = \\frac{{Total\\ Liabilities}}{{Total\\ Equity}} \\times 100\\%$$
-
-$$= \\frac{{{liab_b:.3f}B}}{{{eq_b:.3f}B}} \\times 100\\% = {ratio:.2f}\\%$$
-
-[Professional Insight]
-{IndustryInsightEngine.get_insight(industry, 'debt_ratio', ratio)}
-
-[Verification]
-{verify_result[1]}
-"""
-            qa_list.append({
-                "question": f"Calculate the Debt-to-Equity Ratio for {self.company_name} and evaluate its capital structure risk.",
-                "response": response,
-                "type": "ratio_analysis"
-            })
-        
-        # 2. Debt-to-Assets Ratio - 4-Step CoT
-        assets = fact_dict.get('total_assets')
-        if liabilities and assets and float(assets.value) != 0:
-            ratio = float(liabilities.value) / float(assets.value) * 100
-            liab_b = float(liabilities.value) / 1e9
-            assets_b = float(assets.value) / 1e9
-            
-            response = f"""[Definition]
-The Debt-to-Assets Ratio indicates what proportion of a company's assets are financed through debt. It's a key measure of financial solvency and long-term stability.
-
-[Synthesis]
-- Balance Sheet: Total Liabilities = {ScaleProcessor.format_currency(liabilities.value)}
-- Balance Sheet: Total Assets = {ScaleProcessor.format_currency(assets.value)}
-
-[Symbolic Reasoning]
-$$Debt\\ to\\ Assets = \\frac{{Total\\ Liabilities}}{{Total\\ Assets}} \\times 100\\%$$
-
-$$= \\frac{{{liab_b:.3f}B}}{{{assets_b:.3f}B}} \\times 100\\% = {ratio:.2f}\\%$$
-
-[Professional Insight]
-{ratio:.1f}% of assets are debt-financed while {100-ratio:.1f}% are equity-financed. {'This conservative structure provides significant buffer against market volatility.' if ratio < 40 else 'This moderate leverage reflects balanced financing.' if ratio < 60 else 'Higher leverage may amplify returns but increases financial risk.'}
-"""
-            qa_list.append({
-                "question": f"Analyze what percentage of {self.company_name}'s assets are debt-financed and assess solvency implications.",
-                "response": response,
-                "type": "ratio_analysis"
-            })
-        
-        # 3. Current Ratio - 4-Step CoT
-        current_assets = fact_dict.get('current_assets')
-        current_liabilities = fact_dict.get('current_liabilities')
-        
-        if current_assets and current_liabilities and float(current_liabilities.value) != 0:
-            ratio = float(current_assets.value) / float(current_liabilities.value)
-            ca_b = float(current_assets.value) / 1e9
-            cl_b = float(current_liabilities.value) / 1e9
-            
-            verify_result = ScaleProcessor.verify_calculation(
-                "Current Ratio", current_assets.value, current_liabilities.value, ratio
-            )
-            
-            response = f"""[Definition]
-The Current Ratio assesses short-term liquidity by comparing current assets (expected to convert to cash within one year) to current liabilities (due within one year). It indicates ability to meet near-term obligations.
-
-[Synthesis]
-- Balance Sheet: Current Assets = {ScaleProcessor.format_currency(current_assets.value)}
-- Balance Sheet: Current Liabilities = {ScaleProcessor.format_currency(current_liabilities.value)}
-
-[Symbolic Reasoning]
-$$Current\\ Ratio = \\frac{{Current\\ Assets}}{{Current\\ Liabilities}}$$
-
-$$= \\frac{{{ca_b:.3f}B}}{{{cl_b:.3f}B}} = {ratio:.2f}x$$
-
-[Professional Insight]
-{IndustryInsightEngine.get_insight(industry, 'current_ratio', ratio)}
-
-[Verification]
-{verify_result[1]}
-"""
-            qa_list.append({
-                "question": f"Evaluate {self.company_name}'s short-term liquidity position using the Current Ratio.",
-                "response": response,
-                "type": "ratio_analysis"
-            })
-        
-        # 4. Equity Ratio - 4-Step CoT
-        if equity and assets and float(assets.value) != 0:
-            ratio = float(equity.value) / float(assets.value) * 100
-            eq_b = float(equity.value) / 1e9
-            assets_b = float(assets.value) / 1e9
-            
-            response = f"""[Definition]
-The Equity Ratio indicates the proportion of total assets financed by shareholders' equity. It reflects financial independence and the extent to which assets are owned outright rather than borrowed.
-
-[Synthesis]
-- Balance Sheet: Total Equity = {ScaleProcessor.format_currency(equity.value)}
-- Balance Sheet: Total Assets = {ScaleProcessor.format_currency(assets.value)}
-
-[Symbolic Reasoning]
-$$Equity\\ Ratio = \\frac{{Total\\ Equity}}{{Total\\ Assets}} \\times 100\\%$$
-
-$$= \\frac{{{eq_b:.3f}B}}{{{assets_b:.3f}B}} \\times 100\\% = {ratio:.2f}\\%$$
-
-[Professional Insight]
-Shareholders own {ratio:.1f}% of total assets outright. {'This strong equity base provides substantial financial flexibility and resilience.' if ratio > 50 else 'Moderate equity ownership indicates balanced leverage.' if ratio > 30 else 'Lower equity ratio suggests higher reliance on debt financing.'}
-"""
-            qa_list.append({
-                "question": f"Calculate the Equity Ratio for {self.company_name} and assess its financial independence.",
-                "response": response,
-                "type": "ratio_analysis"
-            })
-        
-        # 5. Cash Ratio - 4-Step CoT
-        cash = fact_dict.get('cash')
-        if cash and assets and float(assets.value) != 0:
-            ratio = float(cash.value) / float(assets.value) * 100
-            cash_b = float(cash.value) / 1e9
-            assets_b = float(assets.value) / 1e9
-            
-            response = f"""[Definition]
-The Cash Ratio (Cash to Assets) measures liquidity by showing what percentage of total assets are held in cash and cash equivalents. Higher ratios indicate greater immediate liquidity.
-
-[Synthesis]
-- Balance Sheet: Cash & Equivalents = {ScaleProcessor.format_currency(cash.value)}
-- Balance Sheet: Total Assets = {ScaleProcessor.format_currency(assets.value)}
-
-[Symbolic Reasoning]
-$$Cash\\ Ratio = \\frac{{Cash}}{{Total\\ Assets}} \\times 100\\%$$
-
-$$= \\frac{{{cash_b:.3f}B}}{{{assets_b:.3f}B}} \\times 100\\% = {ratio:.2f}\\%$$
-
-[Professional Insight]
-{ratio:.1f}% of assets are held in liquid form. {'High cash position provides flexibility for strategic investments, acquisitions, or shareholder returns.' if ratio > 20 else 'Moderate cash reserves indicate balanced capital allocation.' if ratio > 10 else 'Lower cash reserves may indicate aggressive investment or efficient cash management.'}
-"""
-            qa_list.append({
-                "question": f"Analyze the cash position of {self.company_name} relative to its asset base.",
-                "response": response,
-                "type": "ratio_analysis"
-            })
-        
-        return qa_list
-    
-    def _generate_composition_qa(self, fact_dict: Dict, facts: List[SemanticFact]) -> List[Dict]:
-        """
-        v11.0: Asset Composition Analysis - 4-Step CoT Format
-        
-        All outputs enforce: [Definition] → [Synthesis] → [Symbolic Reasoning] → [Professional Insight]
-        """
-        qa_list = []
-        industry = self.industry_code
-        
-        total_assets = fact_dict.get('total_assets')
-        if not total_assets or float(total_assets.value) == 0:
-            return qa_list
-        
-        total_val = float(total_assets.value)
-        total_b = total_val / 1e9
-        
-        # Asset-related items only
-        asset_facts = [f for f in facts if 'asset' in f.label.lower() or 'asset' in f.concept.lower() 
-                       or 'Assets' in f.label]
-        
-        for fact in asset_facts[:10]:  # Limit to 10 items
-            if float(fact.value) > 0 and fact.label != 'Total Assets' and 'total' not in fact.label.lower():
-                ratio = float(fact.value) / total_val * 100
-                if ratio > 1.0:  # Only significant items (> 1%)
-                    label = ScaleProcessor.fix_label_typos(fact.label)
-                    val_b = float(fact.value) / 1e9
-                    
-                    response = f"""[Definition]
-Asset composition analysis examines the relative weight of individual asset categories within total assets. This reveals the company's asset allocation strategy and operational priorities.
-
-[Synthesis]
-- Balance Sheet: {label} = {ScaleProcessor.format_currency(fact.value)}
-- Balance Sheet: Total Assets = {ScaleProcessor.format_currency(total_assets.value)}
-- Reporting Period: {self.fiscal_year}
-
-[Symbolic Reasoning]
-$$Composition\\ Ratio = \\frac{{Asset\\ Item}}{{Total\\ Assets}} \\times 100\\%$$
-
-$$= \\frac{{{val_b:.3f}B}}{{{total_b:.3f}B}} \\times 100\\% = {ratio:.2f}\\%$$
-
-[Professional Insight]
-{label} represents {ratio:.2f}% of total assets. {'This significant allocation suggests strategic importance to operations.' if ratio > 10 else 'This moderate allocation reflects balanced asset management.' if ratio > 5 else 'This smaller allocation is typical for this asset category.'}
-"""
-                    qa_list.append({
-                        "question": f"Evaluate the composition of {label} within {self.company_name}'s total asset base and assess its strategic significance.",
-                        "response": response,
-                        "type": "composition_analysis"
-                    })
-        
-        return qa_list
-    
-    def _generate_top_items_qa(self, top_facts: List[SemanticFact]) -> List[Dict]:
-        """
-        v11.0: Top Items Q&A - HARD LIMIT to < 5% of total output
-        
-        Maximum 2 items only. Uses 4-step CoT format.
-        """
-        qa_list = []
-        industry = self.industry_code
-        
-        # HARD LIMIT: Maximum 2 simple lookups (< 5% of ~50 total Q&A)
-        for i, fact in enumerate(top_facts[:2], 1):
-            label = ScaleProcessor.fix_label_typos(fact.label)
-            val_b = float(fact.value) / 1e9
-            
-            response = f"""[Definition]
-{label} represents a key financial metric reported in {self.company_name}'s {self.fiscal_year} financial statements. Understanding this value provides insight into the company's scale and financial position.
-
-[Synthesis]
-- Financial Statement: {fact.hierarchy}
-- Account: {label}
-- Reporting Period: {fact.period}
-- Consolidation: {'Consolidated' if fact.is_consolidated else 'Standalone'}
-
-[Symbolic Reasoning]
-$$Value = {val_b:.3f}B$$
-
-This value ranks #{i} by absolute magnitude among all reported line items.
-
-[Professional Insight]
-{IndustryInsightEngine.get_insight(industry, 'asset_turnover', val_b) if val_b > 10 else f"This {label} of {ScaleProcessor.format_currency(fact.value)} reflects the company's operational scale in the {industry} sector."}
-"""
-            qa_list.append({
-                "question": f"Analyze the significance of {label} ({ScaleProcessor.format_currency(fact.value)}) in {self.company_name}'s financial position.",
-                "response": response,
-                "type": "item_analysis"  # Changed from item_lookup
-            })
-        
-        return qa_list
-    
-    def _generate_financial_health_qa(self, fact_dict: Dict, facts: List[SemanticFact]) -> Optional[Dict]:
-        """
-        v11.0: Comprehensive Financial Health Assessment - 4-Step CoT Format
-        
-        Uses ExpertCoTGenerator pattern for consistency.
-        """
-        assets = fact_dict.get('total_assets')
-        liabilities = fact_dict.get('total_liabilities')
-        equity = fact_dict.get('total_equity')
-        
-        if not assets or not liabilities:
-            return None
-        
-        # Sanity Check: Financial Equation Verification
-        is_valid_eq, eq_msg = ScaleProcessor.validate_financial_equation(
-            assets.value, liabilities.value, equity.value if equity else None
-        )
-        
-        debt_ratio = float(liabilities.value) / float(assets.value) * 100 if assets else 0
-        equity_ratio = float(equity.value) / float(assets.value) * 100 if equity and assets else 0
-        
-        assets_b = float(assets.value) / 1e9
-        liab_b = float(liabilities.value) / 1e9
-        eq_b = float(equity.value) / 1e9 if equity else 0
-        
-        response = f"""[Definition]
-A comprehensive financial health assessment evaluates a company's overall financial stability through key metrics including leverage ratios, capital structure, and liquidity. This analysis helps investors assess default risk and financial flexibility.
-
-[Synthesis]
-- Balance Sheet: Total Assets = {ScaleProcessor.format_currency(assets.value)}
-- Balance Sheet: Total Liabilities = {ScaleProcessor.format_currency(liabilities.value)}
-- Balance Sheet: Total Equity = {ScaleProcessor.format_currency(equity.value) if equity else 'N/A'}
-- Data Integrity: {eq_msg}
-
-[Symbolic Reasoning]
-$$Debt\\ Ratio = \\frac{{Total\\ Liabilities}}{{Total\\ Assets}} \\times 100\\%$$
-
-$$= \\frac{{{liab_b:.3f}B}}{{{assets_b:.3f}B}} \\times 100\\% = {debt_ratio:.2f}\\%$$
-
-$$Equity\\ Ratio = \\frac{{Total\\ Equity}}{{Total\\ Assets}} \\times 100\\%$$
-
-$$= \\frac{{{eq_b:.3f}B}}{{{assets_b:.3f}B}} \\times 100\\% = {equity_ratio:.2f}\\%$$
-
-[Professional Insight]
-{'Strong Financial Position: Low leverage ({:.1f}% debt ratio) with substantial equity buffer provides flexibility for growth investments and economic downturns.'.format(debt_ratio) if debt_ratio < 50 else 'Moderate Risk Profile: {:.1f}% debt ratio indicates balanced but monitored leverage. Interest coverage should be tracked.'.format(debt_ratio) if debt_ratio < 70 else 'Elevated Risk: {:.1f}% debt ratio suggests significant leverage exposure requiring active debt management.'.format(debt_ratio)}
-
-[Verification]
-- Total Items Analyzed: {len(facts)}
-- Financial Equation Check: {'Passed' if is_valid_eq else 'Failed'}
-"""
-        
-        return {
-            "question": f"Evaluate the comprehensive financial health of {self.company_name}, analyzing its capital structure, leverage, and overall stability.",
-            "response": response,
-            "type": "comprehensive_analysis"
-        }
+    # [DELETED] Legacy methods removed to enforce ExpertCoTGenerator usage
+    # - _generate_ratio_analysis_qa
+    # - _generate_composition_qa
+    # - _generate_top_items_qa
+    # - _generate_financial_health_qa
+    # - _generate_trend_analysis_qa
+    # - _generate_debt_ratio_qa, etc.
     
     def _generate_activity_analysis_qa(self, fact_dict: Dict, facts: List[SemanticFact]) -> List[Dict]:
         """
@@ -2270,200 +2025,46 @@ $$= \\frac{{{eq_b:.3f}B}}{{{assets_b:.3f}B}} \\times 100\\% = {equity_ratio:.2f}
                 "context": f"Operating Income: {ScaleProcessor.format_currency(op_income.value)}, Revenues: {ScaleProcessor.format_currency(revenue.value)}"
             })
 
-        # 3. SG&A Efficiency - Simple format (less critical metric)
+        # 3. SG&A Efficiency - Expert CoT
         if revenue and sga and float(revenue.value) > 0:
             ratio = float(sga.value) / float(revenue.value) * 100
             
-            sga_b = float(sga.value) / 1e9
+            # Arithmetic verification
+            verify_result = ScaleProcessor.verify_calculation(
+                "SG&A Efficiency", sga.value, revenue.value, ratio / 100
+            )
+
             rev_b = float(revenue.value) / 1e9
+            sga_b = float(sga.value) / 1e9
             
+            response = ExpertCoTGenerator.generate(
+                metric_name='operating_margin', # Reuse definition key as generic efficiency
+                formula_latex=r"SG\&A\ Ratio = \frac{SG\&A\ Expenses}{Revenues} \times 100\%",
+                data_sources=[
+                    ("Income Statement", "Revenues", revenue.value),
+                    ("Income Statement", "SG&A Expenses", sga.value),
+                ],
+                calculation_steps=[
+                    f"$= \\frac{{{sga_b:.3f}B}}{{{rev_b:.3f}B}} \\times 100\\% = {ratio:.2f}\\%$"
+                ],
+                result=ratio,
+                industry=industry,
+                company_name=self.company_name,
+                verification_result=verify_result
+            )
+
             qa_list.append({
                 "question": f"What does the SG&A Efficiency Ratio reveal about {self.company_name}'s operational cost structure?",
-                "response": f"""[Definition]
-SG&A Ratio measures the percentage of revenue consumed by selling, general, and administrative expenses. It indicates operational efficiency and cost discipline.
-
-[Synthesis]
-- Income Statement: Revenues = {ScaleProcessor.format_currency(revenue.value)}
-- Income Statement: SG&A Expenses = {ScaleProcessor.format_currency(sga.value)}
-
-[Symbolic Reasoning]
-$$SG\\&A\\ Ratio = \\frac{{SG\\&A\\ Expenses}}{{Revenues}} \\times 100\\%$$
-
-$$= \\frac{{{sga_b:.3f}B}}{{{rev_b:.3f}B}} \\times 100\\% = {ratio:.2f}\\%$$
-
-[Professional Insight]
-SG&A expenses consume {ratio:.2f}% of revenue. {'✅ Highly efficient cost structure indicates strong operational leverage.' if ratio <= 15 else '⚠️ Higher SG&A may reflect investment in growth or distribution channels.' if ratio <= 25 else 'Elevated SG&A ratio warrants cost structure analysis.'}
-""",
+                "response": response,
                 "type": "efficiency_analysis",
-                "context": f"SG&A Expenses: {ScaleProcessor.format_currency(sga.value)}, Revenues: {ScaleProcessor.format_currency(revenue.value)}"
+                "context": f"SG&A Expenses: {ScaleProcessor.format_currency(sga.value)}, Revenues: {ScaleProcessor.format_currency(revenue.value)}",
+                "concept": "sga_efficiency"
             })
             
         return qa_list
-
-    def _generate_trend_analysis_qa(self, facts: List[SemanticFact]) -> List[Dict]:
-        """Trend Analysis Q&A (YoY Growth) - v10.0 English"""
-        qa_list = []
-        
-        try:
-            curr_year = str(self.fiscal_year)
-            prev_year = str(int(self.fiscal_year) - 1)
-        except:
-            return []
-            
-        curr_dict = self._build_flexible_fact_dict(facts, target_period=curr_year)
-        prev_dict = self._build_flexible_fact_dict(facts, target_period=prev_year)
-        
-        targets = [
-            ('revenue', 'Revenues'),
-            ('gross_profit', 'Gross Profit'),
-            ('operating_income', 'Operating Income'),
-            ('net_income', 'Net Income'),
-            ('total_assets', 'Total Assets'),
-        ]  # Limited to 5 key metrics for trend analysis
-        
-        for key, label in targets:
-            curr = curr_dict.get(key)
-            prev = prev_dict.get(key)
-            
-            if curr and prev and float(prev.value) != 0:
-                growth = (float(curr.value) - float(prev.value)) / abs(float(prev.value)) * 100
-                
-                curr_b = float(curr.value) / 1e9
-                prev_b = float(prev.value) / 1e9
-                change_b = curr_b - prev_b
-                
-                is_outlier = abs(growth) > 50
-                
-                response = f"""[Definition]
-Year-over-Year (YoY) growth measures the percentage change in a financial metric from one fiscal year to the next. It is a fundamental indicator of business momentum and is critical for forecasting and valuation.
-
-[Synthesis]
-- {self.fiscal_year} {label}: {ScaleProcessor.format_currency(curr.value)}
-- {prev_year} {label}: {ScaleProcessor.format_currency(prev.value)}
-- Change: {'+' if change_b >= 0 else ''}{change_b:.3f}B
-
-[Symbolic Reasoning]
-$$YoY\\ Growth = \\frac{{Current\\ Year - Prior\\ Year}}{{|Prior\\ Year|}} \\times 100\\%$$
-
-$$= \\frac{{{curr_b:.3f}B - {prev_b:.3f}B}}{{|{prev_b:.3f}B|}} \\times 100\\% = {growth:+.2f}\\%$$
-
-[Professional Insight]
-{label} {'increased' if growth > 0 else 'decreased'} by {abs(growth):.2f}% YoY. {'⚠️ Significant fluctuation detected - investigate underlying drivers.' if is_outlier else '✅ Strong growth momentum indicates positive business trends.' if growth >= 10 else '✅ Stable performance within expected range.' if growth >= 0 else '⚠️ Decline warrants attention to operational factors.'}
-"""
-                qa_list.append({
-                    "question": f"Calculate and analyze the Year-over-Year growth of {label} for {self.company_name} and assess its business momentum.",
-                    "response": response,
-                    "type": "trend_analysis",
-                    "context": f"Current {label}: {ScaleProcessor.format_currency(curr.value)}, Prior {label}: {ScaleProcessor.format_currency(prev.value)}"
-                })
-        
-        return qa_list
     
-    def _generate_debt_ratio_qa(self, facts: Dict) -> Optional[Dict[str, str]]:
-        """Debt Ratio Q&A - v10.0 English"""
-        liabilities = facts.get('total_liabilities') or facts.get('Total Liabilities') or facts.get('Liabilities')
-        equity = facts.get('total_equity') or facts.get('Total Equity') or facts.get('Equity')
-        
-        if not liabilities or not equity or float(equity.value) == 0:
-            return None
-        
-        ratio = float(liabilities.value) / float(equity.value) * 100
-        
-        return {
-            "question": f"Calculate the Debt-to-Equity Ratio for {self.company_name} in {self.fiscal_year} and assess financial leverage.",
-            "response": f"""[Definition]: Debt-to-Equity Ratio measures the degree to which a company is financing its operations through debt versus wholly-owned funds. Formula: (Total Liabilities / Total Equity) * 100.
-[Extraction]: Total Liabilities {self.scale_processor.format_currency(liabilities.value)}, Total Equity {self.scale_processor.format_currency(equity.value)}
-[Calculation]: ({float(liabilities.value):,.0f} / {float(equity.value):,.0f}) * 100 = {ratio:.2f}%
-[Interpretation]: The Debt-to-Equity Ratio is {ratio:.2f}%. {'⚠️ High leverage (over 200%), indicating higher financial risk.' if ratio > 200 else '✅ Stable leverage (under 200%).' if ratio <= 200 else 'Very low leverage.'}""",
-            "context": f"Total Liabilities: {self.scale_processor.format_currency(liabilities.value)}, Total Equity: {self.scale_processor.format_currency(equity.value)}",
-            "type": "ratio_analysis"
-        }
-    
-    def _generate_current_ratio_qa(self, facts: Dict) -> Optional[Dict[str, str]]:
-        """Current Ratio Q&A - v10.0 English"""
-        current_assets = facts.get('current_assets') or facts.get('Current Assets') or facts.get('CurrentAssets')
-        current_liabilities = facts.get('current_liabilities') or facts.get('Current Liabilities') or facts.get('CurrentLiabilities')
-        
-        if not current_assets or not current_liabilities or float(current_liabilities.value) == 0:
-            return None
-        
-        ratio = float(current_assets.value) / float(current_liabilities.value) * 100
-        
-        return {
-            "question": f"Assess the short-term liquidity of {self.company_name} using the Current Ratio.",
-            "response": f"""[Definition]: Current Ratio measures a company's ability to pay short-term obligations or those due within one year. Formula: (Current Assets / Current Liabilities) * 100.
-[Extraction]: Current Assets {self.scale_processor.format_currency(current_assets.value)}, Current Liabilities {self.scale_processor.format_currency(current_liabilities.value)}
-[Calculation]: ({float(current_assets.value):,.0f} / {float(current_liabilities.value):,.0f}) * 100 = {ratio:.2f}%
-[Interpretation]: The Current Ratio is {ratio:.2f}%. {'✅ Strong liquidity (over 200%).' if ratio >= 200 else '⚠️ Potential liquidity risk (under 100%).' if ratio < 100 else 'Adequate liquidity (100-200%).'}""",
-            "context": f"Current Assets: {self.scale_processor.format_currency(current_assets.value)}, Current Liabilities: {self.scale_processor.format_currency(current_liabilities.value)}",
-            "type": "ratio_analysis"
-        }
-    
-    def _generate_gross_margin_qa(self, facts: Dict) -> Optional[Dict[str, str]]:
-        """Gross Margin Q&A - v10.0 English"""
-        revenue = facts.get('revenue') or facts.get('Revenues') or facts.get('Revenue')
-        gross_profit = facts.get('gross_profit') or facts.get('매출총이익') or facts.get('GrossProfit')
-        
-        if not revenue or not gross_profit or float(revenue.value) == 0:
-            return None
-        
-        margin = float(gross_profit.value) / float(revenue.value) * 100
-        
-        return {
-            "question": f"Calculate the Gross Profit Margin for {self.company_name} and evaluate cost efficiency.",
-            "response": f"""[Definition]: Gross Profit Margin reveals the proportion of money left over from revenues after accounting for the cost of goods sold. Formula: (Gross Profit / Revenues) * 100.
-[Extraction]: Revenues {self.scale_processor.format_currency(revenue.value)}, Gross Profit {self.scale_processor.format_currency(gross_profit.value)}
-[Calculation]: ({float(gross_profit.value):,.0f} / {float(revenue.value):,.0f}) * 100 = {margin:.2f}%
-[Interpretation]: Gross margin is {margin:.2f}%. {'High margin indicates efficient production or high value-add.' if margin > 30 else 'Lower margin suggests high cost of goods sold.'}""",
-            "context": f"Revenues: {self.scale_processor.format_currency(revenue.value)}, Gross Profit: {self.scale_processor.format_currency(gross_profit.value)}",
-            "type": "ratio_analysis"
-        }
-    
-    def _generate_roe_qa(self, facts: Dict) -> Optional[Dict[str, str]]:
-        """ROE Q&A - v10.0 English"""
-        net_income = facts.get('net_income') or facts.get('Net Income') or facts.get('ProfitLoss') or facts.get('NetIncome')
-        equity = facts.get('total_equity') or facts.get('Total Equity') or facts.get('Equity')
-        
-        if not net_income or not equity or float(equity.value) == 0:
-            return None
-        
-        roe = float(net_income.value) / float(equity.value) * 100
-        
-        return {
-            "question": f"Calculate Return on Equity (ROE) for {self.company_name} and evaluate shareholder value creation.",
-            "response": f"""[Definition]: ROE measures financial performance calculated by dividing net income by shareholders' equity. Formula: (Net Income / Total Equity) * 100.
-[Extraction]: Net Income {self.scale_processor.format_currency(net_income.value)}, Total Equity {self.scale_processor.format_currency(equity.value)}
-[Calculation]: ({float(net_income.value):,.0f} / {float(equity.value):,.0f}) * 100 = {roe:.2f}%
-[Interpretation]: ROE is {roe:.2f}%. {'✅ Excellent return (over 15%).' if roe >= 15 else '⚠️ Low return (under 10%), implies inefficient capital usage.' if roe < 10 else 'Good return (10-15%).'}""",
-            "context": f"Net Income: {self.scale_processor.format_currency(net_income.value)}, Total Equity: {self.scale_processor.format_currency(equity.value)}",
-            "type": "ratio_analysis"
-        }
-    
-    def _generate_asset_composition_qa(self, facts: Dict) -> Optional[Dict[str, str]]:
-        """Asset Composition Analysis - v10.0 English"""
-        total_assets = facts.get('total_assets') or facts.get('Total Assets') or facts.get('Assets')
-        current_assets = facts.get('current_assets') or facts.get('Current Assets') or facts.get('CurrentAssets')
-        noncurrent_assets = facts.get('non_current_assets') or facts.get('비Current Assets') or facts.get('NoncurrentAssets')
-        
-        if not total_assets:
-            return None
-        
-        response_parts = [f"## Asset Composition Analysis\n\n### Total Assets\n**{self.scale_processor.format_currency(total_assets.value)}**\n"]
-        
-        if current_assets:
-            current_ratio = float(current_assets.value) / float(total_assets.value) * 100
-            response_parts.append(f"\n### Current Assets\n- Amount: {self.scale_processor.format_currency(current_assets.value)}\n- Weight: {current_ratio:.1f}%")
-        
-        if noncurrent_assets:
-            noncurrent_ratio = float(noncurrent_assets.value) / float(total_assets.value) * 100
-            response_parts.append(f"\n### Non-current Assets\n- Amount: {self.scale_processor.format_currency(noncurrent_assets.value)}\n- Weight: {noncurrent_ratio:.1f}%")
-        
-        return {
-            "question": f"Analyze the asset composition of {self.company_name}.",
-            "response": "".join(response_parts),
-            "context": f"Total Assets: {total_assets.value}",
-            "type": "composition_analysis"
-        }
+    # [DELETED] Legacy _generate_asset_composition_qa removed
+
     
     def _generate_financial_report(self, facts: List[SemanticFact]) -> str:
         """Generate Financial Report Markdown - v10.0 English"""
