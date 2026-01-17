@@ -1433,46 +1433,208 @@ class XBRLSemanticEngine:
     
     def _generate_reasoning_qa(self, facts: List[SemanticFact]) -> List[Dict[str, str]]:
         """
-        v11.0: Fin-R1 Style Reasoning Q&A Generation
+        v11.0: COMPLETE REWRITE - All outputs via ExpertCoTGenerator.generate()
         
-        Quality Thresholds:
-        - Simple queries (Find X): < 10%
-        - Cross-table analysis: Required (ROA, ROE, DuPont)
-        - How/Why questions: > 60%
-        - CoT format: 100% (4-step mandatory)
+        Hard Requirements:
+        1. NO "찾아주세요" / "Find X" style questions - ALL DELETED
+        2. ALL instructions use English templates: "Analyze...", "Calculate...", "Evaluate..."
+        3. ALL outputs MUST go through ExpertCoTGenerator.generate() - NO EXCEPTIONS
+        4. 4-step CoT format mandatory: [Definition]-[Synthesis]-[Symbolic Reasoning]-[Professional Insight]
         """
         qa_pairs = []
+        industry = self.industry_code
         
-        # 1. Flexible Label Matching으로 fact_dict 구축
+        # Build flexible fact dictionary
         fact_dict = self._build_flexible_fact_dict(facts)
         
-        # 2. Core Ratio Analysis Q&A (5-10개) - How/Why style
-        qa_pairs.extend(self._generate_ratio_analysis_qa(fact_dict, facts))
+        # Get key metrics
+        total_assets = fact_dict.get('total_assets')
+        total_liabilities = fact_dict.get('total_liabilities')
+        total_equity = fact_dict.get('total_equity')
+        revenue = fact_dict.get('revenue')
+        net_income = fact_dict.get('net_income')
+        operating_income = fact_dict.get('operating_income')
+        gross_profit = fact_dict.get('gross_profit')
+        current_assets = fact_dict.get('current_assets')
+        current_liabilities = fact_dict.get('current_liabilities')
         
-        # 3. Assets Composition Analysis Q&A (개별 Item별, 20개+) - Analytical
-        qa_pairs.extend(self._generate_composition_qa(fact_dict, facts))
-        
-        # 4. v11.0: Top Items REDUCED to 10% - Only 5 items (was 20)
-        # Simple queries should be < 10% of total
-        qa_pairs.extend(self._generate_top_items_qa(facts[:5]))
-        
-        # 5. Financial Health 종합 평가 Q&A
-        qa = self._generate_financial_health_qa(fact_dict, facts)
-        if qa:
-            qa_pairs.append(qa)
+        # ============================================================
+        # METRIC 1: Debt-to-Equity Ratio (via ExpertCoTGenerator)
+        # ============================================================
+        if total_liabilities and total_equity and float(total_equity.value) > 0:
+            ratio = float(total_liabilities.value) / float(total_equity.value) * 100
+            verify_result = ScaleProcessor.verify_calculation("Debt-to-Equity", total_liabilities.value, total_equity.value, ratio / 100)
             
-        # 6. Activity Analysis Q&A (Expert CoT)
-        qa_pairs.extend(self._generate_activity_analysis_qa(fact_dict, facts))
+            response = ExpertCoTGenerator.generate(
+                metric_name='debt_ratio',
+                formula_latex=r"Debt\ to\ Equity = \frac{Total\ Liabilities}{Total\ Equity} \times 100\%",
+                data_sources=[
+                    ("Balance Sheet", "Total Liabilities", total_liabilities.value),
+                    ("Balance Sheet", "Total Equity", total_equity.value),
+                ],
+                calculation_steps=[
+                    f"$= \\frac{{{float(total_liabilities.value)/1e9:.3f}B}}{{{float(total_equity.value)/1e9:.3f}B}} \\times 100\\% = {ratio:.2f}\\%$"
+                ],
+                result=ratio,
+                industry=industry,
+                company_name=self.company_name,
+                verification_result=verify_result
+            )
+            qa_pairs.append({
+                "question": f"Calculate the Debt-to-Equity Ratio for {self.company_name} and evaluate its capital structure risk.",
+                "response": response,
+                "type": "ratio_analysis"
+            })
         
-        # 7. Efficiency Analysis Q&A (Expert CoT)
-        qa_pairs.extend(self._generate_efficiency_qa(fact_dict, facts))
+        # ============================================================
+        # METRIC 2: Current Ratio (via ExpertCoTGenerator)
+        # ============================================================
+        if current_assets and current_liabilities and float(current_liabilities.value) > 0:
+            ratio = float(current_assets.value) / float(current_liabilities.value)
+            verify_result = ScaleProcessor.verify_calculation("Current Ratio", current_assets.value, current_liabilities.value, ratio)
+            
+            response = ExpertCoTGenerator.generate(
+                metric_name='current_ratio',
+                formula_latex=r"Current\ Ratio = \frac{Current\ Assets}{Current\ Liabilities}",
+                data_sources=[
+                    ("Balance Sheet", "Current Assets", current_assets.value),
+                    ("Balance Sheet", "Current Liabilities", current_liabilities.value),
+                ],
+                calculation_steps=[
+                    f"$= \\frac{{{float(current_assets.value)/1e9:.3f}B}}{{{float(current_liabilities.value)/1e9:.3f}B}} = {ratio:.2f}x$"
+                ],
+                result=ratio,
+                industry=industry,
+                company_name=self.company_name,
+                verification_result=verify_result
+            )
+            qa_pairs.append({
+                "question": f"Evaluate {self.company_name}'s short-term liquidity position using the Current Ratio.",
+                "response": response,
+                "type": "ratio_analysis"
+            })
         
-        # 8. Trend Analysis Q&A (YoY)
-        qa_pairs.extend(self._generate_trend_analysis_qa(facts))
+        # ============================================================
+        # METRIC 3: Operating Margin (via ExpertCoTGenerator)
+        # ============================================================
+        if operating_income and revenue and float(revenue.value) > 0:
+            margin = float(operating_income.value) / float(revenue.value) * 100
+            verify_result = ScaleProcessor.verify_calculation("Operating Margin", operating_income.value, revenue.value, margin / 100)
+            
+            response = ExpertCoTGenerator.generate(
+                metric_name='operating_margin',
+                formula_latex=r"Operating\ Margin = \frac{Operating\ Income}{Revenues} \times 100\%",
+                data_sources=[
+                    ("Income Statement", "Operating Income", operating_income.value),
+                    ("Income Statement", "Revenues", revenue.value),
+                ],
+                calculation_steps=[
+                    f"$= \\frac{{{float(operating_income.value)/1e9:.3f}B}}{{{float(revenue.value)/1e9:.3f}B}} \\times 100\\% = {margin:.2f}\\%$"
+                ],
+                result=margin,
+                industry=industry,
+                company_name=self.company_name,
+                verification_result=verify_result
+            )
+            qa_pairs.append({
+                "question": f"Analyze {self.company_name}'s operating profitability and pricing power through Operating Margin.",
+                "response": response,
+                "type": "profitability_analysis"
+            })
         
-        # 9. v11.0: Cross-Table Analysis (NEW - Multi-Statement Synthesis)
-        # Highest quality questions requiring BS + IS combination
+        # ============================================================
+        # METRIC 4: Net Profit Margin (via ExpertCoTGenerator)
+        # ============================================================
+        if net_income and revenue and float(revenue.value) > 0:
+            margin = float(net_income.value) / float(revenue.value) * 100
+            verify_result = ScaleProcessor.verify_calculation("Net Profit Margin", net_income.value, revenue.value, margin / 100)
+            
+            response = ExpertCoTGenerator.generate(
+                metric_name='operating_margin',  
+                formula_latex=r"Net\ Profit\ Margin = \frac{Net\ Income}{Revenues} \times 100\%",
+                data_sources=[
+                    ("Income Statement", "Net Income", net_income.value),
+                    ("Income Statement", "Revenues", revenue.value),
+                ],
+                calculation_steps=[
+                    f"$= \\frac{{{float(net_income.value)/1e9:.3f}B}}{{{float(revenue.value)/1e9:.3f}B}} \\times 100\\% = {margin:.2f}\\%$"
+                ],
+                result=margin,
+                industry=industry,
+                company_name=self.company_name,
+                verification_result=verify_result
+            )
+            qa_pairs.append({
+                "question": f"Calculate the Net Profit Margin for {self.company_name} and assess overall profitability efficiency.",
+                "response": response,
+                "type": "profitability_analysis"
+            })
+        
+        # ============================================================
+        # METRIC 5: Equity Ratio (via ExpertCoTGenerator)
+        # ============================================================
+        if total_equity and total_assets and float(total_assets.value) > 0:
+            ratio = float(total_equity.value) / float(total_assets.value) * 100
+            verify_result = ScaleProcessor.verify_calculation("Equity Ratio", total_equity.value, total_assets.value, ratio / 100)
+            
+            response = ExpertCoTGenerator.generate(
+                metric_name='debt_ratio',
+                formula_latex=r"Equity\ Ratio = \frac{Total\ Equity}{Total\ Assets} \times 100\%",
+                data_sources=[
+                    ("Balance Sheet", "Total Equity", total_equity.value),
+                    ("Balance Sheet", "Total Assets", total_assets.value),
+                ],
+                calculation_steps=[
+                    f"$= \\frac{{{float(total_equity.value)/1e9:.3f}B}}{{{float(total_assets.value)/1e9:.3f}B}} \\times 100\\% = {ratio:.2f}\\%$"
+                ],
+                result=ratio,
+                industry=industry,
+                company_name=self.company_name,
+                verification_result=verify_result
+            )
+            qa_pairs.append({
+                "question": f"Evaluate {self.company_name}'s financial independence through the Equity Ratio.",
+                "response": response,
+                "type": "ratio_analysis"
+            })
+        
+        # ============================================================
+        # METRIC 6: Gross Profit Margin (via ExpertCoTGenerator)
+        # ============================================================
+        if gross_profit and revenue and float(revenue.value) > 0:
+            margin = float(gross_profit.value) / float(revenue.value) * 100
+            verify_result = ScaleProcessor.verify_calculation("Gross Margin", gross_profit.value, revenue.value, margin / 100)
+            
+            response = ExpertCoTGenerator.generate(
+                metric_name='operating_margin',
+                formula_latex=r"Gross\ Profit\ Margin = \frac{Gross\ Profit}{Revenues} \times 100\%",
+                data_sources=[
+                    ("Income Statement", "Gross Profit", gross_profit.value),
+                    ("Income Statement", "Revenues", revenue.value),
+                ],
+                calculation_steps=[
+                    f"$= \\frac{{{float(gross_profit.value)/1e9:.3f}B}}{{{float(revenue.value)/1e9:.3f}B}} \\times 100\\% = {margin:.2f}\\%$"
+                ],
+                result=margin,
+                industry=industry,
+                company_name=self.company_name,
+                verification_result=verify_result
+            )
+            qa_pairs.append({
+                "question": f"Analyze {self.company_name}'s Gross Profit Margin to assess production cost efficiency and pricing power.",
+                "response": response,
+                "type": "profitability_analysis"
+            })
+        
+        # ============================================================
+        # Add Cross-Table Analysis (via ExpertCoTGenerator - already implemented)
+        # ============================================================
         qa_pairs.extend(self._generate_cross_table_qa(fact_dict, facts))
+        
+        # ============================================================
+        # Add Activity Analysis (via ExpertCoTGenerator - already implemented)
+        # ============================================================
+        qa_pairs.extend(self._generate_activity_analysis_qa(fact_dict, facts))
         
         return qa_pairs
     
