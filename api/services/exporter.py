@@ -39,6 +39,19 @@ class DataExporter:
             }
             lines.append(json.dumps(entry, ensure_ascii=False))
             
+        # Final check: if no lines generated, try to report error or summary
+        if not lines:
+            error_msg = data.get("summary", "No processable financial data found.")
+            if isinstance(data.get("parse_log"), list) and data["parse_log"]:
+                 error_msg += " Errors: " + "; ".join(str(e) for e in data["parse_log"])
+            
+            lines.append(json.dumps({
+                "instruction": "System Status Report",
+                "input": data.get("title", "Unknown Document"),
+                "output": f"Conversion returned no data. Reason: {error_msg}",
+                "metadata": {"status": "empty_result"}
+            }, ensure_ascii=False))
+
         return "\n".join(lines)
     
     def to_markdown(self, data: Dict[str, Any]) -> str:
