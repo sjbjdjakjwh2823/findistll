@@ -203,11 +203,14 @@ class XBRLSemanticEngine:
             # 1. Parse Contexts (CY/PY Mapping)
             contexts = self._parse_contexts(tree)
             
-            # 2. Extract Key Facts
+            # 2. Extract Metadata (Company Name, Fiscal Year)
+            self._extract_metadata(tree)
+            
+            # 3. Extract Key Facts
             facts = self._extract_facts(tree, contexts)
             self.facts = facts
             
-            # 3. Trend Analysis (YoY) & QA Generation
+            # 4. Trend Analysis (YoY) & QA Generation
             qa_pairs = self._generate_reasoning_qa(facts)
             
             # 4. JSONL Generation (with Poison Pill)
@@ -234,11 +237,35 @@ class XBRLSemanticEngine:
             )
         except Exception as e:
             logger.error(f"Processing failed: {e}")
+            import traceback
+            error_trace = traceback.format_exc()
+            self.errors.append(f"Traceback: {error_trace}")
             return XBRLIntelligenceResult(
                 success=False, company_name=self.company_name, fiscal_year=self.fiscal_year,
                 facts=[], reasoning_qa=[], financial_report_md="", jsonl_data=[],
-                key_metrics={}, parse_summary=f"Error: {e}", errors=[str(e)]
+                key_metrics={}, parse_summary=f"Error: {e}", errors=self.errors
             )
+
+    def _extract_metadata(self, tree: Any):
+        """Attempts to extract entity name and fiscal year from common XBRL tags."""
+        # Common DEIs (Document and Entity Information)
+        name_tags = ['EntityRegistrantName', 'EntityCentralIndexKey']
+        year_tags = ['DocumentFiscalYearFocus', 'DocumentPeriodEndDate']
+        
+        for tag in name_tags:
+            elem = tree.find(f".//{tag}")
+            if elem is not None and elem.text:
+                self.company_name = elem.text
+                break
+        
+        for tag in year_tags:
+            elem = tree.find(f".//{tag}")
+            if elem is not None and elem.text:
+                # Extract year from YYYY-MM-DD or use whole string
+                text = elem.text.strip()
+                if len(text) >= 4:
+                    self.fiscal_year = text[:4]
+                break
 
     def _parse_contexts(self, tree: Any) -> Dict[str, str]:
         """Precision CY/PY Mapping: Latest date as CY, preceding unique date as PY."""
