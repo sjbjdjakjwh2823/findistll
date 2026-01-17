@@ -279,17 +279,17 @@ class FileIngestionService:
         """
         from .xbrl_semantic_engine import XBRLSemanticEngine
         
-        # Label Linkbase 자동 탐지 (파일명 기반)
+        # Automatic detection of label linkbase (filename-based)
         label_content = None
         base_name = filename.replace('.htm.xml', '').replace('.xml', '').replace('.xbrl', '')
         
-        # NOTE: 실제 구현에서는 _lab.xml 파일도 함께 업로드 받아야 함
-        # 현재는 instance 파일만으로 처리 (CoreFinancialConcepts 폴백 사용)
+        # NOTE: In a real implementation, _lab.xml files should also be uploaded.
+        # Currently processing with instance file only (using CoreFinancialConcepts fallback).
         
-        # XBRLSemanticEngine 초기화 및 구조적 파싱 수행
+        # Initialize XBRLSemanticEngine and perform structural parsing.
         engine = XBRLSemanticEngine(
-            company_name="",  # 파싱 중 자동 추출
-            fiscal_year=""    # 파싱 중 자동 추출
+            company_name="",  # Extracted during parsing
+            fiscal_year=""    # Extracted during parsing
         )
         
         try:
@@ -542,7 +542,7 @@ class FileIngestionService:
     
     async def _generate_summary(self, data_sample: str) -> str:
         """Generate a summary using Gemini."""
-        prompt = f"다음 데이터의 핵심 내용을 2-3문장으로 요약해주세요:\n\n{data_sample}"
+        prompt = f"Summarize the key findings of the following data in 2-3 sentences:\n\n{data_sample}"
         
         contents = [{"parts": [{"text": prompt}]}]
         return await self.gemini.generate_content(contents)

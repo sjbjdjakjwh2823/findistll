@@ -87,25 +87,25 @@ class EmbeddingService:
         
         # Title
         if "title" in data:
-            parts.append(f"제목: {data['title']}")
+            parts.append(f"Title: {data['title']}")
         
         # Summary
         if "summary" in data:
-            parts.append(f"요약: {data['summary']}")
+            parts.append(f"Summary: {data['summary']}")
         
         # Key metrics
         if "key_metrics" in data:
             metrics_text = ", ".join([
                 f"{k}: {v}" for k, v in data["key_metrics"].items()
             ])
-            parts.append(f"주요 지표: {metrics_text}")
+            parts.append(f"Key Metrics: {metrics_text}")
         
         # Table names and headers
         if "tables" in data:
             for table in data["tables"]:
                 table_name = table.get("name", "")
                 headers = table.get("headers", [])
-                parts.append(f"테이블 '{table_name}': {', '.join(str(h) for h in headers)}")
+                parts.append(f"Table '{table_name}': {', '.join(str(h) for h in headers)}")
         
         return "\n".join(parts)
 

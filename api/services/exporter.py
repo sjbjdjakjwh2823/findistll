@@ -28,7 +28,7 @@ class DataExporter:
         
         # Table extraction instructions
         for table in data.get("tables", []):
-            table_name = table.get("name", "테이블")
+            table_name = table.get("name", "Table")
             headers = table.get("headers", [])
             rows = table.get("rows", [])
             
@@ -98,7 +98,7 @@ class DataExporter:
         
         # Tables
         for i, table in enumerate(data.get("tables", []), 1):
-            table_name = table.get("name", f"테이블 {i}")
+            table_name = table.get("name", f"Table {i}")
             headers = table.get("headers", [])
             rows = table.get("rows", [])
             
