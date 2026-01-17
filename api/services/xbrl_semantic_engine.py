@@ -1677,25 +1677,42 @@ class XBRLSemanticEngine:
             })
         
         # ============================================================
-        # FINANCIAL PERFORMANCE SUMMARY (New Requirement)
+        # FINANCIAL PERFORMANCE SUMMARY (v11.5: Via ExpertCoTGenerator with YoY)
         # ============================================================
         if total_assets and revenue and operating_income:
-            # We use a custom generation here but formatted as CoT
-            summary_response = r"""[Definition]
-Financial Performance Summary provides a concise overview of the company's scale and core profitability. It highlights Total Assets (financial position), Revenues (business scale), and Operating Income (core earnings power).
-
-[Synthesis]
-- Balance Sheet: Total Assets = """ + ScaleProcessor.format_currency(total_assets.value) + r"""
-- Income Statement: Revenues = """ + ScaleProcessor.format_currency(revenue.value) + r"""
-- Income Statement: Operating Income = """ + ScaleProcessor.format_currency(operating_income.value) + r"""
-
-[Symbolic Reasoning]
-$$Financial\ Scale = Total\ Assets\ (""" + ScaleProcessor.format_currency(total_assets.value) + r""") + Revenues\ (""" + ScaleProcessor.format_currency(revenue.value) + r")$$ " + "\n" + r"$$Core\ Profitability = Operating\ Income\ (""" + ScaleProcessor.format_currency(operating_income.value) + r")$$" + "\n\n" + f"""[Professional Insight]
-{self.company_name} demonstrates significant financial scale with {ScaleProcessor.format_currency(total_assets.value)} in assets and {ScaleProcessor.format_currency(revenue.value)} in revenue. The operating income of {ScaleProcessor.format_currency(operating_income.value)} indicates {'strong core profitability' if float(operating_income.value) > 0 else 'operational challenges'}."""
+            # Calculate YoY Growth if prior year data available
+            prior_facts = self._build_flexible_fact_dict(facts, target_period=str(int(self.fiscal_year or '2024') - 1))
+            prior_revenue = prior_facts.get('revenue')
+            
+            yoy_growth = None
+            yoy_str = ""
+            if prior_revenue and float(prior_revenue.value) > 0:
+                yoy_growth = ((float(revenue.value) - float(prior_revenue.value)) / float(prior_revenue.value)) * 100
+                yoy_str = f"YoY Revenue Growth: {yoy_growth:+.2f}%"
+            
+            response = ExpertCoTGenerator.generate(
+                metric_name='financial_summary',
+                formula_latex=r"Financial\ Scale = Total\ Assets + Revenues",
+                data_sources=[
+                    ("Balance Sheet", "Total Assets", total_assets.value),
+                    ("Income Statement", "Revenues", revenue.value),
+                    ("Income Statement", "Operating Income", operating_income.value),
+                ],
+                calculation_steps=[
+                    f"Total Assets: {ScaleProcessor.format_currency(total_assets.value)}",
+                    f"Revenues: {ScaleProcessor.format_currency(revenue.value)}",
+                    f"Operating Income: {ScaleProcessor.format_currency(operating_income.value)}",
+                    yoy_str if yoy_str else "YoY: Prior year data not available"
+                ],
+                result=float(revenue.value) / 1e9,  # Revenue in B
+                industry=industry,
+                company_name=self.company_name,
+                verification_result=""
+            )
             
             qa_pairs.append({
-                "question": f"Provide a Financial Performance Summary for {self.company_name}, highlighting Total Assets, Revenues, and Operating Income.",
-                "response": summary_response,
+                "question": f"Analyze the multi-year financial performance of {self.company_name}, highlighting Total Assets, Revenues, Operating Income, and YoY trends.",
+                "response": response,
                 "type": "summary",
                 "concept": "financial_summary"
             })
@@ -2218,16 +2235,29 @@ $$Financial\ Scale = Total\ Assets\ (""" + ScaleProcessor.format_currency(total_
         reasoning_qa: List[Dict[str, str]]
     ) -> List[str]:
         """
-        v11.0: Fin-R1 Style JSONL Generation
+        v11.5: Strict JSONL Generation with Korean Detection  
         
         Changes:
         - All values use format_currency_strict_billion (Billion only)
         - Simple fact queries REMOVED (was 3, now 0) - replaced with interpretive
         - Metadata includes Fin-R1 quality tracking
+        - v11.5: RuntimeError on ANY Korean text detection
         """
+        
+        # v11.5 STRICT: Korean Detection - Halt on any Korean text
+        def check_korean(text: str) -> None:
+            if text and re.search(r'[\u3131-\u318E\uAC00-\uD7A3]', text):
+                raise RuntimeError("KOREAN_DETECTED")
+        
+        # Pre-check all QA content
+        for qa in reasoning_qa:
+            check_korean(qa.get("question", ""))
+            check_korean(qa.get("response", ""))
+            check_korean(qa.get("context", ""))
+        
         jsonl_lines = []
         
-        # Post-Processing
+        # Post-Processing - Force English
         def clean_text(text: str) -> str:
             if not text: return ""
             # Enforce strict English headers for Input field
