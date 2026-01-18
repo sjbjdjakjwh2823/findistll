@@ -192,7 +192,6 @@ async def debug_env():
         if len(s) < 10: return s[:2] + "***"
         return s[:5] + "***" + s[-5:]
     
-    import os
     db_url = os.environ.get("SUPABASE_DATABASE_URL", "")
     
     return {
@@ -506,7 +505,6 @@ async def semantic_search(
     Semantic search across documents using vector similarity.
     Uses Gemini embeddings and pgvector.
     """
-    from sqlalchemy import text
     
     # Generate query embedding
     query_embedding = await embedder.generate_query_embedding(query)
