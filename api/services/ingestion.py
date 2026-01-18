@@ -128,7 +128,7 @@ class FileIngestionService:
 
     def __init__(self):
         self.gemini = GeminiClient()
-    
+
     async def process_file(
         self, 
         file_content: bytes, 
@@ -214,4 +214,406 @@ class FileIngestionService:
             
         return await self._analyze_text_with_gemini(text_content, filename, "hwpx")
 
-    async def _analyze_text_with_gemini(self, text: str, filename: str, file_type: str, pre_extracted_tables: List[Dict] =
+    async def _analyze_text_with_gemini(self, text: str, filename: str, file_type: str, pre_extracted_tables: List[Dict] = None) -> Dict[str, Any]:
+        """Helper to send text content to Gemini for structuring."""
+        prompt = f'''
+        Analyze the following text extracted from a {file_type} document ({filename}).
+        Extract structured financial data into JSON.
+        
+        Text Content:
+        {text[:30000]}  # Limit context window if necessary, though Gemini Flash has 1M window
+        
+        Requirements:
+        1. Identify the document title and provide a detailed summary.
+        2. Identify key financial metrics (revenue, profit, ratios).
+        3. If there are tables explicitly mentioned or structured in text, reconstruct them.
+        4. Output strictly in JSON.
+        5. IMPORTANT: All output must be in English. Translate if necessary.
+        
+        Output JSON format:
+        {{
+            "title": "Document Title",
+            "summary": "Detailed summary",
+            "tables": [
+                {{
+                    "name": "Table Name",
+                    "headers": ["Col1", "Col2"],
+                    "rows": [["Val1", "Val2"]]
+                }}
+            ],
+            "key_metrics": {{ "metric": "value" }},
+            "currency": "KRW/USD",
+            "date_range": "YYYY-MM-DD"
+        }}
+        '''
+        
+        response_text = await self.gemini.generate_content(
+            [{"parts": [{"text": prompt}]}], 
+            "application/json"
+        )
+        
+        try:
+            result = json.loads(response_text)
+        except json.JSONDecodeError:
+            # Fallback if valid JSON isn't returned
+            result = {
+                "title": filename, 
+                "summary": "AI processing error", 
+                "tables": [], 
+                "key_metrics": {}
+            }
+            
+        # Merge pre-extracted tables if AI didn't find them but we did (e.g. from DOCX)
+        if pre_extracted_tables and not result.get("tables"):
+            result["tables"] = pre_extracted_tables
+            
+        result["metadata"] = {
+            "file_type": file_type,
+            "processed_by": "gemini-2.0-flash-text"
+        }
+        
+        return result
+
+    async def _process_xbrl(self, content: bytes, filename: str) -> Dict[str, Any]:
+        """
+        Process XBRL/XML file using STRUCTURAL Tree Parser.
+        
+        [Workflow]
+        1. Parse structure with XML Tree Parser
+        2. Standardize units via ScaleProcessor ($B)
+        3. Filter Contexts (CY/PY mapping)
+        4. Infer reasoning Q&A in CoT format
+        
+        Returns: XBRLIntelligenceResult converted to standard format
+        """
+        from .xbrl_semantic_engine import XBRLSemanticEngine
+        
+        # Automatic detection of label linkbase (filename-based)
+        label_content = None
+        base_name = filename.replace('.htm.xml', '').replace('.xml', '').replace('.xbrl', '')
+        
+        # NOTE: In a real implementation, _lab.xml files should also be uploaded.
+        # Currently processing with instance file only (using CoreFinancialConcepts fallback).
+        
+        # Initialize XBRLSemanticEngine and perform structural parsing.
+        engine = XBRLSemanticEngine(
+            company_name="",  # Extracted during parsing
+            fiscal_year="",    # Extracted during parsing
+            file_path=filename
+        )
+        
+        try:
+            result = engine.process_joint(
+                label_content=label_content,
+                instance_content=content
+            )
+            
+            if not result.success:
+                return {
+                    "title": f"XBRL Parsing Failed: {filename}",
+                    "summary": result.parse_summary,
+                    "tables": [],
+                    "key_metrics": {},
+                    "facts": [],
+                    "parse_log": result.errors,
+                    "metadata": {
+                        "file_type": "xbrl",
+                        "processed_by": "xbrl-semantic-engine-v11.5",
+                        "error": True
+                    }
+                }
+            
+            # Convert SemanticFacts to standard format
+            facts_list = []
+            for fact in result.facts:
+                facts_list.append({
+                    "concept": fact.concept,
+                    "label": fact.label,
+                    "value": str(fact.value),
+                    "raw_value": fact.raw_value,
+                    "unit": fact.unit,
+                    "period": fact.period,
+                    "is_consolidated": fact.is_consolidated,
+                    "decimals": fact.decimals
+                })
+            
+            # Convert to table format
+            tables = self._build_financial_tables(facts_list)
+
+            # CRITICAL DEBUG: Verify Data Pipe before return
+            final_qa = copy.deepcopy(result.reasoning_qa)
+            
+            # [Strict Handover] Defensive Check
+            if not isinstance(final_qa, list):
+                logger.error(f"CRITICAL HANDOVER ERROR: reasoning_qa is not a list! Type: {type(final_qa)}")
+                final_qa = []  # Emergency reset
+            
+            qa_count = len(final_qa)
+            logger.info(f"V11.5 DATA RECOVERED: [{qa_count}] ROWS READY")
+            logger.info(f"TRACE 5: Final data count being sent to Exporter: {qa_count}")
+            
+            return {
+                "title": f"XBRL: {result.company_name or filename}",
+                "summary": result.parse_summary,
+                "tables": tables,
+                "key_metrics": result.key_metrics,
+                "facts": facts_list,
+                "reasoning_qa": final_qa, # CRITICAL: Deep copy pass-through
+                "jsonl_data": result.jsonl_data,  # v11.5: Pass pre-verified JSONL
+                "financial_report_md": result.financial_report_md,
+                "parse_log": [],
+                "metadata": {
+                    "file_type": "xbrl",
+                    "company": result.company_name,
+                    "fiscal_year": result.fiscal_year,
+                    "fact_count": len(facts_list),
+                    "processed_by": "xbrl-semantic-engine-v11.5"
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"XBRL Parsing totally failed: {e}")
+            return {
+                "title": f"XBRL Parsing Error: {filename}",
+                "summary": f"Fatal error: {str(e)}",
+                "tables": [],
+                "key_metrics": {},
+                "facts": [],
+                "metadata": {
+                    "file_type": "xbrl",
+                    "error": True,
+                    "processed_by": "none"
+                }
+            }
+    
+    def _build_financial_tables(self, facts: List[Dict]) -> List[Dict]:
+        """Convert facts into financial table format."""
+        
+        # Balance Sheet items
+        balance_sheet = {
+            "name": "Statement of Financial Position (Balance Sheet)",
+            "headers": ["Account", "Amount ($B)", "Period"],
+            "rows": []
+        }
+        
+        # Income Statement items
+        income_statement = {
+            "name": "Statement of Comprehensive Income (Income Statement)",
+            "headers": ["Account", "Amount ($B)", "Period"],
+            "rows": []
+        }
+        
+        for fact in facts:
+            label = fact.get("label", "")
+            value = fact.get("value", "")
+            period = fact.get("period", "")
+            
+            row = [label, value, period]
+            
+            # Simple categorization based on core keywords
+            if any(k in label.lower() for k in ['asset', 'liabilit', 'equity']):
+                balance_sheet["rows"].append(row)
+            elif any(k in label.lower() for k in ['revenue', 'profit', 'income', 'loss', 'expens']):
+                income_statement["rows"].append(row)
+        
+        tables = []
+        if balance_sheet["rows"]:
+            tables.append(balance_sheet)
+        if income_statement["rows"]:
+            tables.append(income_statement)
+            
+        return tables
+
+    async def _process_csv(self, content: bytes, filename: str) -> Dict[str, Any]:
+        """Process CSV file using standard csv module."""
+        text_content = None
+        
+        # Try different encodings
+        for encoding in ['utf-8', 'cp949', 'euc-kr', 'latin1']:
+            try:
+                text_content = content.decode(encoding)
+                break
+            except UnicodeDecodeError:
+                continue
+        
+        if text_content is None:
+            raise ValueError("Could not decode CSV file with any supported encoding")
+        
+        # Parse CSV
+        f = io.StringIO(text_content)
+        reader = csv.reader(f)
+        rows = list(reader)
+        
+        if not rows:
+            return {"title": filename, "summary": "Empty CSV file", "tables": []}
+            
+        headers = rows[0]
+        data_rows = rows[1:]
+        
+        tables = [{
+            "name": filename,
+            "headers": headers,
+            "rows": data_rows
+        }]
+        
+        # Generate summary using Gemini
+        sample_lines = rows[:10]
+        sample_data = "\n".join([",".join(map(str, row)) for row in sample_lines])
+        summary = await self._generate_summary(sample_data)
+        
+        return {
+            "title": filename,
+            "summary": summary,
+            "tables": tables,
+            "key_metrics": self._extract_metrics(headers, data_rows),
+            "metadata": {
+                "file_type": "csv",
+                "row_count": len(rows),
+                "column_count": len(headers)
+            }
+        }
+    
+    async def _process_excel(self, content: bytes, filename: str) -> Dict[str, Any]:
+        """Process Excel file using openpyxl."""
+        from openpyxl import load_workbook
+        
+        wb = load_workbook(filename=io.BytesIO(content), data_only=True)
+        tables = []
+        all_metrics = {}
+        
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            rows = list(ws.values)
+            
+            if not rows:
+                continue
+                
+            headers = list(rows[0]) if rows else []
+            data_rows = [list(row) for row in rows[1:]] if len(rows) > 1 else []
+            
+            # Simple conversion of None to empty string
+            headers = [str(h) if h is not None else "" for h in headers]
+            data_rows = [[cell if cell is not None else "" for cell in row] for row in data_rows]
+            
+            tables.append({
+                "name": sheet_name,
+                "headers": headers,
+                "rows": data_rows
+            })
+            
+            # Merge metrics
+            sheet_metrics = self._extract_metrics(headers, data_rows)
+            all_metrics.update({f"{sheet_name}_{k}": v for k, v in sheet_metrics.items()})
+        
+        # Generate summary
+        sample_text = "\n".join([f"{t['name']}: {t['headers']}" for t in tables[:3]])
+        summary = await self._generate_summary(sample_text)
+        
+        return {
+            "title": filename,
+            "summary": summary,
+            "tables": tables,
+            "key_metrics": all_metrics,
+            "metadata": {
+                "file_type": "excel",
+                "sheet_count": len(tables)
+            }
+        }
+    
+    async def _process_with_gemini(self, content: bytes, filename: str, mime_type: str) -> Dict[str, Any]:
+        """Process PDF/Image using Gemini multimodal via HTTP."""
+        prompt = '''
+        Analyze this financial document thoroughly. Extract ALL data into structured JSON.
+        
+        Requirements:
+        1. Identify the document title and provide a detailed summary
+        2. Extract ALL tables with proper headers and data
+        3. Identify key financial metrics (revenue, profit, growth rates, ratios)
+        4. Note any currency units (KRW, USD, etc.)
+        5. Identify date references and time periods
+        6. IMPORTANT: All output must be in English. Translate if necessary.
+        
+        Output JSON format:
+        {
+            "title": "Document Title",
+            "summary": "Detailed summary of the document content",
+            "tables": [
+                {
+                    "name": "Table Name",
+                    "headers": ["Column1", "Column2", ...],
+                    "rows": [["Value1", "Value2", ...], ...]
+                }
+            ],
+            "key_metrics": {
+                "metric_name": "value with unit"
+            },
+            "currency": "KRW or USD",
+            "date_range": "YYYY-MM-DD to YYYY-MM-DD"
+        }
+        '''
+        
+        response_text = await self.gemini.generate_with_file(
+            content, mime_type, prompt, "application/json"
+        )
+        
+        result = json.loads(response_text)
+        result["metadata"] = {
+            "file_type": "pdf" if "pdf" in mime_type else "image",
+            "processed_by": "gemini-2.0-flash"
+        }
+        
+        return result
+    
+    async def _generate_summary(self, data_sample: str) -> str:
+        """Generate a summary using Gemini."""
+        prompt = f"Summarize the key findings of the following data in 2-3 sentences:\n\n{data_sample}"
+        
+        contents = [{"parts": [{"text": prompt}]}]
+        return await self.gemini.generate_content(contents)
+    
+    def _extract_metrics(self, headers: List[str], rows: List[List[Any]]) -> Dict[str, Any]:
+        """Extract simple metrics from headers and rows without pandas."""
+        metrics = {}
+        if not headers or not rows:
+            return metrics
+
+        # Find potential numeric columns (simple heuristic)
+        numeric_indices = []
+        for i in range(len(headers)):
+            # Check first few non-empty rows
+            is_numeric = False
+            for row in rows[:5]:
+                if i < len(row) and isinstance(row[i], (int, float)):
+                   is_numeric = True
+                   break
+                elif i < len(row) and isinstance(row[i], str) and row[i].replace('.','',1).isdigit():
+                   is_numeric = True
+                   break
+            if is_numeric:
+                numeric_indices.append(i)
+        
+        # Calculate sums/averages for first few numeric columns
+        for i in numeric_indices[:5]:
+            col_name = str(headers[i])
+            values = []
+            for row in rows:
+                if i < len(row):
+                    val = row[i]
+                    try:
+                        if isinstance(val, (int, float)):
+                            values.append(float(val))
+                        elif isinstance(val, str):
+                            # clean string
+                            clean_val = val.replace(',', '').replace(' ', '')
+                            if clean_val:
+                                values.append(float(clean_val))
+                    except ValueError:
+                        continue
+            
+            if values:
+                metrics[f"{col_name}_total"] = sum(values)
+                metrics[f"{col_name}_avg"] = sum(values) / len(values)
+                
+        return metrics
+
+ingestion_service = FileIngestionService()
