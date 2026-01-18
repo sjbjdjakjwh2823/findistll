@@ -216,7 +216,6 @@ async def get_me(current_user: dict = Depends(require_auth)):
         "metadata": current_user.get("user_metadata", {})
     }
 
-
 @app.post("/api/extract")
 async def extract_document(
     file: UploadFile = File(...),
@@ -229,4 +228,238 @@ async def extract_document(
     """
     try:
         user_id_str = current_user.get("sub")
-        file_content = await fil
+        file_content = await file.read()
+        
+        extracted_data = await ingestion_service.process_file(
+            file_content,
+            file.filename,
+            file.content_type
+        )
+        
+        normalized_data = normalizer.normalize(extracted_data)
+        embed_text = embedder.create_document_text(normalized_data)
+        embedding = await embedder.generate_embedding(embed_text)
+        
+        doc = Document(
+            filename=file.filename,
+            file_path=f"memory://{file.filename}",
+            file_type=file.content_type,
+            user_id=user_id_str
+        )
+        db.add(doc)
+        await db.commit()
+        await db.refresh(doc)
+        
+        result = ExtractedResult(
+            document_id=doc.id,
+            data=normalized_data,
+            embedding=embedding
+        )
+        db.add(result)
+        await db.commit()
+        
+        return {
+            "success": True,
+            "document_id": doc.id,
+            "data": normalized_data,
+            "available_exports": ["jsonl", "markdown", "parquet", "hdf5"]
+        }
+
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse AI response: {str(e)}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error processing request: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/history")
+async def get_history(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_auth)
+):
+    user_id = current_user.get("sub")
+    
+    stmt = (
+        select(Document, ExtractedResult)
+        .join(ExtractedResult, Document.id == ExtractedResult.document_id)
+        .where(Document.user_id == user_id)
+        .order_by(desc(Document.upload_date))
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+    
+    history = []
+    for doc, res in rows:
+        history.append({
+            "id": doc.id,
+            "filename": doc.filename,
+            "file_type": getattr(doc, "file_type", "unknown"),
+            "upload_date": doc.upload_date.isoformat() if doc.upload_date else None,
+            "summary": res.data.get("summary", "No summary"),
+            "title": res.data.get("title", "Untitled"),
+            "exports": {
+                "jsonl": f"/api/export/jsonl/{doc.id}",
+                "markdown": f"/api/export/markdown/{doc.id}",
+                "parquet": f"/api/export/parquet/{doc.id}",
+                "hdf5": f"/api/export/hdf5/{doc.id}"
+            }
+        })
+    
+    return history
+
+
+@app.get("/api/document/{document_id}")
+async def get_document(
+    document_id: int, 
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_auth)
+):
+    user_id = current_user.get("sub")
+    
+    stmt = (
+        select(Document, ExtractedResult)
+        .join(ExtractedResult, Document.id == ExtractedResult.document_id)
+        .where(Document.id == document_id)
+        .where(Document.user_id == user_id)
+    )
+    result = await db.execute(stmt)
+    row = result.first()
+    
+    if not row:
+        raise HTTPException(status_code=404, detail="Document not found or access denied")
+    
+    doc, res = row
+    return {
+        "id": doc.id,
+        "filename": doc.filename,
+        "upload_date": doc.upload_date.isoformat() if doc.upload_date else None,
+        "data": res.data,
+        "exports": {
+            "jsonl": f"/api/export/jsonl/{doc.id}",
+            "markdown": f"/api/export/markdown/{doc.id}",
+            "parquet": f"/api/export/parquet/{doc.id}",
+            "hdf5": f"/api/export/hdf5/{doc.id}"
+        }
+    }
+
+
+# ==================== EXPORT ENDPOINTS ====================
+
+@app.get("/api/export/jsonl/{document_id}")
+async def export_jsonl(document_id: int, db: AsyncSession = Depends(get_db)):
+    data = await _get_document_data(document_id, db)
+    jsonl_content = exporter.to_jsonl(data)
+    
+    return PlainTextResponse(
+        content=jsonl_content,
+        media_type="application/jsonl",
+        headers={
+            "Content-Disposition": f"attachment; filename=document_{document_id}.jsonl"
+        }
+    )
+
+
+@app.get("/api/export/markdown/{document_id}")
+async def export_markdown(document_id: int, db: AsyncSession = Depends(get_db)):
+    data = await _get_document_data(document_id, db)
+    markdown_content = exporter.to_markdown(data)
+    
+    return PlainTextResponse(
+        content=markdown_content,
+        media_type="text/markdown",
+        headers={
+            "Content-Disposition": f"attachment; filename=document_{document_id}.md"
+        }
+    )
+
+
+@app.get("/api/export/parquet/{document_id}")
+async def export_parquet(document_id: int, db: AsyncSession = Depends(get_db)):
+    data = await _get_document_data(document_id, db)
+    try:
+        parquet_content = exporter.to_parquet(data)
+        return Response(
+            content=parquet_content,
+            media_type="application/octet-stream",
+            headers={
+                "Content-Disposition": f"attachment; filename=document_{document_id}.parquet"
+            }
+        )
+    except (ImportError, RuntimeError) as e:
+        raise HTTPException(status_code=501, detail=f"Parquet export error: {str(e)}")
+
+
+@app.get("/api/export/hdf5/{document_id}")
+async def export_hdf5(document_id: int, db: AsyncSession = Depends(get_db)):
+    data = await _get_document_data(document_id, db)
+    try:
+        hdf5_content = exporter.to_hdf5(data)
+        return Response(
+            content=hdf5_content,
+            media_type="application/x-hdf5",
+            headers={
+                "Content-Disposition": f"attachment; filename=document_{document_id}.h5"
+            }
+        )
+    except (ImportError, RuntimeError) as e:
+        raise HTTPException(status_code=501, detail=f"HDF5 export error: {str(e)}")
+
+
+async def _get_document_data(document_id: int, db: AsyncSession) -> dict:
+    stmt = (
+        select(ExtractedResult)
+        .where(ExtractedResult.document_id == document_id)
+    )
+    result = await db.execute(stmt)
+    row = result.first()
+    
+    if not row:
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    return row[0].data
+
+
+# ==================== SEARCH ENDPOINT ====================
+
+@app.get("/api/search")
+async def semantic_search(
+    query: str,
+    limit: int = 10,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_auth)
+):
+    # Generate query embedding
+    query_embedding = await embedder.generate_query_embedding(query)
+    
+    # Vector similarity search
+    sql = text("""
+        SELECT 
+            d.id, d.filename, d.upload_date,
+            er.data,
+            er.embedding <-> :query_vec AS distance
+        FROM documents d
+        JOIN extracted_results er ON d.id = er.document_id
+        WHERE er.embedding IS NOT NULL
+        ORDER BY er.embedding <-> :query_vec
+        LIMIT :limit
+    """)
+    
+    result = await db.execute(sql, {
+        "query_vec": str(query_embedding),
+        "limit": limit
+    })
+    rows = result.fetchall()
+    
+    return [
+        {
+            "id": row[0],
+            "filename": row[1],
+            "upload_date": row[2].isoformat() if row[2] else None,
+            "title": row[3].get("title", "Untitled"),
+            "summary": row[3].get("summary", ""),
+            "relevance_score": 1 - row[4]
+        }
+        for row in rows
+    ]
