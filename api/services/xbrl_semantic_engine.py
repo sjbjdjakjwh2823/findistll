@@ -103,7 +103,6 @@ class ExpertCoTGenerator:
     Mandates 4-step analytical structure for financial training data.
     """
 
-
     @staticmethod
     def _get_intelligent_context(metric_name: str) -> Dict[str, str]:
         """Retrieves intelligent definition and significance from glossary."""
@@ -647,7 +646,7 @@ class XBRLSemanticEngine:
             f"V13.2 COMPLETE: BUILD SUCCESS & YoY ACTIVE {len(self.reasoning_qa)} "
             f"CHAINS FROM {len(facts)} FACTS"
         )
-        print(f"V13.2 COMPLETE: BUILD SUCCESS & YoY ACTIVE {len(facts)} FACTS")
+        logger.info(f"V13.2 COMPLETE: BUILD SUCCESS & YoY ACTIVE {len(facts)} FACTS")
         return self.reasoning_qa
 
     def process_mock(self) -> XBRLIntelligenceResult:
