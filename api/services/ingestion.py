@@ -23,10 +23,16 @@ import base64
 import zipfile
 import xml.etree.ElementTree as ET
 from typing import Dict, Any, List, Optional
-import httpx
 import os
 import logging
 import copy
+import httpx
+
+# Optional imports
+try:
+    import docx
+except ImportError:
+    docx = None
 
 # Configure logger
 logging.basicConfig(level=logging.INFO)
@@ -156,7 +162,8 @@ class FileIngestionService:
 
     async def _process_docx(self, content: bytes, filename: str) -> Dict[str, Any]:
         """Process Word document using python-docx and Gemini."""
-        import docx
+        if docx is None:
+            raise ImportError("python-docx is not installed.")
         
         doc = docx.Document(io.BytesIO(content))
         full_text = []
@@ -344,7 +351,7 @@ class FileIngestionService:
             # [Strict Handover] Defensive Check
             if not isinstance(final_qa, list):
                 logger.error(f"CRITICAL HANDOVER ERROR: reasoning_qa is not a list! Type: {type(final_qa)}")
-                final_qa = [] # Emergency reset
+                final_qa = []  # Emergency reset
             
             qa_count = len(final_qa)
             logger.info(f"V11.5 DATA RECOVERED: [{qa_count}] ROWS READY")
