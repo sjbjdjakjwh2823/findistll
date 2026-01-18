@@ -26,6 +26,7 @@ from typing import Dict, Any, List, Optional
 import httpx
 import os
 import logging
+import copy
 
 # Configure logger
 logging.basicConfig(level=logging.INFO)
@@ -203,7 +204,7 @@ class FileIngestionService:
                     text_content += "\n".join(texts) + "\n\n"
                     
         except Exception as e:
-            print(f"Error parsing HWPX: {e}")
+            logger.error(f"Error parsing HWPX: {e}")
             raise ValueError(f"Failed to parse HWPX file: {e}")
 
         if not text_content:
@@ -338,7 +339,6 @@ class FileIngestionService:
             tables = self._build_financial_tables(facts_list)
 
             # CRITICAL DEBUG: Verify Data Pipe before return
-            import copy
             final_qa = copy.deepcopy(result.reasoning_qa)
             
             # [Strict Handover] Defensive Check
@@ -347,10 +347,11 @@ class FileIngestionService:
                 final_qa = [] # Emergency reset
             
             qa_count = len(final_qa)
-            print(f"V11.5 DATA RECOVERED: [{qa_count}] ROWS READY")
-            print(f"TRACE 5: Final data count being sent to Exporter: {qa_count}")
+            logger.info(f"V11.5 DATA RECOVERED: [{qa_count}] ROWS READY")
+            logger.info(f"TRACE 5: Final data count being sent to Exporter: {qa_count}")
             
             return {
+
                 "title": f"XBRL: {result.company_name or filename}",
                 "summary": result.parse_summary,
                 "tables": tables,
