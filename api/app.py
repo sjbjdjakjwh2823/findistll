@@ -305,10 +305,10 @@ async def extract_document(
             "available_exports": ["jsonl", "markdown", "parquet", "hdf5"]
         }
 
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=500, detail=f"Failed to parse AI response: {str(e)}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         print(f"Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -499,7 +499,8 @@ async def _get_document_data(document_id: int, db: AsyncSession) -> dict:
 async def semantic_search(
     query: str,
     limit: int = 10,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_auth)  # Require authentication
 ):
     """
     Semantic search across documents using vector similarity.

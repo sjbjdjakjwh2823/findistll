@@ -25,6 +25,11 @@ import xml.etree.ElementTree as ET
 from typing import Dict, Any, List, Optional
 import httpx
 import os
+import logging
+
+# Configure logger
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Gemini API configuration
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
@@ -220,6 +225,7 @@ class FileIngestionService:
         2. Identify key financial metrics (revenue, profit, ratios).
         3. If there are tables explicitly mentioned or structured in text, reconstruct them.
         4. Output strictly in JSON.
+        5. IMPORTANT: All output must be in English. Translate if necessary.
         
         Output JSON format:
         {{
@@ -523,6 +529,7 @@ class FileIngestionService:
         3. Identify key financial metrics (revenue, profit, growth rates, ratios)
         4. Note any currency units (KRW, USD, etc.)
         5. Identify date references and time periods
+        6. IMPORTANT: All output must be in English. Translate if necessary.
         
         Output JSON format:
         {
