@@ -1,21 +1,15 @@
 {
-    "builds": [
-        {
-            "src": "api/handler.py",
-            "use": "@vercel/python",
-            "config": {
-                "runtime": "python3.10"
-            }
-        },
-        {
-            "src": "package.json",
-            "use": "@vercel/next"
-        }
-    ],
-    "rewrites": [
-        {
-            "source": "/api/:path*",
-            "destination": "/api/handler.py"
-        }
-    ]
+  "version": 2,
+  "builds": [
+    {
+      "src": "main.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "main.py"
+    }
+  ]
 }
