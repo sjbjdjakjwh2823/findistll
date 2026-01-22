@@ -1,0 +1,16 @@
+# Vercel Ignore File
+# Exclude large data files and outputs
+project_1/output/
+large_financial_data.csv
+*.csv
+*.parquet
+*.jsonl
+*.xbrl
+*.pdf
+output/
+data/
+logs/
+.env
+.env.local
+.venv/
+__pycache__/
