@@ -1,50 +1,26 @@
-# .env 파일 (API 키 등 민감한 정보)
-.env
+# Data Files (Do not commit huge datasets)
+*.csv
+*.parquet
+*.jsonl
+*.json
+*.xbrl
+*.pdf
+*.xlsx
+*.xml
 
-# 로그 파일
+# Output Directories
+output/
+final_output/
+data/
 logs/
-*.log
 
-# Python 캐시
+# Environment Variables
+.env
+.env.local
+
+# Python/Vercel
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-.Python
-*.so
-
-# 가상환경
 venv/
-env/
 .venv/
-
-# IDE 설정
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# 임시 파일
-*.tmp
-*.temp
-temp/
-tmp/
-
-# 테스트 결과
-test_result.json
-*.pdf
-
-# OS 파일
-.DS_Store
-Thumbs.db
-
-# Node.js
-node_modules/
-.next/
-out/
-
-# Uploads
-uploads/
-
-# Output artifacts
-final_output/
+.vercel/
