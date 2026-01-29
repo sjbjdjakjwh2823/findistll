@@ -8,7 +8,7 @@ Multi-format financial document distillation (v11.5 Strict):
 """
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, UploadFile, File, Depends, HTTPException
+from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, PlainTextResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -220,14 +220,17 @@ async def get_me(current_user: dict = Depends(require_auth)):
 async def extract_document(
     file: UploadFile = File(...),
     export_format: str = "jsonl",
+    spoke: str = Form("hub"),
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_auth)
 ):
     """
     Extract and distill financial data from uploaded document.
+    Target Spoke: hub, spoke_a, spoke_b, spoke_c, spoke_d
     """
     try:
         user_id_str = current_user.get("sub")
+        logger.info(f"Processing extraction for user {user_id_str} via {spoke.upper()}")
         file_content = await file.read()
         
         extracted_data = await ingestion_service.process_file(
@@ -246,6 +249,12 @@ async def extract_document(
             file_type=file.content_type,
             user_id=user_id_str
         )
+        
+        # Add spoke info to metadata
+        if "metadata" not in normalized_data:
+            normalized_data["metadata"] = {}
+        normalized_data["metadata"]["target_spoke"] = spoke
+        
         db.add(doc)
         await db.commit()
         await db.refresh(doc)

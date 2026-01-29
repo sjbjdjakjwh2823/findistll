@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { 
   Database, 
@@ -41,7 +42,7 @@ export default function Home() {
       
       <nav className="fixed top-0 w-full z-50 border-b border-white/5 bg-background/80 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="text-sm font-medium tracking-widest uppercase text-white/80">FinDistill <span className="text-purple-500">v27.0</span></div>
+          <div className="text-sm font-medium tracking-widest uppercase text-white/80"></div>
           <div className="flex gap-6 text-sm text-gray-400">
             <a href="#architecture" className="hover:text-white transition-colors">Architecture</a>
             <a href="#features" className="hover:text-white transition-colors">Features</a>
@@ -80,10 +81,12 @@ export default function Home() {
             </motion.p>
             
             <motion.div variants={fadeInUp} className="pt-8 flex flex-col sm:flex-row gap-4 justify-center items-center">
-              <button className="px-8 py-4 rounded-lg bg-white text-black font-semibold hover:bg-gray-200 transition-all flex items-center gap-2 group">
-                Deploy v27.0
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-              </button>
+              <Link href="/upload">
+                <button className="px-8 py-4 rounded-lg bg-white text-black font-semibold hover:bg-gray-200 transition-all flex items-center gap-2 group">
+                  Launch Engine
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </button>
+              </Link>
               <button className="px-8 py-4 rounded-lg border border-white/10 text-white hover:bg-white/5 transition-all">
                 View Documentation
               </button>
