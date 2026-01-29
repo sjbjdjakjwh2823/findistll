@@ -25,3 +25,18 @@ __pycache__/
 venv/
 .venv/
 .vercel/
+node_modules/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# System
+.DS_Store
+Thumbs.db
+
+# Private Keys
+key.txt
+

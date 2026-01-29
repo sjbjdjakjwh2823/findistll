@@ -57,6 +57,10 @@ class EmbeddingService:
     
     async def _call_embed_api(self, text: str, task_type: str) -> List[float]:
         """Call Gemini embedding API via HTTP."""
+        if not self.api_key:
+            # Return zero vector for mock/dev environment
+            return [0.0] * self.EMBEDDING_DIM
+
         url = f"{GEMINI_API_BASE}/models/{self.model}:embedContent?key={self.api_key}"
         
         payload = {

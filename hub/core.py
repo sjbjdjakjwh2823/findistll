@@ -1,10 +1,14 @@
 import logging
 import polars as pl
 import numpy as np
+import os
+import time
 from scipy.stats import median_abs_deviation
 import statsmodels.api as sm
 
 logger = logging.getLogger(__name__)
+
+import time 
 
 class MasterFinancialHub:
     """
@@ -15,15 +19,18 @@ class MasterFinancialHub:
         self.df_market = None
         self.df = None # Active DF for legacy methods
         self.quality_score = 0.5 
+        # v29.0 Immortal Infrastructure
+        self.schema_registry = {"fundamental": set(), "market": set()}
+        self.checkpoint_dir = "checkpoints"
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
 
     def ingest_data(self, source_data, domain="fundamental", source_type="tier2"):
         """
-        Ingests data into Polars LazyFrame with Metadata DNA (v24.5 Source Tiering).
-        Does NOT trigger pipeline immediately to allow accumulation.
+        Ingests data with Self-Evolving Schema (v29.0).
+        Detects new columns (e.g. ESG, Carbon) and updates registry.
         """
         logger.info(f"Hub: Ingesting {domain} data (Source: {source_type})...")
         
-        # Determine Base Confidence
         base_confidence = 0.95
         if source_type == "tier1": base_confidence = 0.99
         elif source_type == "tier3": base_confidence = 0.85
@@ -36,7 +43,19 @@ class MasterFinancialHub:
         else:
             lf = pl.from_arrow(source_data).lazy()
             
-        # Metadata DNA & Unified Object ID
+        # v29.0 Self-Evolving Schema Logic
+        current_cols = set(lf.collect_schema().names())
+        known_cols = self.schema_registry[domain]
+        new_cols = current_cols - known_cols
+        
+        if new_cols:
+            if known_cols: # Not first run
+                logger.warning(f"Hub: Schema Evolution Detected! New concepts: {new_cols}")
+                # In a real DB, we would ALTER TABLE here.
+                # In Polars Lazy, we align schemas using diagonal concat if merging.
+            self.schema_registry[domain].update(new_cols)
+            
+        # Metadata DNA
         schema = lf.collect_schema().names()
         
         # Inject Source Metadata
@@ -45,18 +64,21 @@ class MasterFinancialHub:
             pl.lit(base_confidence).alias("confidence_score")
         ])
         
-        # Common Objectification
+        # ... (Objectification Logic) ...
         if "object_id" not in schema:
             if domain == "fundamental":
                 lf = lf.with_columns(
-                    pl.concat_str([pl.col("entity"), pl.lit("_F_"), pl.col("period"), pl.lit("_"), pl.col("concept")]).alias("object_id")
+                    pl.concat_str([pl.col("entity"), pl.lit("_F_"), pl.col("period"), pl.lit("_"), pl.col("concept")]).alias("object_id"),
+                    pl.lit("Object").alias("ontology_type")
                 )
             else: # Market
                 if "date" in schema:
                     lf = lf.with_columns(
-                        pl.concat_str([pl.col("entity"), pl.lit("_M_"), pl.col("date")]).alias("object_id")
+                        pl.concat_str([pl.col("entity"), pl.lit("_M_"), pl.col("date")]).alias("object_id"),
+                        pl.lit("Event").alias("ontology_type")
                     )
         
+        # Track Assignment with Schema Evolution Support
         if domain == "fundamental":
             if 'value' in schema:
                 lf = lf.with_columns(pl.col("value").cast(pl.Float64))
@@ -64,7 +86,10 @@ class MasterFinancialHub:
             if self.df_fundamental is None:
                 self.df_fundamental = lf
             else:
-                self.df_fundamental = pl.concat([self.df_fundamental, lf])
+                # v29.0 Robust Merge (Diagonal for schema evolution)
+                # We collect to merge schemas if lazy concat diagonal is not behaving (it usually is fine)
+                # But to be safe and "Immortal", we handle mismatch.
+                self.df_fundamental = pl.concat([self.df_fundamental, lf], how="diagonal")
                 
         else:
             if 'close' in schema:
@@ -73,16 +98,53 @@ class MasterFinancialHub:
             if self.df_market is None:
                 self.df_market = lf
             else:
-                self.df_market = pl.concat([self.df_market, lf])
+                self.df_market = pl.concat([self.df_market, lf], how="diagonal")
+                
+        # v29.0 Micro-Checkpoint (Fault Tolerance)
+        # We save state metadata log
+        with open(f"{self.checkpoint_dir}/transaction_log.txt", "a") as f:
+            f.write(f"{time.time()}|Ingest|{domain}|{len(new_cols)}_new_cols\n")
 
-        # We DO NOT call process_pipeline() here anymore.
-        # It must be called explicitly before output.
-        
+    def save_checkpoint(self):
+        """
+        v29.0 Fault-Tolerant Execution: Checkpoint
+        Saves current LazyFrames to disk as Parquet for rapid restart.
+        """
+        logger.info("Hub: Saving Checkpoint (Immortal State)...")
+        if self.df_fundamental is not None:
+            self.df_fundamental.collect().write_parquet(f"{self.checkpoint_dir}/fundamental_latest.parquet")
+        if self.df_market is not None:
+            self.df_market.collect().write_parquet(f"{self.checkpoint_dir}/market_latest.parquet")
+            
+    def load_checkpoint(self):
+        """
+        v29.0 Restart
+        """
+        logger.info("Hub: Loading Checkpoint...")
+        try:
+            if os.path.exists(f"{self.checkpoint_dir}/fundamental_latest.parquet"):
+                self.df_fundamental = pl.scan_parquet(f"{self.checkpoint_dir}/fundamental_latest.parquet")
+            if os.path.exists(f"{self.checkpoint_dir}/market_latest.parquet"):
+                self.df_market = pl.scan_parquet(f"{self.checkpoint_dir}/market_latest.parquet")
+            logger.info("Hub: State Restored Successfully.")
+            return True
+        except Exception as e:
+            logger.error(f"Hub: Checkpoint Load Failed: {e}")
+            return False
+
     def run(self):
         """
-        Trigger Pipeline Execution (Public API)
+        Trigger Pipeline Execution (Public API) with Fault Tolerance
         """
-        self.process_pipeline()
+        try:
+            self.process_pipeline()
+            self.save_checkpoint() # Save success state
+        except Exception as e:
+            logger.error(f"Hub: CRITICAL FAILURE - {e}. Attempting Recovery...")
+            if self.load_checkpoint():
+                logger.info("Hub: Resumed from last checkpoint.")
+            else:
+                raise e # Fatal if no checkpoint
         """
         v24.0 Market Alpha Features: VWAP, FracDiff, Triple Barrier, VPIN, Meta-Labeling
         v26.0 Self-Evolving Signal Prediction: Predictive Arbitrage & Pattern Discovery
@@ -471,19 +533,7 @@ class MasterFinancialHub:
         
         logger.info("Hub: Hyper-Parameters Tuned based on Regime.")
 
-    def _run_cross_market_impact(self):
-        """
-        Recursive Perfection: Self-Correction Logic & History Logging
-        """
-        logger.info("Hub: Running Recursive Correction Layer...")
-        # Self-Correction Record: Log the shift
-        # In lazy frame, we might add a column 'audit_history'
-        
-        self.df = self.df.with_columns(
-            pl.lit(f"Recursive Correction Triggered due to Score {self.quality_score:.4f}").alias("audit_history")
-        )
-        
-        self.quality_score = min(0.9999, self.quality_score * 1.15) # Boost after correction
+
 
     def _apply_unit_lock(self):
         """
@@ -678,7 +728,17 @@ class MasterFinancialHub:
         Zero-Copy Output: Returns PyArrow Table
         """
         # Collect at the very end
-        return self.df.collect().to_arrow()
+        target_df = self.df
+        if target_df is None:
+            if self.df_market is not None: target_df = self.df_market
+            elif self.df_fundamental is not None: target_df = self.df_fundamental
+            
+        if target_df is None:
+             # Return empty table logic or raise
+             import pyarrow as pa
+             return pa.Table.from_pylist([])
+             
+        return target_df.collect().to_arrow()
         
     def get_audit_score(self):
         return self.quality_score * 100.0

@@ -15,7 +15,7 @@ import os
 # Format: postgresql+asyncpg://user:password@host:port/database
 raw_url = os.getenv(
     "SUPABASE_DATABASE_URL",
-    os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:password@localhost:5432/findistill_db")
+    os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:qwer7410@localhost:5432/findistill_db")
 )
 
 # FIX: Force Supabase to use port 6543 (Transaction Pooler / IPv4)
