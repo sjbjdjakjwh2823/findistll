@@ -283,26 +283,32 @@ class SpokeE:
             # Instead of a human-readable PDF, we create a rich, structured dataset
             # that an LLM can easily ingest for Fine-tuning or RAG.
             
-            ai_optimized_record = {
-                "metadata": {
-                    "entity": entity,
-                    "timestamp": datetime.datetime.now().isoformat(),
-                    "data_source": "FinDistill_Integrated_Engine",
-                    "version": "2.0"
-                },
+            # [HOTFIX] Merge fields into 'metadata' to bypass schema restriction
+            # if 'input_features' column is missing in Supabase.
+            metadata = {
+                "entity": entity,
+                "timestamp": datetime.datetime.now().isoformat(),
+                "data_source": "FinDistill_Integrated_Engine",
+                "version": "2.1",
+                # Merged fields
                 "input_features": {
                     "financials": financial_ratios,
                     "market_data": {
                         "price": row.get('close'),
                         "volume": row.get('volume')
                     },
-                    "ontology_state": row.get('ontology_state', 'Unknown') # From Spoke D
+                    "ontology_state": row.get('ontology_state', 'Unknown')
                 },
                 "reasoning_chain": {
                     "step_1_macro": "Global macro conditions analyzed.",
                     "step_2_micro": "Entity specific financials reviewed.",
                     "step_3_synthesis": risk_assessment
-                },
+                }
+            }
+            
+            ai_optimized_record = {
+                "metadata": metadata,
+                # Keep top-level keys for local JSONL, but Supabase might ignore them if columns don't exist
                 "output_narrative": summary,
                 "training_prompt": f"Analyze the investment viability of {entity} given the following financial data: {json.dumps(financial_ratios)}."
             }
