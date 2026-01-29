@@ -48,6 +48,19 @@ class GeminiClient:
         
     async def generate_content(self, contents: list, response_mime_type: str = None) -> str:
         """Generate content using Gemini API."""
+        if not self.api_key:
+            logger.warning("Gemini API Key missing. Returning mock response.")
+            if response_mime_type == "application/json":
+                return json.dumps({
+                    "title": "Mock Title",
+                    "summary": "Mock Summary (No API Key)",
+                    "tables": [],
+                    "key_metrics": {},
+                    "currency": "USD",
+                    "date_range": "2023-2024"
+                })
+            return "Mock Content (No API Key)"
+
         url = f"{GEMINI_API_BASE}/models/{self.model}:generateContent?key={self.api_key}"
         
         generation_config = {}
@@ -73,6 +86,17 @@ class GeminiClient:
     
     async def generate_with_file(self, file_content: bytes, mime_type: str, prompt: str, response_mime_type: str = None) -> str:
         """Generate content with inline file data."""
+        if not self.api_key:
+            logger.warning("Gemini API Key missing. Returning mock response.")
+            return json.dumps({
+                "title": "Mock Analysis",
+                "summary": "Mock Summary (No API Key)",
+                "tables": [],
+                "key_metrics": {},
+                "currency": "USD",
+                "date_range": "2023-2024"
+            })
+
         # Encode file as base64
         file_b64 = base64.b64encode(file_content).decode("utf-8")
         
@@ -272,6 +296,25 @@ class FileIngestionService:
             "processed_by": "gemini-2.0-flash-text"
         }
         
+        # Ensure reasoning_qa exists
+        if "reasoning_qa" not in result:
+            result["reasoning_qa"] = [
+                {
+                    "question": "Provide a summary of the document.",
+                    "response": result.get("summary", "No summary available."),
+                    "type": "summary"
+                }
+            ]
+            
+            # Add table analysis
+            for table in result.get("tables", []):
+                t_name = table.get("name", "Unknown Table")
+                result["reasoning_qa"].append({
+                    "question": f"Analyze the table '{t_name}'.",
+                    "response": f"Table '{t_name}' contains {len(table.get('rows', []))} rows of data.",
+                    "type": "table_analysis"
+                })
+        
         return result
 
     async def _process_xbrl(self, content: bytes, filename: str) -> Dict[str, Any]:
@@ -461,11 +504,30 @@ class FileIngestionService:
         sample_data = "\n".join([",".join(map(str, row)) for row in sample_lines])
         summary = await self._generate_summary(sample_data)
         
+        # Generate Reasoning QA for JSONL
+        reasoning_qa = [
+            {
+                "question": "Provide a summary of the provided CSV data.",
+                "response": summary,
+                "type": "summary"
+            }
+        ]
+        
+        # Add metric analysis to reasoning_qa
+        metrics = self._extract_metrics(headers, data_rows)
+        for k, v in metrics.items():
+            reasoning_qa.append({
+                "question": f"Analyze the metric '{k}' from the dataset.",
+                "response": f"The calculated value for {k} is {v}. This metric provides insight into the dataset's aggregate performance.",
+                "type": "metric_analysis"
+            })
+        
         return {
             "title": filename,
             "summary": summary,
             "tables": tables,
-            "key_metrics": self._extract_metrics(headers, data_rows),
+            "key_metrics": metrics,
+            "reasoning_qa": reasoning_qa,
             "metadata": {
                 "file_type": "csv",
                 "row_count": len(rows),
@@ -509,11 +571,29 @@ class FileIngestionService:
         sample_text = "\n".join([f"{t['name']}: {t['headers']}" for t in tables[:3]])
         summary = await self._generate_summary(sample_text)
         
+        # Generate Reasoning QA for JSONL
+        reasoning_qa = [
+            {
+                "question": "Provide a summary of the Excel data.",
+                "response": summary,
+                "type": "summary"
+            }
+        ]
+        
+        # Add metric analysis
+        for k, v in all_metrics.items():
+            reasoning_qa.append({
+                "question": f"Analyze the metric '{k}' from the workbook.",
+                "response": f"The calculated value for {k} is {v}.",
+                "type": "metric_analysis"
+            })
+        
         return {
             "title": filename,
             "summary": summary,
             "tables": tables,
             "key_metrics": all_metrics,
+            "reasoning_qa": reasoning_qa,
             "metadata": {
                 "file_type": "excel",
                 "sheet_count": len(tables)
@@ -561,6 +641,23 @@ class FileIngestionService:
             "file_type": "pdf" if "pdf" in mime_type else "image",
             "processed_by": "gemini-2.0-flash"
         }
+        
+        # Ensure reasoning_qa exists
+        if "reasoning_qa" not in result:
+            result["reasoning_qa"] = [
+                {
+                    "question": "Provide a summary of the document.",
+                    "response": result.get("summary", "No summary available."),
+                    "type": "summary"
+                }
+            ]
+            
+            for k, v in result.get("key_metrics", {}).items():
+                result["reasoning_qa"].append({
+                    "question": f"What is the value of {k}?",
+                    "response": f"The value of {k} is {v}.",
+                    "type": "metric_fact"
+                })
         
         return result
     
