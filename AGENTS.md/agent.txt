@@ -1,0 +1,95 @@
+﻿# AGENTS.md
+
+## Goal
+- 이 저장소에서 에이전트(Codex)는 "작업을 끝까지 완성"하는 것을 목표로 한다.
+- 항상 최소 변경(minimal diff)을 우선하고, 필요할 때만 리팩토링한다.
+- 작업은 재현 가능해야 하며, 실행/테스트 커맨드를 함께 제공한다.
+
+## Repository Overview
+- 주요 목적: (여기에 프로젝트 목적 1줄로 적기)
+- 핵심 디렉토리:
+  - src/        : 주요 소스 코드
+  - tests/      : 테스트
+  - docs/       : 문서
+  - scripts/    : 유틸 스크립트
+- 중요한 파일:
+  - package.json / pyproject.toml / requirements.txt : 의존성 및 스크립트
+  - .env.example : 환경변수 예시(있다면)
+
+## How to Work
+1) 먼저 디렉토리 구조를 확인하고(필요시), 관련 파일을 읽는다.
+2) 변경 범위를 최소화해서 구현/수정한다.
+3) 로컬 실행/테스트를 수행한다. (가능하면)
+4) 결과를 요약하고, 변경된 파일/커맨드/주의점을 남긴다.
+
+## Commands (fill if available)
+- Install
+  - Node: `npm ci` (또는 `npm install`)
+  - Python: `python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`
+- Run
+  - `npm run dev` / `npm start`
+  - `python -m <module>` 또는 `python main.py`
+- Test
+  - Node: `npm test`
+  - Python: `pytest -q`
+- Lint/Format
+  - `npm run lint` / `npm run format`
+  - `ruff check .` / `black .`
+
+## Coding Standards
+- 기존 스타일을 따른다. 새 규칙을 도입하기 전에 기존 설정(ESLint/Prettier/ruff/black 등)을 확인한다.
+- 함수/모듈은 작게 유지하고, 중복은 공용 함수로 정리하되 과도한 추상화는 피한다.
+- 에러 처리:
+  - 사용자 입력/외부 I/O는 실패 가능성을 가정하고 명확한 메시지를 제공한다.
+- 로깅:
+  - 디버그용 로그는 제거하거나 레벨을 낮춘다.
+- 테스트:
+  - 버그 수정은 가능하면 회귀 테스트를 추가한다.
+  - 새 기능은 핵심 동작 1~3개 케이스라도 테스트를 만든다.
+
+## Safety & Secrets
+- 절대 시크릿(토큰/키/비밀번호)을 코드/로그/문서에 하드코딩하지 않는다.
+- `.env`는 커밋하지 않고 `.env.example`을 업데이트한다.
+- 외부 요청(HTTP)은 타임아웃을 설정한다(가능하면).
+
+## Performance & Reliability
+- O(n^2) 가능성(중첩 루프, 과도한 DB/HTTP 호출)을 의식한다.
+- 큰 변경 전/후 동작이 동일한지 간단한 체크(샘플 입력/출력)를 한다.
+
+## Output Requirements (what to report back)
+작업 후 아래를 항상 포함한다:
+- ✅ 무엇을 바꿨는지(핵심 3줄 요약)
+- ✅ 변경된 파일 목록
+- ✅ 실행/테스트 커맨드
+- ✅ 남아있는 이슈/추가 TODO (있다면)
+
+## When Unsure
+- 스펙이 불명확하면, 합리적인 기본 가정으로 진행하되 "가정"을 명시한다.
+- 위험한 변경(광범위 리팩토링, API 스펙 변경 등)은 피하고, 최소 수정으로 해결한다.
+---
+
+# 🔧 Project-Specific Agent Rules (FinDistill v11.5)
+
+## Project Identity
+This repository is **FinDistill v11.5**, a FastAPI-based financial data distillation engine that:
+- Processes XBRL, XML, PDF, and Images
+- Produces **English-only Chain-of-Thought (CoT) datasets**
+- Enforces a **strict Poison Pill language filter**
+- Standardizes financial scaling to **Billions ($B)**
+
+Agent must treat this as a **data integrity–critical system**. Any careless modification may corrupt training data pipelines. :contentReference[oaicite:0]{index=0}
+
+---
+
+## Critical Protocol (MUST NEVER BREAK)
+
+### 1️ English-Only Enforcement
+- Any generated dataset output must contain **only English characters**
+- If non-English characters appear in output-related code, filters, or formatting logic → treat as **critical failure**
+- Never remove or weaken language validation logic :contentReference[oaicite:1]{index=1}
+
+### 2️ Poison Pill Filter Integrity
+- The system intentionally raises:
+  ```python
+  RuntimeError("KOREAN_DETECTED")
+

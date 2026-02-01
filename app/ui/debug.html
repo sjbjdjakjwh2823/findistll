@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <!-- Content Security Policy -->
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https:; frame-src 'none';">
+    <!-- Maximum extension protection -->
+    <script>
+        (function () {
+            'use strict';
+            const originalDefineProperty = Object.defineProperty;
+            Object.defineProperty = function (obj, prop, descriptor) {
+                if (prop === 'ethereum' && obj === window) {
+                    console.warn('[Preciso Debug] Blocked ethereum redefinition');
+                    return obj;
+                }
+                return originalDefineProperty.call(this, obj, prop, descriptor);
+            };
+            if (window.ethereum) {
+                try { Object.freeze(window.ethereum); } catch (e) { }
+            }
+            try {
+                originalDefineProperty.call(Object, window, 'ethereum', {
+                    configurable: false,
+                    writable: false,
+                    value: window.ethereum || null
+                });
+            } catch (e) { }
+            window.addEventListener('error', function (e) {
+                if (e.filename && (e.filename.includes('evmAsk') || e.filename.includes('extension'))) {
+                    e.stopImmediatePropagation();
+                    e.preventDefault();
+                    return true;
+                }
+            }, true);
+        })();
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Preciso Debug Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0b0f14;
+            color: #e7edf5;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            padding: 40px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #121a24;
+            border: 1px solid #1f2a3a;
+            border-radius: 16px;
+            padding: 32px;
+        }
+
+        h1 {
+            color: #f2c94c;
+            margin-bottom: 24px;
+            font-size: 32px;
+        }
+
+        .status {
+            background: rgba(110, 231, 183, 0.12);
+            color: #6ee7b7;
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+            display: inline-block;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 16px;
+            margin-top: 24px;
+        }
+
+        .info-card {
+            background: #0f1520;
+            border: 1px solid #1f2a3a;
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .info-card h3 {
+            color: #9fb0c5;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 8px;
+        }
+
+        .info-card p {
+            color: #e7edf5;
+            font-size: 16px;
+        }
+
+        .test-button {
+            background: #f2c94c;
+            color: #1a1a1a;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 700;
+            cursor: pointer;
+            margin-top: 24px;
+            font-size: 14px;
+        }
+
+        .test-button:hover {
+            background: #ffd666;
+        }
+
+        #output {
+            background: #0c121b;
+            border: 1px solid #1f2a3a;
+            border-radius: 12px;
+            padding: 16px;
+            margin-top: 24px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            color: #cbe3ff;
+            min-height: 100px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🚀 PRECISO DEBUG TEST</h1>
+
+        <div class="status">✅ Page Loaded Successfully</div>
+
+        <p>If you can see this page with dark theme and yellow/green colors, CSS is working correctly.</p>
+
+        <div class="info-grid">
+            <div class="info-card">
+                <h3>Server Status</h3>
+                <p id="serverStatus">Checking...</p>
+            </div>
+            <div class="info-card">
+                <h3>JavaScript Status</h3>
+                <p id="jsStatus">Checking...</p>
+            </div>
+            <div class="info-card">
+                <h3>Current Time</h3>
+                <p id="currentTime">Loading...</p>
+            </div>
+            <div class="info-card">
+                <h3>Browser</h3>
+                <p id="browserInfo">Loading...</p>
+            </div>
+        </div>
+
+        <button class="test-button" onclick="testAPI()">Test API Connection</button>
+
+        <div id="output">
+            <strong>Console Output:</strong><br>
+            Waiting for test...
+        </div>
+    </div>
+
+    <script>
+        // Test if JavaScript is running
+        document.getElementById('jsStatus').textContent = '✅ Working';
+        document.getElementById('currentTime').textContent = new Date().toLocaleString();
+        document.getElementById('browserInfo').textContent = navigator.userAgent.split(' ').slice(-2).join(' ');
+
+        // Test server connection
+        async function checkServer() {
+            try {
+                const response = await fetch('/health');
+                const data = await response.json();
+                document.getElementById('serverStatus').textContent = `✅ ${data.status.toUpperCase()}`;
+                updateOutput(`Server health check passed: ${JSON.stringify(data, null, 2)}`);
+            } catch (error) {
+                document.getElementById('serverStatus').textContent = '❌ Error';
+                updateOutput(`Server health check failed: ${error.message}`);
+            }
+        }
+
+        async function testAPI() {
+            updateOutput('Testing API endpoints...\n');
+
+            try {
+                // Test health endpoint
+                const healthRes = await fetch('/health');
+                const healthData = await healthRes.json();
+                updateOutput(`✅ /health: ${JSON.stringify(healthData)}\n`);
+
+                // Test cases endpoint
+                const casesRes = await fetch('/cases');
+                const casesData = await casesRes.json();
+                updateOutput(`✅ /cases: Found ${casesData.length} cases\n`);
+
+                updateOutput('\n🎉 All API tests passed!');
+            } catch (error) {
+                updateOutput(`❌ API test failed: ${error.message}`);
+            }
+        }
+
+        function updateOutput(text) {
+            const output = document.getElementById('output');
+            if (text.includes('Testing API')) {
+                output.innerHTML = '<strong>Console Output:</strong><br>' + text;
+            } else {
+                output.innerHTML += '<br>' + text;
+            }
+        }
+
+        // Run server check on page load
+        window.addEventListener('load', () => {
+            checkServer();
+            updateOutput('Page loaded at: ' + new Date().toLocaleString());
+        });
+    </script>
+</body>
+
+</html>
