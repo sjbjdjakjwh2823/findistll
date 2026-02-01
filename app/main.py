@@ -1,4 +1,5 @@
-﻿from fastapi import FastAPI, HTTPException
+from typing import Optional
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from app.core.config import load_settings
@@ -38,6 +39,7 @@ def _load_ui(page: str) -> str:
     with open(f"app/ui/{page}", "r", encoding="utf-8") as f:
         return f.read()
 
+
 def _html_response(page: str) -> HTMLResponse:
     content = _load_ui(page)
     return HTMLResponse(
@@ -48,6 +50,7 @@ def _html_response(page: str) -> HTMLResponse:
             "Expires": "0",
         },
     )
+
 
 @app.get("/", response_class=HTMLResponse)
 def ui_root():
@@ -83,13 +86,18 @@ def ui_debug():
 def health():
     return {"status": "ok", "env": settings.app_env, "domain": settings.public_domain}
 
+
 @app.get("/plain", response_class=PlainTextResponse)
 def plain():
-    return PlainTextResponse("PRECISO OK", headers={
-        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-        "Pragma": "no-cache",
-        "Expires": "0",
-    })
+    return PlainTextResponse(
+        "PRECISO OK",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
 
 @app.get("/simple", response_class=HTMLResponse)
 def simple():
@@ -222,3 +230,47 @@ def get_case(case_id: str):
     if not case:
         raise HTTPException(status_code=404, detail="case not found")
     return case
+
+
+@app.get("/rag/list")
+def rag_list(limit: int = 100):
+    return _db.list_rag_context(limit=limit)
+
+
+@app.get("/rag/search")
+def rag_search(
+    entity: Optional[str] = None,
+    period: Optional[str] = None,
+    keyword: Optional[str] = None,
+    limit: int = 50,
+):
+    return _db.search_rag_context(entity=entity, period=period, keyword=keyword, limit=limit)
+
+
+@app.get("/graph/list")
+def graph_list(limit: int = 100):
+    return _db.list_graph_triples(limit=limit)
+
+
+@app.get("/graph/search")
+def graph_search(
+    head: Optional[str] = None,
+    relation: Optional[str] = None,
+    tail: Optional[str] = None,
+    limit: int = 50,
+):
+    return _db.search_graph_triples(head=head, relation=relation, tail=tail, limit=limit)
+
+
+@app.get("/training-sets/list")
+def training_sets_list(limit: int = 100):
+    return _db.list_training_sets(limit=limit)
+
+
+@app.get("/training-sets/search")
+def training_sets_search(
+    case_id: Optional[str] = None,
+    keyword: Optional[str] = None,
+    limit: int = 50,
+):
+    return _db.search_training_sets(case_id=case_id, keyword=keyword, limit=limit)

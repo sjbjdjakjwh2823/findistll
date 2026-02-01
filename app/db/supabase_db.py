@@ -1,4 +1,4 @@
-﻿from typing import Dict
+from typing import Any, Dict, List, Optional
 from supabase import create_client, Client
 from app.services.types import DecisionResult, DistillResult
 
@@ -67,6 +67,111 @@ class SupabaseDB:
 
     def list_documents(self) -> Dict:
         res = self.client.table("documents").select("*").execute()
+        return res.data or []
+
+    def save_rag_context(self, case_id: str, contexts: List[Dict[str, Any]]) -> None:
+        if not contexts:
+            return
+        payload = [
+            {
+                "chunk_id": ctx.get("chunk_id"),
+                "entity": ctx.get("entity"),
+                "period": ctx.get("period"),
+                "source": ctx.get("source"),
+                "text_content": ctx.get("text_content"),
+                "keywords": ctx.get("keywords"),
+            }
+            for ctx in contexts
+        ]
+        self.client.table("spoke_c_rag_context").upsert(payload).execute()
+
+    def list_rag_context(self, limit: int = 100) -> List[Dict[str, Any]]:
+        res = (
+            self.client.table("spoke_c_rag_context")
+            .select("*")
+            .limit(limit)
+            .execute()
+        )
+        return res.data or []
+
+    def search_rag_context(
+        self,
+        entity: Optional[str] = None,
+        period: Optional[str] = None,
+        keyword: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        query = self.client.table("spoke_c_rag_context").select("*")
+        if entity:
+            query = query.eq("entity", entity)
+        if period:
+            query = query.eq("period", period)
+        if keyword:
+            query = query.ilike("text_content", f"%{keyword}%")
+        res = query.limit(limit).execute()
+        return res.data or []
+
+    def save_graph_triples(self, case_id: str, triples: List[Dict[str, Any]]) -> None:
+        if not triples:
+            return
+        payload = [
+            {
+                "head_node": triple.get("head_node"),
+                "relation": triple.get("relation"),
+                "tail_node": triple.get("tail_node"),
+                "properties": triple.get("properties"),
+            }
+            for triple in triples
+        ]
+        self.client.table("spoke_d_graph").insert(payload).execute()
+
+    def list_graph_triples(self, limit: int = 100) -> List[Dict[str, Any]]:
+        res = self.client.table("spoke_d_graph").select("*").limit(limit).execute()
+        return res.data or []
+
+    def search_graph_triples(
+        self,
+        head: Optional[str] = None,
+        relation: Optional[str] = None,
+        tail: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        query = self.client.table("spoke_d_graph").select("*")
+        if head:
+            query = query.eq("head_node", head)
+        if relation:
+            query = query.eq("relation", relation)
+        if tail:
+            query = query.eq("tail_node", tail)
+        res = query.limit(limit).execute()
+        return res.data or []
+
+    def save_training_set(self, case_id: str, record: Dict[str, Any]) -> None:
+        payload = {
+            "metadata": record.get("metadata"),
+            "input_features": record.get("input_features"),
+            "reasoning_chain": record.get("reasoning_chain"),
+            "output_narrative": record.get("output_narrative"),
+            "training_prompt": record.get("training_prompt"),
+        }
+        self.client.table("ai_training_sets").insert(payload).execute()
+
+    def list_training_sets(self, limit: int = 100) -> List[Dict[str, Any]]:
+        res = self.client.table("ai_training_sets").select("*").limit(limit).execute()
+        return res.data or []
+
+    def search_training_sets(
+        self,
+        case_id: Optional[str] = None,
+        keyword: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        query = self.client.table("ai_training_sets").select("*")
+        if case_id:
+            query = query.contains("metadata", {"case_id": case_id})
+        if keyword:
+            query = query.ilike("training_prompt", f"%{keyword}%")
+        res = query.limit(limit).execute()
         return res.data or []
 
     def _count_rows(self, table: str) -> int:

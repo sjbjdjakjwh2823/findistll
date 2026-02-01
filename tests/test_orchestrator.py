@@ -1,4 +1,4 @@
-﻿import os
+import os
 import asyncio
 import unittest
 from app.db.client import InMemoryDB
@@ -21,6 +21,8 @@ class OrchestratorTests(unittest.TestCase):
         result = asyncio.run(orch.run(case_id, db.docs["doc_1"]))
         self.assertEqual(result.case_id, case_id)
         self.assertEqual(result.decision.decision, "Review")
+        self.assertGreaterEqual(len(db.list_rag_context()), 1)
+        self.assertEqual(len(db.list_training_sets()), 1)
 
 
 if __name__ == "__main__":
