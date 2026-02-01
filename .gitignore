@@ -9,3 +9,5 @@ OAI_CONFIG_LIST
 tunnel-credentials.json
 __pycache__/
 *.pyc
+bin/cloudflared
+bin/cloudflared*
