@@ -81,6 +81,119 @@
 
 ---
 
+# ✅ 기술 구현 상세 (실행 설계)
+
+## 1. 데이터 전처리/정제 (Findistill Pro)
+**목표:** 미래 예측 가능성 높은 데이터 품질 + 무오류 파이프라인
+
+### 기술 구성
+- **파이프라인 계층**
+  - Ingestion → Normalization → Quality Gate → Evidence Pack → Storage
+- **정규화 엔진**
+  - 스케일 교정 (Billion/Trillion/Micro) + 이상치 필터
+  - 교차검증: XBRL ↔ PDF ↔ CSV Fact alignment
+- **Data Quality Score (DQS)**
+  - 신뢰도 점수(0~1), 출처 가중치, 교차검증 일치율 기반
+
+### 구현 포인트
+- `app/services/distill_engine.py`
+  - `DistillResult`에 `quality_score`, `source_alignment`, `error_flags` 확장
+- `vendor/findistill/...`
+  - 스케일 교정, 사실 검증, Confidence 집계 함수 분리
+- **Spoke C** 저장: 청크/키워드/검색 인덱스 생성
+
+---
+
+## 2. FinRobot 4단계 레이어 구현
+**목표:** 전문가 수준 AI 분석 및 의사결정 품질 확보
+
+### 레이어별 구현
+1. **Agents Layer**
+   - Market Forecaster (가격 방향 예측)
+   - Financial Analyst (리포트 생성)
+   - Trade Strategist (전략 제안)
+2. **LLM Algorithms Layer**
+   - 프롬프트 라이브러리 구축 (투자/재무/리스크/밸류)
+   - 모델별 태스크 매핑 테이블
+3. **LLMOps/DataOps Layer**
+   - 다중 LLM 라우터 (task→model)
+   - 실패 시 fallback model 전략
+4. **Foundation Layer**
+   - GPT/Claude/LLama 플러그앤플레이 구조
+
+### 구현 포인트
+- `app/services/robot_engine.py`
+  - Task별 모델 라우팅 함수 추가
+  - 결과 품질 점수 + 리스크 요약 출력
+- **Spoke E** (AI 학습셋)
+  - DistillResult + DecisionResult를 `ai_training_sets`에 저장
+
+---
+
+## 3. RAG & 검색 시스템 (Spoke C)
+**목표:** 다른 기업에서도 즉시 사용 가능한 지식 인덱스
+
+### 기술 구성
+- 청크 분할 + 키워드 추출
+- 벡터 검색 (pgvector or Qdrant) *옵션
+- `spoke_c_rag_context` 저장
+
+### 구현 포인트
+- `app/db/*`에 `save_rag_context`, `search_rag_context` 추가
+- `/rag/search?entity=&period=&keyword=` API 제공
+
+---
+
+## 4. Graph Engine (Spoke D)
+**목표:** 기업/재무/지표 관계 그래프 생성
+
+### 기술 구성
+- Fact → (Entity, Relation, Entity) 추출
+- 관계 유형 표준화 (Revenue-of, Subsidiary-of, Risk-of 등)
+- `spoke_d_graph` 저장
+
+### 구현 포인트
+- `extract_graph_triples(facts, cot)` 함수 추가
+- `/graph/list`, `/graph/query` API 제공
+
+---
+
+## 5. 툴킷 패키징 (B2B 판매 준비)
+**목표:** 고객사가 즉시 설치 가능한 형태
+
+### 구성
+- **Python SDK**
+  - `preciso_client.extract()`, `decide()`, `run_pipeline()`
+- **REST API**
+  - `/cases`, `/distill`, `/decide`, `/rag`, `/graph`, `/training-set`
+- **템플릿 UI**
+  - Palantir 스타일 Case/Evidence/Decision 모듈
+
+---
+
+## 6. UI/UX 고퀄리티 설계
+**목표:** "사람들이 찾아오는" 브랜드 사이트
+
+### 벤치마킹 리스트
+- Palantir, ScaleAI, Databricks, OpenAI, Anthropic, Stripe, Vercel
+
+### UI 특징
+- 다크 테마 + 고밀도 데이터 테이블
+- 모듈형 레이아웃 (Case, Evidence, Decision, Audit)
+- 고급 모션 (Framer Motion)
+
+---
+
+## 7. 운영 안정성 (오류 0% 목표)
+**목표:** 파이프라인에서 오류 없이 결과 보장
+
+### 기술 구성
+- Validation Rules (schema + constraint)
+- Retry/rollback 정책
+- Audit log + trace id
+
+---
+
 ## 즉시 착수 우선순위
 1. UI 벤치마킹 목록 작성
 2. Findistill 품질 강화 (오류 제거/Confidence 강화)
