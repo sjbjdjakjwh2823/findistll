@@ -1,42 +1,11 @@
-# Data Files (Do not commit huge datasets)
-*.csv
-*.parquet
-*.jsonl
-*.json
-*.xbrl
-*.pdf
-*.xlsx
-*.xml
-
-# Output Directories
-output/
-project_1/output/
-final_output/
-data/
-logs/
-
-# Environment Variables
+.cache/
+*.log
+*.err.log
+*.out.log
 .env
-.env.local
-
-# Python/Vercel
+.env.*
+config_api_keys
+OAI_CONFIG_LIST
+tunnel-credentials.json
 __pycache__/
 *.pyc
-venv/
-.venv/
-.vercel/
-node_modules/
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# System
-.DS_Store
-Thumbs.db
-
-# Private Keys
-key.txt
-

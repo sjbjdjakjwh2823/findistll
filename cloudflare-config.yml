@@ -1,0 +1,9 @@
+tunnel: 5a5103d3-b6cd-4702-ada9-b6558f326893
+credentials-file: C:\Users\Administrator\Desktop\preciso\tunnel-credentials.json
+
+ingress:
+  - hostname: preciso-data.com
+    service: http://localhost:8004
+  - hostname: www.preciso-data.com
+    service: http://localhost:8004
+  - service: http_status:404
