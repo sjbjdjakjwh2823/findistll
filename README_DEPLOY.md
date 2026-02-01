@@ -215,3 +215,30 @@ powershell -ExecutionPolicy Bypass -File deploy-to-oracle.ps1
 
 **작업 시간**: 2026-02-01 16:06 KST
 **다음 단계**: Oracle 서버 IP 확인 → 배포 스크립트 실행 → 테스트
+
+---
+
+# macOS Quick Start (Reproducible)
+
+## One-time setup
+```bash
+cd /path/to/findistll
+bash scripts/setup_mac.sh
+bash scripts/install_cloudflared_mac.sh
+```
+
+## Secrets
+```bash
+cp .env.example .env
+# Fill in values in .env
+```
+
+## Run
+```bash
+bash scripts/run_mac.sh
+```
+
+## Docs
+- `SETUP_MAC.md`
+- `RUN_MAC.md`
+- `DEPLOY_MAC.md`
