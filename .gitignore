@@ -4,6 +4,7 @@
 *.out.log
 .env
 .env.*
+!.env.example
 config_api_keys
 OAI_CONFIG_LIST
 tunnel-credentials.json
