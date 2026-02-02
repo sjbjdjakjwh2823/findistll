@@ -72,6 +72,44 @@ class PillarTests(unittest.TestCase):
         impacted_nodes = {row["node_id"] for row in result["impacts"]}
         self.assertIn("valuation", impacted_nodes)
 
+    def test_oracle_matrix_boost_and_root_cause_path(self):
+        oracle = OracleEngine()
+        causal_graph = oracle.build_causal_skeleton(
+            [
+                {
+                    "head_node": "Inflation",
+                    "relation": "drives",
+                    "tail_node": "Interest Rate",
+                    "time_granularity": "month",
+                    "properties": {"confidence": "high", "reflection_quality": 0.9, "temporal_quality": 0.8},
+                },
+                {
+                    "head_node": "Interest Rate",
+                    "relation": "drives",
+                    "tail_node": "Tech Valuation",
+                    "time_granularity": "month",
+                    "properties": {"confidence": "high", "reflection_quality": 0.9, "temporal_quality": 0.8},
+                },
+            ]
+        )
+
+        self.assertEqual(len(causal_graph), 2)
+        first_edge = causal_graph[0]
+        self.assertGreater(first_edge.get("matrix_boost", 1.0), 1.0)
+        self.assertTrue(first_edge.get("reasoning_tags"))
+
+        what_if = oracle.simulate_what_if("Inflation", 1.0, causal_graph, horizon_steps=3)
+        impact_map = {row["node_id"]: row["delta"] for row in what_if["impacts"]}
+        self.assertIn("Tech Valuation", impact_map)
+        self.assertLess(impact_map["Tech Valuation"], 0)
+
+        root = oracle.get_root_cause_path("Tech Valuation", causal_graph, max_depth=4)
+        self.assertEqual(root["target_node"], "Tech Valuation")
+        self.assertEqual(root["root_cause"], "Inflation")
+        self.assertEqual(root["path"], ["Inflation", "Interest Rate", "Tech Valuation"])
+        self.assertGreater(root["influence_score"], 0)
+        self.assertLess(root["directional_effect"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
