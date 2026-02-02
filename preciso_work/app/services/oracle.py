@@ -16,6 +16,7 @@ class OracleEngine:
         ("inflation", "policy_rate"): {"multiplier": 1.35, "polarity": 1.0, "path_label": "macro_policy"},
         ("policy_rate", "bond_yield"): {"multiplier": 1.30, "polarity": 1.0, "path_label": "rates_curve"},
         ("policy_rate", "discount_rate"): {"multiplier": 1.28, "polarity": 1.0, "path_label": "valuation_kernel"},
+        ("policy_rate", "tech_valuation"): {"multiplier": 1.32, "polarity": -1.0, "path_label": "rates_duration"},
         ("discount_rate", "tech_valuation"): {"multiplier": 1.45, "polarity": -1.0, "path_label": "duration_risk"},
         ("bond_yield", "tech_valuation"): {"multiplier": 1.30, "polarity": -1.0, "path_label": "relative_multiple"},
         ("liquidity", "tech_valuation"): {"multiplier": 1.20, "polarity": 1.0, "path_label": "risk_on"},
