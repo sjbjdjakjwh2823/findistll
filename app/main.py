@@ -58,6 +58,7 @@ def ui_root():
     return _html_response("index.html")
 
 
+@app.get("/decisions", response_class=HTMLResponse)
 @app.get("/decisions.html", response_class=HTMLResponse)
 def ui_decisions():
     return _html_response("decisions.html")
@@ -80,11 +81,13 @@ def ui_case_detail():
     return _html_response("cases/sample-case.html")
 
 
+@app.get("/audit", response_class=HTMLResponse)
 @app.get("/audit.html", response_class=HTMLResponse)
 def ui_audit():
     return _html_response("audit.html")
 
 
+@app.get("/admin", response_class=HTMLResponse)
 @app.get("/admin.html", response_class=HTMLResponse)
 def ui_admin():
     return _html_response("admin.html")
