@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 import unittest
 
 from app.services.distill_engine import FinDistillAdapter
+from app.services.oracle import OracleEngine
 from app.services.spokes import SpokesEngine
 
 
@@ -43,16 +44,33 @@ class PillarTests(unittest.TestCase):
                 },
             ],
             document={"doc_id": "doc_1"},
+            self_reflection={"rounds_executed": 2, "input_count": 2, "output_count": 2, "history": [{"issues_found": 1}]},
         )
 
         self.assertEqual(len(edges), 2)
         self.assertTrue(edges[0].get("event_time"))
         self.assertEqual(edges[0].get("time_granularity"), "quarter")
+        self.assertIn("reflection_quality", edges[0]["properties"])
+        self.assertIn("temporal_quality", edges[0]["properties"])
+        self.assertIn("edge_weight", edges[0]["properties"])
 
         as_of = datetime(2024, 6, 15, tzinfo=timezone.utc)
         visible = spokes.gate_edges_as_of(edges, as_of=as_of)
         self.assertEqual(len(visible), 1)
         self.assertEqual(visible[0]["tail_node"], "1000")
+
+    def test_oracle_what_if_simulation(self):
+        oracle = OracleEngine()
+        causal_graph = [
+            {"head_node": "revenue", "relation": "drives", "tail_node": "margin", "strength": 0.8, "time_granularity": "quarter"},
+            {"head_node": "margin", "relation": "drives", "tail_node": "valuation", "strength": 0.6, "time_granularity": "quarter"},
+        ]
+        result = oracle.simulate_what_if("revenue", 1.0, causal_graph, horizon_steps=2)
+
+        self.assertEqual(result["node_id"], "revenue")
+        self.assertGreaterEqual(len(result["impacts"]), 2)
+        impacted_nodes = {row["node_id"] for row in result["impacts"]}
+        self.assertIn("valuation", impacted_nodes)
 
 
 if __name__ == "__main__":

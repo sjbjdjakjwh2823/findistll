@@ -53,3 +53,17 @@ alter table if exists public.spoke_d_graph add column if not exists time_granula
 create index if not exists idx_spoke_d_graph_case_id on public.spoke_d_graph(case_id);
 create index if not exists idx_spoke_d_graph_event_time on public.spoke_d_graph(event_time);
 create index if not exists idx_spoke_d_graph_valid_window on public.spoke_d_graph(valid_from, valid_to);
+
+-- Pipeline audit trail (Orchestrator v2)
+create table if not exists public.audit_log (
+  id uuid default gen_random_uuid() primary key,
+  case_id text not null,
+  event_type text not null,
+  stage text not null,
+  status text not null,
+  payload jsonb,
+  created_at timestamptz default now()
+);
+
+create index if not exists idx_audit_log_case_id on public.audit_log(case_id);
+create index if not exists idx_audit_log_created_at on public.audit_log(created_at);

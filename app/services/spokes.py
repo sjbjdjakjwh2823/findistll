@@ -7,12 +7,24 @@ from typing import Any, Dict, List, Optional
 class SpokesEngine:
     """Builds and time-gates graph edges from extracted facts (Spoke D)."""
 
-    def build_graph_edges(self, case_id: str, facts: List[Dict[str, Any]], document: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    def build_graph_edges(
+        self,
+        case_id: str,
+        facts: List[Dict[str, Any]],
+        document: Optional[Dict[str, Any]] = None,
+        self_reflection: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
         edges: List[Dict[str, Any]] = []
         doc_id = (document or {}).get("doc_id")
+        reflection_context = self._build_reflection_context(self_reflection)
 
         for fact in facts:
-            edge = self._fact_to_edge(case_id=case_id, doc_id=doc_id, fact=fact)
+            edge = self._fact_to_edge(
+                case_id=case_id,
+                doc_id=doc_id,
+                fact=fact,
+                reflection_context=reflection_context,
+            )
             if edge:
                 edges.append(edge)
 
@@ -35,7 +47,13 @@ class SpokesEngine:
             visible.append(edge)
         return visible
 
-    def _fact_to_edge(self, case_id: str, doc_id: Optional[str], fact: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _fact_to_edge(
+        self,
+        case_id: str,
+        doc_id: Optional[str],
+        fact: Dict[str, Any],
+        reflection_context: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
         head = self._as_str(fact.get("head_node") or fact.get("entity") or fact.get("subject"))
         relation = self._as_str(fact.get("relation") or fact.get("metric") or fact.get("predicate"))
         tail_raw = fact.get("tail_node") or fact.get("value") or fact.get("object")
@@ -50,11 +68,17 @@ class SpokesEngine:
             tail = tail or statement
 
         temporal = self._extract_temporal_fields(fact)
+        temporal_quality = self._score_temporal_quality(temporal)
+        reflection_quality = self._score_reflection_quality(fact, reflection_context)
+        edge_weight = self._compose_edge_weight(fact, temporal_quality, reflection_quality)
 
         properties = dict(fact)
         properties.pop("head_node", None)
         properties.pop("relation", None)
         properties.pop("tail_node", None)
+        properties["temporal_quality"] = temporal_quality
+        properties["reflection_quality"] = reflection_quality
+        properties["edge_weight"] = edge_weight
 
         return {
             "case_id": case_id,
@@ -70,6 +94,70 @@ class SpokesEngine:
             "time_source": temporal.get("time_source"),
             "time_granularity": temporal.get("time_granularity"),
         }
+
+    def _build_reflection_context(self, self_reflection: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        raw = self_reflection or {}
+        output_count = raw.get("output_count")
+        input_count = raw.get("input_count")
+        issues_sum = 0
+        for row in raw.get("history", []):
+            issues_sum += int(row.get("issues_found", 0))
+
+        repair_ratio = 0.0
+        if isinstance(output_count, int) and isinstance(input_count, int) and input_count > 0:
+            repair_ratio = max(min(output_count / input_count, 1.0), 0.0)
+
+        return {
+            "rounds_executed": int(raw.get("rounds_executed", 0)),
+            "issues_found": issues_sum,
+            "repair_ratio": repair_ratio,
+        }
+
+    def _score_temporal_quality(self, temporal: Dict[str, Any]) -> float:
+        score = 0.2
+        if temporal.get("event_time"):
+            score += 0.35
+        if temporal.get("valid_from"):
+            score += 0.25
+        if temporal.get("valid_to"):
+            score += 0.1
+        if temporal.get("time_granularity") in ("quarter", "month", "day"):
+            score += 0.1
+        return max(0.0, min(score, 1.0))
+
+    def _score_reflection_quality(self, fact: Dict[str, Any], reflection_context: Dict[str, Any]) -> float:
+        score = 0.5
+
+        confidence = self._as_str(fact.get("confidence")).lower()
+        if confidence == "high":
+            score += 0.25
+        elif confidence == "medium":
+            score += 0.15
+        elif confidence == "low":
+            score += 0.05
+
+        issues = fact.get("reflection_issues")
+        if isinstance(issues, list):
+            score -= min(len(issues) * 0.08, 0.24)
+
+        rounds_executed = int(reflection_context.get("rounds_executed", 0))
+        if rounds_executed > 0:
+            score += min(rounds_executed * 0.03, 0.09)
+
+        repair_ratio = reflection_context.get("repair_ratio")
+        if isinstance(repair_ratio, (int, float)):
+            score += float(repair_ratio) * 0.06
+
+        return max(0.0, min(score, 1.0))
+
+    def _compose_edge_weight(self, fact: Dict[str, Any], temporal_quality: float, reflection_quality: float) -> float:
+        base = 0.25
+        if fact.get("statement"):
+            base += 0.1
+        if fact.get("validation_status") == "reflected":
+            base += 0.05
+        total = base + (temporal_quality * 0.3) + (reflection_quality * 0.3)
+        return round(max(0.05, min(total, 0.98)), 4)
 
     def _extract_temporal_fields(self, fact: Dict[str, Any]) -> Dict[str, Any]:
         event_time = self._safe_parse_dt(

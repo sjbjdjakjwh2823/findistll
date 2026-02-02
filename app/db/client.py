@@ -31,12 +31,19 @@ class DBClient:
     def list_graph_edges(self, case_id: str) -> List[Dict]:
         raise NotImplementedError
 
+    def save_audit_event(self, case_id: str, event: Dict) -> None:
+        raise NotImplementedError
+
+    def list_audit_events(self, case_id: str) -> List[Dict]:
+        raise NotImplementedError
+
 
 class InMemoryDB(DBClient):
     def __init__(self) -> None:
         self.cases: Dict[str, Dict] = {}
         self.docs: Dict[str, Dict] = {}
         self.graph_edges: Dict[str, List[Dict]] = {}
+        self.audit_events: Dict[str, List[Dict]] = {}
 
     def create_case(self, case_data: Dict) -> str:
         case_id = case_data.get("case_id") or f"case_{len(self.cases)+1}"
@@ -84,3 +91,10 @@ class InMemoryDB(DBClient):
 
     def list_graph_edges(self, case_id: str) -> List[Dict]:
         return list(self.graph_edges.get(case_id, []))
+
+    def save_audit_event(self, case_id: str, event: Dict) -> None:
+        bucket = self.audit_events.setdefault(case_id, [])
+        bucket.append(event)
+
+    def list_audit_events(self, case_id: str) -> List[Dict]:
+        return list(self.audit_events.get(case_id, []))
