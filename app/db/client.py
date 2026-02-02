@@ -1,4 +1,5 @@
-﻿from typing import Dict
+from typing import Dict, List
+
 from app.services.types import DecisionResult, DistillResult
 
 
@@ -17,11 +18,17 @@ class DBClient:
 
     def get_case(self, case_id: str) -> Dict:
         raise NotImplementedError
-    
+
     def list_cases(self) -> Dict:
         raise NotImplementedError
-    
+
     def list_documents(self) -> Dict:
+        raise NotImplementedError
+
+    def upsert_graph_edges(self, case_id: str, edges: List[Dict]) -> None:
+        raise NotImplementedError
+
+    def list_graph_edges(self, case_id: str) -> List[Dict]:
         raise NotImplementedError
 
 
@@ -29,6 +36,7 @@ class InMemoryDB(DBClient):
     def __init__(self) -> None:
         self.cases: Dict[str, Dict] = {}
         self.docs: Dict[str, Dict] = {}
+        self.graph_edges: Dict[str, List[Dict]] = {}
 
     def create_case(self, case_data: Dict) -> str:
         case_id = case_data.get("case_id") or f"case_{len(self.cases)+1}"
@@ -38,7 +46,8 @@ class InMemoryDB(DBClient):
             "status": "created",
             "documents": [],
             "distill": None,
-            "decision": None
+            "decision": None,
+            "graph_edge_count": 0,
         }
         return case_id
 
@@ -65,3 +74,13 @@ class InMemoryDB(DBClient):
 
     def list_documents(self) -> Dict:
         return list(self.docs.values())
+
+    def upsert_graph_edges(self, case_id: str, edges: List[Dict]) -> None:
+        if not edges:
+            return
+        bucket = self.graph_edges.setdefault(case_id, [])
+        bucket.extend(edges)
+        self.cases[case_id]["graph_edge_count"] = len(bucket)
+
+    def list_graph_edges(self, case_id: str) -> List[Dict]:
+        return list(self.graph_edges.get(case_id, []))
