@@ -58,20 +58,26 @@ def ui_root():
     return _html_response("index.html")
 
 
-@app.get("/cases.html", response_class=HTMLResponse)
-def ui_cases():
-    return _html_response("cases.html")
-
-
 @app.get("/decisions.html", response_class=HTMLResponse)
 def ui_decisions():
     return _html_response("decisions.html")
+
+
+@app.get("/cases", response_class=HTMLResponse)
+@app.get("/cases.html", response_class=HTMLResponse)
+def ui_cases():
+    return _html_response("cases.html")
 
 
 @app.get("/graph", response_class=HTMLResponse)
 @app.get("/graph.html", response_class=HTMLResponse)
 def ui_graph():
     return _html_response("graph.html")
+
+
+@app.get("/cases/sample-case", response_class=HTMLResponse)
+def ui_case_detail():
+    return _html_response("cases/sample-case.html")
 
 
 @app.get("/audit.html", response_class=HTMLResponse)

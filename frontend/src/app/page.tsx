@@ -6,12 +6,17 @@ import {
   Plus,
   Search,
   ArrowUpRight,
+  ArrowRight,
   ChevronRight,
   Building2,
   Activity,
   AlertTriangle,
   Link2,
   Spline,
+  LayoutDashboard,
+  Box,
+  Share2,
+  ShieldCheck
 } from "lucide-react";
 
 type BusinessObjectType = "company" | "metric" | "event";
@@ -101,181 +106,131 @@ export default function Home() {
   }, [selectedObject]);
 
   return (
-    <div className="p-8 space-y-8">
-      <div className="flex flex-col gap-4 lg:flex-row lg:justify-between lg:items-center fade-rise">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Intelligence Overview</h2>
-          <p className="text-muted text-sm">Blueprint control room for object-level financial intelligence</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" size={14} />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search business objects..."
-              className="rounded-lg pl-9 pr-4 py-2 text-sm w-72"
-            />
-          </div>
-          <button className="flex items-center gap-2 bg-primary hover:bg-sky-400 text-[#10161a] px-4 py-2 rounded-lg text-sm font-semibold shadow-[0_8px_20px_rgba(72,175,240,0.25)]">
-            <Plus size={16} />
-            New Case
-          </button>
+    <div className="flex flex-col h-full">
+      {/* Top Breadcrumb Bar */}
+      <div className="border-b border-border bg-[#182026] px-6 py-2 flex items-center gap-4 text-xs font-mono">
+        <span className="text-muted">Home</span>
+        <ChevronRight size={12} className="text-muted" />
+        <span className="text-white font-bold uppercase tracking-wider">Workspace: Sovereign Intelligence</span>
+        <div className="ml-auto flex items-center gap-4">
+            <span className="flex items-center gap-1.5 text-secondary"><ShieldCheck size={14} /> System Verified</span>
+            <span className="text-muted italic">Last sync: 2s ago</span>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 fade-rise" style={{ animationDelay: "70ms" }}>
-        <StatsCard label="Total Cases" value="1,284" description="Active across all sectors" trend={{ value: "+12.5%", positive: true }} />
-        <StatsCard label="Data Precision" value="99.92%" description="Pillar 1 Self-Reflection score" trend={{ value: "+0.04%", positive: true }} />
-        <StatsCard label="SCM Coverage" value="42 Paths" description="Direct causal equations codified" />
-        <StatsCard label="System Health" value="Stable" description="All spokes operational" trend={{ value: "99.9% Uptime", positive: true }} />
-      </div>
-
-      <div className="glass-panel p-6 space-y-5 fade-rise" style={{ animationDelay: "120ms" }}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Spline size={18} className="text-primary" />
-            <h3 className="font-bold text-lg">Object-Oriented View</h3>
-          </div>
-          <button className="text-xs font-semibold px-3 py-1.5 rounded-md badge hover:border-primary/70">Explore Full Ontology</button>
-        </div>
-
-        <div className="grid grid-cols-1 xl:grid-cols-5 gap-5">
-          <div className="xl:col-span-2 space-y-3">
-            {visibleObjects.map((obj) => (
-              <button
-                key={obj.id}
-                onClick={() => setSelectedObjectId(obj.id)}
-                data-selected={selectedObject?.id === obj.id}
-                className="object-card w-full rounded-lg p-4 text-left"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-primary">
-                    {iconForObjectType(obj.type)}
-                    <span className="text-xs uppercase tracking-[0.16em] text-muted">{obj.type}</span>
-                  </div>
-                  <span className="badge rounded px-2 py-0.5 text-[10px] text-muted">{obj.status}</span>
-                </div>
-                <p className="mt-2 text-sm font-semibold">{obj.label}</p>
-                <p className="mt-1 text-xs text-muted">{obj.description}</p>
-                <p className="mt-2 text-[11px] data-font text-secondary">Confidence {obj.confidence}</p>
-              </button>
-            ))}
-          </div>
-
-          <div className="xl:col-span-3 glass-panel p-5">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div>
-                <p className="text-xs uppercase tracking-[0.16em] text-muted">Selected Object</p>
-                <h4 className="text-lg font-bold">{selectedObject?.label}</h4>
-              </div>
-              <span className="badge rounded px-3 py-1 text-xs data-font">{selectedObject?.confidence}</span>
+      <div className="p-8 space-y-8 flex-1">
+        <div className="flex flex-col gap-4 lg:flex-row lg:justify-between lg:items-center fade-rise">
+            <div>
+            <h2 className="text-2xl font-bold tracking-tight text-white uppercase italic">Overview // Foundry Core</h2>
+            <p className="text-muted text-xs font-mono uppercase mt-1">Cross-Asset Object Explorer & Integrated Data Plane</p>
             </div>
-
-            <div className="mt-4 space-y-3">
-              {selectedRelations.map((edge, idx) => (
-                <div key={`${edge.source}-${edge.target}-${idx}`} className="rounded-lg border border-border bg-[#131b21] p-3 hover:border-primary/55">
-                  <div className="flex items-center justify-between text-xs text-muted">
-                    <span className="flex items-center gap-2"><Link2 size={12} /> Causal Link</span>
-                    <span className="data-font">p={edge.confidence}</span>
-                  </div>
-                  <p className="mt-1 text-sm font-medium">{edge.relation}</p>
-                  <div className="mt-1 flex items-center justify-between text-xs">
-                    <span className="text-muted">{objects.find((obj) => obj.id === edge.source)?.label}</span>
-                    <ChevronRight size={14} className="text-primary" />
-                    <span className={edge.effect === "positive" ? "text-secondary" : "text-accent"}>{objects.find((obj) => obj.id === edge.target)?.label}</span>
-                  </div>
-                </div>
-              ))}
-              {selectedRelations.length === 0 && <p className="text-xs text-muted">No connected relations for this object.</p>}
+            <div className="flex items-center gap-3">
+            <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" size={14} />
+                <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search business objects..."
+                className="bg-[#1c2127] border border-border rounded-none px-9 py-2 text-sm w-72 text-white focus:border-primary outline-none"
+                />
             </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 fade-rise" style={{ animationDelay: "170ms" }}>
-        <div className="lg:col-span-2 space-y-4">
-          <div className="flex justify-between items-center px-1">
-            <h3 className="font-bold text-lg">Active High-Priority Cases</h3>
-            <button className="text-primary text-xs font-semibold flex items-center gap-1 hover:underline">
-              View All <ChevronRight size={14} />
+            <button className="flex items-center gap-2 bg-[#137cbd] hover:bg-[#137cbd]/80 text-white px-4 py-2 rounded-none text-xs font-bold uppercase tracking-widest shadow-lg shadow-primary/10">
+                <Plus size={16} />
+                New Analytics Case
             </button>
-          </div>
-          <div className="glass-panel overflow-hidden">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-border bg-white/[0.02]">
-                  <th className="px-6 py-4 text-xs font-bold text-muted uppercase tracking-widest">Entity</th>
-                  <th className="px-6 py-4 text-xs font-bold text-muted uppercase tracking-widest">Status</th>
-                  <th className="px-6 py-4 text-xs font-bold text-muted uppercase tracking-widest">Confidence</th>
-                  <th className="px-6 py-4 text-xs font-bold text-muted uppercase tracking-widest">Last Event</th>
-                  <th className="px-6 py-4"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {[
-                  { name: "Tesla Inc.", ticker: "TSLA", status: "Refining", conf: "98.2%", time: "2m ago" },
-                  { name: "NVIDIA Corp.", ticker: "NVDA", status: "Decision", conf: "94.5%", time: "12m ago" },
-                  { name: "Apple Inc.", ticker: "AAPL", status: "Completed", conf: "99.1%", time: "1h ago" },
-                  { name: "Microsoft", ticker: "MSFT", status: "Simulation", conf: "89.4%", time: "3h ago" },
-                ].map((row, i) => (
-                  <tr key={row.ticker} className="hover:bg-white/[0.03] group cursor-pointer">
-                    <td className="px-6 py-4">
-                      <div className="flex flex-col">
-                        <span className="text-sm font-bold">{row.name}</span>
-                        <span className="text-[10px] text-muted tracking-widest uppercase font-semibold">{row.ticker}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="w-1.5 h-1.5 rounded-full bg-primary"
-                          style={{ boxShadow: "0 0 0 6px rgba(72,175,240,0.1)", animation: `beacon 1.7s ${i * 0.12}s infinite` }}
-                        />
-                        <span className="text-xs font-medium">{row.status}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 data-font text-xs font-semibold text-secondary">{row.conf}</td>
-                    <td className="px-6 py-4 text-xs text-muted">{row.time}</td>
-                    <td className="px-6 py-4 text-right">
-                      <ArrowUpRight size={14} className="text-muted group-hover:text-primary" />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+            </div>
         </div>
 
-        <div className="space-y-4">
-          <div className="flex justify-between items-center px-1">
-            <h3 className="font-bold text-lg">System Audit Vault</h3>
-          </div>
-          <div className="glass-panel p-6 space-y-6">
-            <div className="space-y-4">
-              {[
-                { stage: "Distill", msg: "Reflected 12 facts for NVDA", time: "2m ago" },
-                { stage: "Oracle", msg: "Simulated 5 what-if scenarios", time: "15m ago" },
-                { stage: "Robot", msg: "Decision recommendation signed", time: "1h ago" },
-                { stage: "System", msg: "Database indexing completed", time: "2h ago" },
-              ].map((log) => (
-                <div key={`${log.stage}-${log.time}`} className="flex gap-4 items-start">
-                  <div className="w-1 h-8 bg-border rounded-full" />
-                  <div className="flex-1">
-                    <div className="flex justify-between items-center">
-                      <span className="text-[10px] font-bold text-primary uppercase tracking-widest">{log.stage}</span>
-                      <span className="text-[10px] text-muted">{log.time}</span>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 fade-rise" style={{ animationDelay: "70ms" }}>
+            <StatsCard label="Live Entities" value="2,184" description="Objects in active graph" trend={{ value: "+8%", positive: true }} />
+            <StatsCard label="Analytic Threads" value="142" description="Concurrent reasoning jobs" trend={{ value: "4 Running", positive: true }} />
+            <StatsCard label="Causal Integrity" value="99.9%" description="Verified by Pillar 1" />
+            <StatsCard label="Latency (ms)" value="24.5" description="End-to-end processing" trend={{ value: "-12ms", positive: true }} />
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 fade-rise" style={{ animationDelay: "120ms" }}>
+            {/* Sidebar: Object Inventory */}
+            <div className="xl:col-span-2 space-y-3 bg-[#182026] border border-border p-4 shadow-xl">
+                <div className="flex items-center gap-2 mb-4 border-b border-border pb-3">
+                    <Box size={18} className="text-primary" />
+                    <h3 className="font-bold text-sm uppercase tracking-widest">Data Inventory</h3>
+                </div>
+                {visibleObjects.map((obj) => (
+                <button
+                    key={obj.id}
+                    onClick={() => setSelectedObjectId(obj.id)}
+                    data-selected={selectedObject?.id === obj.id}
+                    className="object-card w-full p-4 text-left rounded-none border-l-4 border-l-transparent data-[selected=true]:border-l-primary"
+                >
+                    <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2 text-primary">
+                        {iconForObjectType(obj.type)}
+                        <span className="text-[10px] uppercase tracking-widest font-bold">{obj.type}</span>
                     </div>
-                    <p className="text-xs font-medium mt-1">{log.msg}</p>
-                  </div>
-                </div>
-              ))}
+                    <span className="text-[9px] text-muted font-mono">{obj.status}</span>
+                    </div>
+                    <p className="text-sm font-bold text-white uppercase">{obj.label}</p>
+                    <p className="text-[11px] text-muted line-clamp-1 mt-1">{obj.description}</p>
+                </button>
+                ))}
             </div>
-            <button className="w-full py-2 rounded-lg text-xs font-bold border border-border bg-[#141c22] hover:border-primary/70">
-              Launch Full Audit Vault
-            </button>
-          </div>
+
+            {/* Main: Object Details & Causal Graph */}
+            <div className="xl:col-span-3 space-y-6">
+                <div className="bg-[#182026] border border-border p-6 shadow-xl relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-2 bg-[#293742] text-xs font-mono text-primary font-bold border-l border-b border-border">
+                        {selectedObject?.confidence} CONFIDENCE
+                    </div>
+                    
+                    <div className="mb-8">
+                        <p className="text-[10px] uppercase tracking-[0.2em] text-primary font-bold">Selected Object</p>
+                        <h4 className="text-3xl font-bold text-white uppercase mt-1">{selectedObject?.label}</h4>
+                        <p className="text-sm text-muted mt-2 max-w-lg">{selectedObject?.description}</p>
+                    </div>
+
+                    <div className="space-y-4">
+                        <div className="flex items-center gap-2">
+                            <Share2 size={16} className="text-primary" />
+                            <h5 className="text-xs font-bold uppercase tracking-widest text-white/90">Upstream \ Downstream Linkages</h5>
+                        </div>
+                        <div className="grid grid-cols-1 gap-3">
+                            {selectedRelations.map((edge, idx) => (
+                                <div key={`${edge.source}-${edge.target}-${idx}`} className="group relative bg-[#1c2127] border border-border p-4 hover:border-primary/50 transition-all">
+                                    <div className="flex items-center justify-between text-[10px] font-mono mb-2">
+                                        <span className="flex items-center gap-2 text-primary font-bold uppercase"><Link2 size={12} /> Causal Path</span>
+                                        <span className="bg-[#293742] px-1.5 py-0.5 text-white">PROBABILITY: {edge.confidence}</span>
+                                    </div>
+                                    <p className="text-sm font-bold text-white italic mb-3">"{edge.relation}"</p>
+                                    <div className="flex items-center gap-4">
+                                        <div className="bg-black/30 border border-border px-3 py-1.5 text-xs font-bold text-muted uppercase">
+                                            {objects.find((obj) => obj.id === edge.source)?.label}
+                                        </div>
+                                        <ArrowRight size={16} className="text-primary animate-pulse" />
+                                        <div className={`bg-black/30 border border-border px-3 py-1.5 text-xs font-bold uppercase ${edge.effect === "positive" ? "text-secondary" : "text-accent"}`}>
+                                            {objects.find((obj) => obj.id === edge.target)?.label}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                            {selectedRelations.length === 0 && (
+                                <div className="py-8 text-center border border-dashed border-border">
+                                    <p className="text-xs text-muted">No active causal chains detected for this entity.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex gap-4">
+                    <button className="flex-1 bg-[#137cbd] hover:bg-[#137cbd]/90 text-white py-3 text-xs font-bold uppercase tracking-widest transition-all shadow-lg shadow-primary/10">
+                        Launch Simulation
+                    </button>
+                    <button className="flex-1 bg-glass hover:bg-white/5 border border-border text-white py-3 text-xs font-bold uppercase tracking-widest transition-all">
+                        Deep Export
+                    </button>
+                </div>
+            </div>
         </div>
       </div>
     </div>
