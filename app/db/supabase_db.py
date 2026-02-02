@@ -1,5 +1,7 @@
-﻿from typing import Dict
-from supabase import create_client, Client
+from typing import Dict, List
+
+from supabase import Client, create_client
+
 from app.services.types import DecisionResult, DistillResult
 
 
@@ -54,6 +56,33 @@ class SupabaseDB:
             "status": "decided",
         }
         self.client.table("cases").update(payload).eq("case_id", case_id).execute()
+
+    def upsert_graph_edges(self, case_id: str, edges: List[Dict]) -> None:
+        if not edges:
+            return
+        payload = []
+        for edge in edges:
+            payload.append(
+                {
+                    "case_id": case_id,
+                    "doc_id": edge.get("doc_id"),
+                    "head_node": edge.get("head_node"),
+                    "relation": edge.get("relation"),
+                    "tail_node": edge.get("tail_node"),
+                    "properties": edge.get("properties", {}),
+                    "event_time": edge.get("event_time"),
+                    "valid_from": edge.get("valid_from"),
+                    "valid_to": edge.get("valid_to"),
+                    "observed_at": edge.get("observed_at"),
+                    "time_source": edge.get("time_source"),
+                    "time_granularity": edge.get("time_granularity"),
+                }
+            )
+        self.client.table("spoke_d_graph").insert(payload).execute()
+
+    def list_graph_edges(self, case_id: str) -> List[Dict]:
+        res = self.client.table("spoke_d_graph").select("*").eq("case_id", case_id).execute()
+        return res.data or []
 
     def get_case(self, case_id: str) -> Dict:
         res = self.client.table("cases").select("*").eq("case_id", case_id).execute()

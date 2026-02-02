@@ -1,4 +1,4 @@
-﻿from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from app.core.config import load_settings
@@ -14,6 +14,7 @@ from app.models.schemas import (
 from app.services.distill_engine import FinDistillAdapter
 from app.services.robot_engine import FinRobotAdapter
 from app.services.orchestrator import Orchestrator
+from app.services.spokes import SpokesEngine
 
 settings = load_settings()
 
@@ -29,7 +30,8 @@ app = FastAPI(title="Preciso Core", version="0.1.0")
 _db = init_db()
 _distill = FinDistillAdapter()
 _robot = FinRobotAdapter()
-_orchestrator = Orchestrator(_db, _distill, _robot)
+_spokes = SpokesEngine()
+_orchestrator = Orchestrator(_db, _distill, _robot, _spokes)
 
 app.mount("/ui", StaticFiles(directory="app/ui"), name="ui")
 
