@@ -12,6 +12,7 @@ from app.models.schemas import (
     PipelineResponse,
 )
 from app.services.distill_engine import FinDistillAdapter
+from app.services.oracle import OracleEngine
 from app.services.robot_engine import FinRobotAdapter
 from app.services.orchestrator import Orchestrator
 from app.services.spokes import SpokesEngine
@@ -31,7 +32,8 @@ _db = init_db()
 _distill = FinDistillAdapter()
 _robot = FinRobotAdapter()
 _spokes = SpokesEngine()
-_orchestrator = Orchestrator(_db, _distill, _robot, _spokes)
+_oracle = OracleEngine()
+_orchestrator = Orchestrator(_db, _distill, _robot, _spokes, _oracle)
 
 app.mount("/ui", StaticFiles(directory="app/ui"), name="ui")
 

@@ -84,6 +84,34 @@ class SupabaseDB:
         res = self.client.table("spoke_d_graph").select("*").eq("case_id", case_id).execute()
         return res.data or []
 
+    def save_audit_event(self, case_id: str, event: Dict) -> None:
+        payload = {
+            "case_id": case_id,
+            "event_type": event.get("event_type"),
+            "stage": event.get("stage"),
+            "status": event.get("status"),
+            "payload": event.get("payload", {}),
+            "created_at": event.get("created_at"),
+        }
+        try:
+            self.client.table("audit_log").insert(payload).execute()
+        except Exception:
+            # Keep pipeline execution non-blocking if audit table is not provisioned yet.
+            pass
+
+    def list_audit_events(self, case_id: str) -> List[Dict]:
+        try:
+            res = (
+                self.client.table("audit_log")
+                .select("*")
+                .eq("case_id", case_id)
+                .order("created_at")
+                .execute()
+            )
+            return res.data or []
+        except Exception:
+            return []
+
     def get_case(self, case_id: str) -> Dict:
         res = self.client.table("cases").select("*").eq("case_id", case_id).execute()
         if res.data:
