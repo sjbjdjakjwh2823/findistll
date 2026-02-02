@@ -9,11 +9,15 @@ import {
   ArrowDown
 } from "lucide-react";
 
-export async function generateStaticParams() {
+export function generateStaticParams() {
   return [{ id: 'sample-case' }];
 }
 
-export default function CaseDetailPage() {
+export const dynamic = 'force-static';
+export const dynamicParams = false;
+
+export default async function CaseDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const steps = [
     { 
       id: "ingest", 
@@ -54,49 +58,48 @@ export default function CaseDetailPage() {
 
   return (
     <div className="p-8 space-y-8 max-w-5xl mx-auto">
-      <div className="flex justify-between items-start">
+      <div className="flex justify-between items-start border-b border-border pb-6">
         <div>
-          <div className="flex items-center gap-3 mb-2">
-            <span className="px-2 py-0.5 bg-primary/20 text-primary text-[10px] font-bold rounded uppercase tracking-tighter">High Priority</span>
-            <span className="text-muted text-sm font-mono">CASE-2026-0042</span>
+          <div className="flex items-center gap-3 mb-2 font-mono text-[11px] text-primary">
+            <span className="px-2 py-0.5 bg-primary/20 border border-primary/40 rounded uppercase">High Priority</span>
+            <span>Ref ID: CASE-2026-0042-{id}</span>
           </div>
-          <h2 className="text-3xl font-bold tracking-tight">NVIDIA Corp (NVDA) - Q4 Review</h2>
-          <p className="text-muted mt-1">Intelligence analysis of FY2025 Annual Disclosure</p>
+          <h2 className="text-3xl font-bold tracking-tight text-white uppercase">NVIDIA Corp (NVDA)</h2>
+          <p className="text-muted mt-1 font-mono text-xs">AIP-DRIVEN ANALYTIC WORKSPACE // VERSION 2.0.4</p>
         </div>
         <div className="flex gap-3">
-          <button className="px-4 py-2 bg-glass border border-border rounded-lg text-sm font-bold hover:bg-white/5">Audit Trail</button>
-          <button className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-bold shadow-lg shadow-primary/20">Finalize Decision</button>
+          <button className="px-4 py-2 bg-[#182026] border border-border rounded shadow-sm text-sm font-semibold text-white/90 hover:bg-[#202b33]">Audit Trail</button>
+          <button className="px-4 py-2 bg-[#106ba3] hover:bg-[#137cbd] text-white rounded shadow-sm text-sm font-bold">RELEASE DECISION</button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Left: Progress Timeline */}
         <div className="lg:col-span-1 space-y-4">
-          <h3 className="text-sm font-bold text-muted uppercase tracking-widest px-1">Pipeline Timeline</h3>
-          <div className="glass-panel p-6 space-y-0 relative">
+          <h3 className="text-xs font-bold text-muted uppercase tracking-[0.2em] px-1 border-l-2 border-primary ml-1 pl-3">Data Lineage</h3>
+          <div className="bg-[#182026] border border-border p-6 space-y-0 relative shadow-xl">
             {steps.map((step, i) => (
               <div key={step.id} className="relative pb-8 last:pb-0">
                 {i < steps.length - 1 && (
-                  <div className="absolute left-2.5 top-7 bottom-0 w-0.5 bg-border" />
+                  <div className="absolute left-[9px] top-7 bottom-0 w-px bg-border/50" />
                 )}
-                <div className="flex gap-4 items-start relative">
-                  <div className={`mt-1 w-5 h-5 rounded-full flex items-center justify-center z-10 ${
-                    step.status === 'complete' ? 'bg-secondary text-black' : 
-                    step.status === 'processing' ? 'bg-primary text-white animate-pulse' : 
-                    'bg-border text-muted'
+                <div className="flex gap-5 items-start relative">
+                  <div className={`mt-1.5 w-4 h-4 rounded-full border-2 flex items-center justify-center z-10 ${
+                    step.status === 'complete' ? 'bg-secondary border-secondary shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 
+                    step.status === 'processing' ? 'bg-primary border-primary animate-pulse shadow-[0_0_8px_rgba(72,175,240,0.4)]' : 
+                    'bg-[#202b33] border-border'
                   }`}>
-                    {step.status === 'complete' ? <CheckCircle2 size={12} strokeWidth={3} /> : 
-                     step.status === 'processing' ? <Zap size={10} fill="currentColor" /> : 
-                     <div className="w-1 h-1 rounded-full bg-muted" />}
+                    {step.status === 'complete' && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
                   </div>
                   <div>
-                    <h4 className={`text-sm font-bold ${step.status === 'pending' ? 'text-muted' : 'text-foreground'}`}>
+                    <h4 className={`text-xs font-bold uppercase tracking-wider ${step.status === 'pending' ? 'text-muted' : 'text-white'}`}>
                       {step.label}
                     </h4>
-                    <p className="text-xs text-muted mt-0.5 leading-relaxed">{step.desc}</p>
-                    <span className="text-[10px] font-mono font-bold text-primary/80 mt-2 block tracking-tight uppercase">
-                      {step.meta}
-                    </span>
+                    <p className="text-[11px] text-muted mt-1">{step.desc}</p>
+                    <div className="mt-2 flex gap-3">
+                        <span className="text-[10px] font-mono text-primary bg-primary/10 px-1.5 py-0.5 rounded uppercase">
+                        {step.meta}
+                        </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -104,42 +107,62 @@ export default function CaseDetailPage() {
           </div>
         </div>
 
-        {/* Right: Data Analysis View */}
         <div className="lg:col-span-2 space-y-6">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="glass-panel p-4 space-y-2">
-              <div className="flex items-center gap-2 text-muted">
-                <FileText size={14} />
-                <span className="text-[10px] font-bold uppercase tracking-widest">Evidence Node</span>
+          <div className="flex items-center gap-4 bg-[#182026] border border-border p-3">
+             <div className="p-2 bg-indigo-500/10 text-primary border border-primary/20">
+                <FileText size={20} />
+             </div>
+             <div>
+                <p className="text-xs font-bold text-white uppercase tracking-wider">Master Document</p>
+                <p className="text-[11px] text-muted">SEC-FILING-10K-NVDA-2025.pdf (Verified)</p>
+             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 font-mono">
+            <div className="bg-[#1c2127] border border-border p-4 space-y-3 shadow-inner">
+              <div className="flex items-center gap-2 text-muted border-b border-border/30 pb-2">
+                <span className="text-[10px] font-bold uppercase tracking-widest">Raw Fact #4102</span>
               </div>
-              <p className="text-sm font-medium">"Data Center Revenue grew by 409% YoY, driven by H100 demand."</p>
-              <div className="pt-2 border-t border-border flex justify-between items-center">
-                <span className="text-[10px] text-muted font-mono">Source: SEC 10-K Pg. 42</span>
-                <button className="text-primary text-[10px] font-bold hover:underline">View Source</button>
+              <p className="text-xs leading-relaxed italic text-white/70">"Data Center Revenue grew by 409% YoY..."</p>
+              <div className="flex justify-between items-center pt-1">
+                <span className="text-[9px] bg-[#293742] px-1 text-white">REF: P42.L12</span>
+                <button className="text-primary text-[10px] hover:text-sky-400">View Source</button>
               </div>
             </div>
-            <div className="glass-panel p-4 space-y-2 border-primary/30">
-              <div className="flex items-center gap-2 text-primary">
-                <ShieldAlert size={14} />
-                <span className="text-[10px] font-bold uppercase tracking-widest">Reflection Insight</span>
+            <div className="bg-[#1c2127] border border-primary/20 p-4 space-y-3 relative overflow-hidden shadow-inner">
+              <div className="absolute top-0 right-0 p-1 bg-primary/10 border-l border-b border-primary/20">
+                  <ShieldAlert size={12} className="text-primary" />
               </div>
-              <p className="text-sm font-medium">Original extraction missed $1.2B in accounts receivable offset. Corrected in Round 2.</p>
-              <div className="pt-2 border-t border-border flex justify-between items-center">
-                <span className="text-[10px] text-muted font-mono">Confidence: High (0.982)</span>
+              <div className="flex items-center gap-2 text-primary border-b border-primary/10 pb-2">
+                <span className="text-[10px] font-bold uppercase tracking-widest">Self-Correction</span>
+              </div>
+              <p className="text-xs leading-relaxed text-white/90">Validated against Balance Sheet Page 89. Adjusted for FX headwinds.</p>
+              <div className="flex justify-between items-center pt-1">
+                <span className="text-[9px] text-secondary">CERTAINTY: 0.998</span>
               </div>
             </div>
           </div>
 
-          <div className="glass-panel h-80 flex flex-col items-center justify-center text-center p-8 border-dashed">
-            <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center text-primary mb-4">
-              <Search className="animate-bounce" size={24} />
+          <div className="bg-[#182026] border border-border h-64 flex flex-col items-center justify-center text-center p-8 relative overflow-hidden">
+            <div className="absolute inset-0 opacity-10 pointer-events-none overflow-hidden">
+                <div className="grid grid-cols-12 gap-1 w-full h-full">
+                    {Array.from({length: 48}).map((_, i) => (
+                        <div key={i} className="border-r border-b border-white/20 h-8 w-full" />
+                    ))}
+                </div>
             </div>
-            <h4 className="font-bold">Oracle Simulation in Progress</h4>
-            <p className="text-sm text-muted max-w-xs mt-2">
-              The engine is currently calculating causal propagation across 42 dependent entities in the semiconductor supply chain.
-            </p>
-            <div className="w-full max-w-xs bg-border h-1 rounded-full mt-6 overflow-hidden">
-              <div className="bg-primary h-full w-2/3 rounded-full animate-progress" />
+            <div className="z-10">
+                <div className="w-12 h-12 bg-primary/10 border border-primary/30 rounded-lg flex items-center justify-center text-primary mb-4 mx-auto">
+                <Zap className="animate-pulse" size={24} />
+                </div>
+                <h4 className="font-bold text-white uppercase tracking-[0.2em]">Causal Oracle Active</h4>
+                <p className="text-xs text-muted max-w-sm mt-3 font-mono leading-relaxed">
+                SIMULATING SEMICONDUCTOR VALUE CHAIN PROPAGATION...
+                IDENTIFYING CORRELATIONS AT DEPTH 8...
+                </p>
+                <div className="w-48 bg-black/40 border border-border h-1.5 rounded-full mt-6 mx-auto overflow-hidden">
+                <div className="bg-primary h-full w-3/4 rounded-full" />
+                </div>
             </div>
           </div>
         </div>
