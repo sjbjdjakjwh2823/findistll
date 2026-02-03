@@ -20,3 +20,16 @@ frontend/.next/
 *.pem
 bin/cloudflared*
 app/ui/
+*_PLAN.md
+*_IDEAS.md
+*Report.md
+*Summary.md
+*Benchmarking.md
+*GUIDE.md
+*SPEC.md
+CLAW_THOUGHTS.md
+RECOVERY_VAULT.md
+SDK_DOC_DRAFT.md
+deploy_history.json
+!README.md
+!README_DEPLOY.md
