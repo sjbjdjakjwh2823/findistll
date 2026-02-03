@@ -5,3 +5,11 @@ supabase
 python-dotenv
 httpx
 typing-extensions
+PyMuPDF
+causalml
+dowhy
+networkx
+recharts
+framer-motion
+pytest
+pytest-asyncio

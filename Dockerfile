@@ -26,8 +26,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Create a non-root user and switch to it
+RUN useradd -m preciso
+USER preciso
+
 # Copy project files
-COPY . .
+COPY --chown=preciso:preciso . .
 
 # Expose the application port
 EXPOSE 8004
