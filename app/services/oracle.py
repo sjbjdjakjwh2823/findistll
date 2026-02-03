@@ -108,7 +108,17 @@ class OracleEngine:
         ("liquidity", "tech_valuation"): {"multiplier": 1.20, "polarity": 1.0, "path_label": "risk_on"},
         ("energy_price", "inflation"): {"multiplier": 1.22, "polarity": 1.0, "path_label": "cost_push"},
         ("unemployment", "policy_rate"): {"multiplier": 1.15, "polarity": -1.0, "path_label": "labor_slack"},
+        ("labor_market_tightness", "inflation"): {
+            "multiplier": 1.25,
+            "polarity": 1.0,
+            "path_label": "wage_pressure",
+        },
         ("usd_strength", "exports"): {"multiplier": 1.18, "polarity": -1.0, "path_label": "fx_translation"},
+        ("fiscal_stimulus", "consumer_spending"): {
+            "multiplier": 1.30,
+            "polarity": 1.0,
+            "path_label": "demand_boost",
+        },
         ("revenue_growth", "earnings_growth"): {"multiplier": 1.20, "polarity": 1.0, "path_label": "fundamental"},
         ("earnings_growth", "equity_valuation"): {"multiplier": 1.24, "polarity": 1.0, "path_label": "multiple_expansion"},
         ("risk_premium", "equity_valuation"): {"multiplier": 1.35, "polarity": -1.0, "path_label": "risk_discount"},
@@ -127,11 +137,22 @@ class OracleEngine:
         # Energy & Geopolitics (Pillar 2/3 Evolution)
         ("oil_price", "transport_cost"): {"multiplier": 1.25, "polarity": 1.0, "path_label": "energy_link"},
         ("transport_cost", "cpi"): {"multiplier": 1.15, "polarity": 1.0, "path_label": "supply_side_inflation"},
+        ("supply_chain_bottleneck", "cpi"): {
+            "multiplier": 1.28,
+            "polarity": 1.0,
+            "path_label": "bottleneck_inflation",
+        },
         ("geopolitical_risk", "oil_price"): {"multiplier": 1.40, "polarity": 1.0, "path_label": "geopolitical_premium"},
+        ("geopolitical_risk", "geopolitical_stability"): {
+            "multiplier": 1.50,
+            "polarity": -1.0,
+            "path_label": "risk_stability_tradeoff",
+        },
     }
 
     CONCEPT_ALIASES: Dict[str, Tuple[str, ...]] = {
         "inflation": ("inflation", "cpi", "ppi", "price level", "price pressure"),
+        "consumer_spending": ("consumer spending", "consumption", "retail sales", "household spending"),
         "policy_rate": ("policy rate", "fed funds", "interest rate", "fed policy", "rate hike", "rate cut"),
         "bond_yield": ("bond yield", "treasury yield", "10y yield", "real yield"),
         "discount_rate": ("discount rate", "cost of capital", "wacc"),
@@ -139,6 +160,20 @@ class OracleEngine:
         "equity_valuation": ("equity valuation", "market valuation", "price target", "valuation"),
         "liquidity": ("liquidity", "money supply", "qe", "quantitative easing"),
         "energy_price": ("energy price", "oil", "gas price", "brent", "wti", "crude"),
+        "labor_market_tightness": (
+            "labor market tightness",
+            "tight labor market",
+            "job openings",
+            "quit rate",
+            "wage pressure",
+        ),
+        "supply_chain_bottleneck": (
+            "supply chain bottleneck",
+            "port congestion",
+            "input shortages",
+            "logistics disruption",
+        ),
+        "fiscal_stimulus": ("fiscal stimulus", "government spending", "tax cuts", "stimulus checks"),
         "unemployment": ("unemployment", "jobless", "labor market slack"),
         "usd_strength": ("usd", "dollar index", "dxy", "strong dollar"),
         "exports": ("exports", "export demand", "trade balance"),
@@ -163,6 +198,12 @@ class OracleEngine:
         "oil_price": ("oil price", "crude oil", "wti price", "brent price"),
         "transport_cost": ("shipping cost", "freight rates", "logistics cost"),
         "geopolitical_risk": ("geopolitical tension", "war risk", "trade war", "sanctions"),
+        "geopolitical_stability": (
+            "geopolitical stability",
+            "de-escalation",
+            "diplomatic stability",
+            "regional stability",
+        ),
     }
     SCM_EQUATIONS: Dict[Tuple[str, str], Dict[str, Any]] = {
         ("energy_price", "inflation"): {
@@ -410,10 +451,11 @@ class OracleEngine:
         max_impact = max(abs_values)
         total_impact = sum(abs_values)
         significant_hits = sum(1 for value in abs_values if value >= 0.1)
+        geopolitical_risk = abs(float(impacts.get("geopolitical_risk", 0.0) or 0.0))
 
         if max_impact >= 0.6 or total_impact >= 1.5 or significant_hits >= 6:
             return "Crisis"
-        if max_impact >= 0.3 or significant_hits >= 4:
+        if max_impact >= 0.3 or significant_hits >= 4 or geopolitical_risk >= 0.25:
             return "High Volatility"
         return None
 

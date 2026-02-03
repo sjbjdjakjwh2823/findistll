@@ -40,6 +40,16 @@ interface KnowledgeGraph3DProps {
   showControls?: boolean;
 }
 
+interface ScenarioHistoryItem {
+  id: string;
+  nodeId: string | number;
+  nodeLabel: string;
+  delta: number;
+  horizon: number;
+  impacts: any[];
+  createdAt: string;
+}
+
 export default function KnowledgeGraph3D({ caseId, onNodeClick, showControls = true }: KnowledgeGraph3DProps) {
   const [data, setData] = useState<GraphData>({ nodes: [], links: [] });
   const [loading, setLoading] = useState(true);
@@ -48,8 +58,16 @@ export default function KnowledgeGraph3D({ caseId, onNodeClick, showControls = t
   const [regimeShift, setRegimeShift] = useState<string | null>(null);
   const [delta, setDelta] = useState(0.5);
   const [horizon, setHorizon] = useState(3);
+  const [scenarioHistory, setScenarioHistory] = useState<ScenarioHistoryItem[]>([]);
   const fgRef = useRef<any>(null);
   const dragStartRef = useRef<Map<string, { x: number; y: number; z: number }>>(new Map());
+  const nodeById = useMemo(() => {
+    const map = new Map<string, any>();
+    data.nodes.forEach((node: any) => {
+      if (node?.id != null) map.set(String(node.id), node);
+    });
+    return map;
+  }, [data.nodes]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -97,6 +115,16 @@ export default function KnowledgeGraph3D({ caseId, onNodeClick, showControls = t
         const result = await res.json();
         // Animate impacts
         animateImpacts(result.impacts);
+        const historyItem: ScenarioHistoryItem = {
+          id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          nodeId: targetNode.id,
+          nodeLabel: targetNode.label ?? targetNode.id ?? "Unknown",
+          delta: valueDelta,
+          horizon,
+          impacts: result.impacts ?? [],
+          createdAt: new Date().toISOString()
+        };
+        setScenarioHistory((prev) => [...prev, historyItem]);
       }
     } catch (err) {
       console.error("Simulation failed:", err);
@@ -140,6 +168,16 @@ export default function KnowledgeGraph3D({ caseId, onNodeClick, showControls = t
   const handleNodeClick = (node: any) => {
     setSelectedNode(node);
     if (onNodeClick) onNodeClick(node);
+  };
+
+  const handleScenarioClick = (scenario: ScenarioHistoryItem) => {
+    const node = nodeById.get(String(scenario.nodeId));
+    if (node) {
+      setSelectedNode(node);
+    }
+    setDelta(scenario.delta);
+    setHorizon(scenario.horizon);
+    animateImpacts(scenario.impacts);
   };
 
   const handleNodeDragStart = (node: any) => {
@@ -252,6 +290,38 @@ export default function KnowledgeGraph3D({ caseId, onNodeClick, showControls = t
             </div>
         </div>
       )}
+
+      <div className="absolute top-4 left-4 w-56 bg-[#152127]/95 border border-[#1f2f39] p-3 z-10 shadow-xl">
+        <div className="flex items-center justify-between mb-2 pb-2 border-b border-[#1f2f39]">
+          <div className="flex items-center gap-2">
+            <Network size={14} className="text-[#2B95D6]" />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-[#f6f7f9] font-mono">Scenario History</span>
+          </div>
+          <span className="text-[9px] font-mono text-[#2B95D6]">{scenarioHistory.length}</span>
+        </div>
+        <div className="max-h-48 overflow-y-auto pr-1 space-y-1">
+          {scenarioHistory.length === 0 && (
+            <div className="text-[9px] text-[#6b7b86] font-mono">No scenarios yet</div>
+          )}
+          {scenarioHistory.slice().reverse().map((scenario) => (
+            <button
+              key={scenario.id}
+              type="button"
+              onClick={() => handleScenarioClick(scenario)}
+              className="w-full text-left px-2 py-1 rounded border border-transparent hover:border-[#2B95D6] hover:bg-[#18252c] transition-colors"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-mono text-[#d7e1e8] truncate max-w-[130px]">{scenario.nodeLabel}</span>
+                <span className="text-[9px] font-mono text-[#2B95D6]">{scenario.delta > 0 ? '+' : ''}{scenario.delta.toFixed(2)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[8px] font-mono text-[#6b7b86]">H{scenario.horizon}</span>
+                <span className="text-[8px] font-mono text-[#6b7b86]">{new Date(scenario.createdAt).toLocaleTimeString()}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
 
       {loading && (
         <div className="absolute inset-0 flex items-center justify-center bg-[#1a1c1e]/50 backdrop-blur-sm z-20">
