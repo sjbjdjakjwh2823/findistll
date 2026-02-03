@@ -45,9 +45,11 @@ export default function KnowledgeGraph3D({ caseId, onNodeClick, showControls = t
   const [loading, setLoading] = useState(true);
   const [simulating, setSimulating] = useState(false);
   const [selectedNode, setSelectedNode] = useState<any>(null);
+  const [regimeShift, setRegimeShift] = useState<string | null>(null);
   const [delta, setDelta] = useState(0.5);
   const [horizon, setHorizon] = useState(3);
   const fgRef = useRef<any>(null);
+  const dragStartRef = useRef<Map<string, { x: number; y: number; z: number }>>(new Map());
 
   const fetchData = async () => {
     setLoading(true);
@@ -57,6 +59,11 @@ export default function KnowledgeGraph3D({ caseId, onNodeClick, showControls = t
       if (res.ok) {
         const json = await res.json();
         setData(json);
+        if (typeof json.regime_shift === 'string') {
+          setRegimeShift(json.regime_shift);
+        } else {
+          setRegimeShift(null);
+        }
       }
     } catch (err) {
       console.error("Failed to fetch graph data:", err);
@@ -69,17 +76,19 @@ export default function KnowledgeGraph3D({ caseId, onNodeClick, showControls = t
     fetchData();
   }, [caseId]);
 
-  const runSimulation = async () => {
-    if (!selectedNode) return;
+  const runSimulation = async (options?: { node?: any; deltaOverride?: number }) => {
+    const targetNode = options?.node ?? selectedNode;
+    if (!targetNode) return;
     setSimulating(true);
     try {
+      const valueDelta = options?.deltaOverride ?? delta;
       const res = await fetch('/oracle/simulate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           case_id: caseId,
-          node_id: selectedNode.id,
-          value_delta: delta,
+          node_id: targetNode.id,
+          value_delta: valueDelta,
           horizon_steps: horizon
         })
       });
@@ -133,19 +142,59 @@ export default function KnowledgeGraph3D({ caseId, onNodeClick, showControls = t
     if (onNodeClick) onNodeClick(node);
   };
 
+  const handleNodeDragStart = (node: any) => {
+    if (!node || node.id == null) return;
+    dragStartRef.current.set(String(node.id), { x: node.x ?? 0, y: node.y ?? 0, z: node.z ?? 0 });
+  };
+
+  const handleNodeDragEnd = (node: any) => {
+    if (!node || node.id == null) return;
+    const start = dragStartRef.current.get(String(node.id));
+    const end = { x: node.x ?? 0, y: node.y ?? 0, z: node.z ?? 0 };
+    dragStartRef.current.delete(String(node.id));
+
+    if (!start) return;
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const dz = end.z - start.z;
+    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (distance < 1) return;
+
+    const shockDelta = Math.min(2, Math.max(0.05, distance / 50));
+    setSelectedNode(node);
+    setDelta(shockDelta);
+    runSimulation({ node, deltaOverride: shockDelta });
+  };
+
   return (
-    <div className="w-full h-full relative">
+    <div
+      className="w-full h-full relative"
+      style={
+        regimeShift === "Crisis"
+          ? {
+              background: "radial-gradient(circle at 50% 50%, rgba(120,0,0,0.25), rgba(10,19,23,0.9))",
+              filter: "saturate(1.1)",
+            }
+          : undefined
+      }
+    >
       <ForceGraph3D
         ref={fgRef}
         graphData={data}
         backgroundColor="rgba(0,0,0,0)"
         nodeLabel="label"
         nodeColor={nodeColor}
-        linkColor={() => "rgba(255,255,255,0.1)"}
-        linkDirectionalParticles={1}
+        linkColor={(link: any) => (Number(link?.polarity) < 0 ? "#ff4d4d" : "#2B95D6")}
+        linkWidth={(link: any) => {
+          const value = Number(link?.value ?? 0.5);
+          return Math.max(0.5, value);
+        }}
+        linkDirectionalParticles={(link: any) => Math.max(0, Math.floor(Number(link?.value ?? 0) * 5))}
         linkDirectionalParticleSpeed={0.005}
         nodeResolution={16}
         onNodeClick={handleNodeClick}
+        onNodeDragStart={handleNodeDragStart}
+        onNodeDragEnd={handleNodeDragEnd}
         showNavInfo={false}
       />
 

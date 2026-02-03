@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "preciso-distill"
+version = "0.1.0"
+description = "Preciso FinDistill B2B Sovereign SDK"
+readme = "README_DEPLOY.md"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi",
+  "uvicorn",
+  "pydantic",
+  "supabase",
+  "python-dotenv",
+  "httpx",
+  "typing-extensions",
+]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*", "vendor*", "finrobot*", "findistill*"]
