@@ -1,11 +1,25 @@
 import base64
 import os
+import io
+from dataclasses import dataclass
 from collections import defaultdict
 from copy import deepcopy
 from typing import Any, Dict, List, Tuple
 
+try:
+    import fitz  # PyMuPDF
+except ImportError:
+    fitz = None
+
 from app.services.types import DistillResult
 
+@dataclass
+class SymbolicRule:
+    rule_id: str
+    target_metric: str
+    component_metrics: List[str]
+    operation: str  # "sum", "difference"
+    description: str
 
 class DistillEngine:
     async def extract(self, document: Dict[str, Any]) -> DistillResult:
@@ -14,6 +28,37 @@ class DistillEngine:
 
 class FinDistillAdapter(DistillEngine):
     """Adapter to run the FinDistill ingestion + normalization pipeline."""
+
+    ACCOUNTING_IDENTITIES = [
+        SymbolicRule(
+            rule_id="net_income_calc",
+            target_metric="net income",
+            component_metrics=["revenue", "expenses"],
+            operation="difference",
+            description="Net Income = Revenue - Expenses"
+        ),
+        SymbolicRule(
+            rule_id="gross_profit_calc",
+            target_metric="gross profit",
+            component_metrics=["revenue", "cost of goods sold"],
+            operation="difference",
+            description="Gross Profit = Revenue - Cost of Goods Sold"
+        ),
+        SymbolicRule(
+            rule_id="total_assets_calc",
+            target_metric="total assets",
+            component_metrics=["current assets", "non-current assets"],
+            operation="sum",
+            description="Total Assets = Current + Non-current Assets"
+        ),
+        SymbolicRule(
+            rule_id="balance_sheet_identity",
+            target_metric="total assets",
+            component_metrics=["total liabilities", "total equity"],
+            operation="sum",
+            description="Assets = Liabilities + Equity"
+        )
+    ]
 
     async def extract(self, document: Dict[str, Any]) -> DistillResult:
         if os.getenv("DISTILL_OFFLINE", "0") == "1":
@@ -62,6 +107,16 @@ class FinDistillAdapter(DistillEngine):
 
         reflected_facts, reflection_summary = self._self_reflect_facts(facts, max_rounds=2)
 
+        # Pixel-Level Data Lineage: Enrich facts with coordinates from PDF
+        if mime_type == "application/pdf":
+            reflected_facts = self._enrich_with_source_anchors(reflected_facts, file_bytes)
+            
+        # Pillar 1: Agentic Ontology Self-Correction
+        reflected_facts = self._self_heal_ontology_links(reflected_facts)
+        
+        # Pillar 1+4: Kinetic Action Extraction (Extracting potential strategies as nodes)
+        reflected_facts = self._extract_kinetic_actions(reflected_facts, cot)
+
         metadata = {
             "source": document.get("source", "upload"),
             "doc_id": document.get("doc_id", ""),
@@ -108,6 +163,10 @@ class FinDistillAdapter(DistillEngine):
                 break
             working = deduped
 
+        # Phase 3.5: Symbolic Logic Validation (FinReflect-Chain)
+        working = self._validate_with_symbolic_logic(working)
+        symbolic_report = self._generate_symbolic_report(working)
+
         summary = {
             "enabled": True,
             "max_rounds": max_rounds,
@@ -117,6 +176,7 @@ class FinDistillAdapter(DistillEngine):
             "history": history,
             "error_report": dict(sorted(aggregate_error_counts.items())),
             "error_types_detected": sorted(aggregate_error_counts.keys()),
+            "symbolic_report": symbolic_report,
         }
         return working, summary
 
@@ -317,3 +377,204 @@ class FinDistillAdapter(DistillEngine):
 
     def _facts_signature(self, facts: List[Dict[str, Any]]) -> Tuple[str, ...]:
         return tuple(sorted(self._fact_signature(fact) for fact in facts))
+
+    def _enrich_with_source_anchors(self, facts: List[Dict[str, Any]], file_bytes: bytes) -> List[Dict[str, Any]]:
+        """
+        Pixel-Level Data Lineage Implementation:
+        Uses PyMuPDF to locate extracted facts within the original PDF.
+        Enhanced with fuzzy multi-word search and best-match heuristic.
+        """
+        if not fitz or not file_bytes:
+            return facts
+
+        try:
+            doc = fitz.open(stream=file_bytes, filetype="pdf")
+        except Exception as e:
+            print(f"[Lineage] Failed to open PDF for coordinate mapping: {e}")
+            return facts
+
+        for fact in facts:
+            search_candidates = []
+            
+            # Priority 1: Exact statement (full context)
+            if fact.get("statement"):
+                search_candidates.append(fact["statement"])
+            
+            # Priority 2: Label + Value
+            label = fact.get("label") or fact.get("metric")
+            value = str(fact.get("value", ""))
+            if label and value:
+                search_candidates.append(f"{label} {value}")
+                search_candidates.append(label)
+                
+            # Priority 3: Just the metric/label
+            if label:
+                search_candidates.append(label)
+            
+            # Priority 4: Just the value (only if reasonably long)
+            if len(value) >= 3 and value not in ("None", "0", "0.0"):
+                search_candidates.append(value)
+
+            best_anchor = None
+            
+            for page_idx in range(len(doc)):
+                page = doc[page_idx]
+                for term in search_candidates:
+                    if not term or len(term.strip()) < 2:
+                        continue
+                        
+                    # Precise coordinate search
+                    instances = page.search_for(term)
+                    if instances:
+                        # For now, we take the one that contains both if possible, 
+                        # or just the first occurrence of the strongest candidate.
+                        inst = instances[0]
+                        best_anchor = {
+                            "page": page_idx + 1,
+                            "box": [inst.x0, inst.y0, inst.x1, inst.y1],
+                            "match_term": term,
+                            "match_type": "precise"
+                        }
+                        break
+                if best_anchor:
+                    break
+            
+            # Fallback: Fuzzy word search if no exact match
+            if not best_anchor and label:
+                words = label.split()
+                if len(words) > 1:
+                    first_word_instances = page.search_for(words[0])
+                    if first_word_instances:
+                        inst = first_word_instances[0]
+                        best_anchor = {
+                            "page": page_idx + 1,
+                            "box": [inst.x0, inst.y0, inst.x1, inst.y1],
+                            "match_term": words[0],
+                            "match_type": "partial"
+                        }
+            
+            if best_anchor:
+                fact["source_anchor"] = best_anchor
+        
+        doc.close()
+        return facts
+
+    def _self_heal_ontology_links(self, facts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Pillar 1: Agentic Construction. 
+        Automatically fixes common ontological errors in extracted triples.
+        """
+        healed_facts = []
+        for fact in facts:
+            healed = deepcopy(fact)
+            head = str(healed.get("head_node") or healed.get("entity") or "").lower()
+            relation = str(healed.get("relation") or healed.get("metric") or "").lower()
+            tail = str(healed.get("tail_node") or healed.get("value") or "").lower()
+
+            # Rule 1: Inverse Link Correction (e.g., "Company is owned by Parent" -> "Parent owns Company")
+            if "owned by" in relation:
+                healed["head_node"], healed["tail_node"] = fact.get("tail_node"), fact.get("head_node")
+                healed["relation"] = "owns"
+                healed["tags"] = healed.get("tags", []) + ["ontology_healed"]
+            
+            # Rule 2: Metric Normalization
+            if "revenue" in relation and "sales" in relation:
+                healed["relation"] = "revenue"
+
+            healed_facts.append(healed)
+        return healed_facts
+
+    def _extract_kinetic_actions(self, facts: List[Dict[str, Any]], cot: str) -> List[Dict[str, Any]]:
+        """
+        Pillar 1+4 Evolution: Kinetic Extraction.
+        Identifies potential 'Actions' or 'Strategies' mentioned in the CoT/Facts.
+        """
+        enhanced_facts = deepcopy(facts)
+        action_keywords = ["strategy", "plan", "hedging", "refinance", "restructure", "expand", "reduce cost"]
+        
+        # Simple heuristic: Look for action keywords in CoT or statements
+        for term in action_keywords:
+            if term in cot.lower():
+                # Add a virtual 'Action Node' to the fact list
+                enhanced_facts.append({
+                    "head_node": "Strategic Recommendation",
+                    "relation": "suggests action",
+                    "tail_node": f"Potential {term.capitalize()}",
+                    "confidence": "medium",
+                    "tags": ["kinetic_action_extracted"],
+                    "statement": f"System identified a potential {term} from the analysis."
+                })
+        
+        return enhanced_facts
+
+    def _generate_symbolic_report(self, facts: List[Dict[str, Any]]) -> Dict[str, Any]:
+        mismatched_facts = [
+            fact for fact in facts if "symbolic_mismatch" in (fact.get("tags") or [])
+        ]
+        if not mismatched_facts:
+            return {
+                "mismatch_count": 0,
+                "rules_triggered": [],
+                "metrics_affected": [],
+            }
+
+        rules_triggered: Dict[str, int] = defaultdict(int)
+        metrics_affected: Dict[str, int] = defaultdict(int)
+        for fact in mismatched_facts:
+            metric = str(fact.get("metric") or fact.get("relation") or "").strip().lower()
+            if metric:
+                metrics_affected[metric] += 1
+            for issue in fact.get("reflection_issues", []):
+                if isinstance(issue, str) and issue.startswith("Symbolic mismatch: "):
+                    rules_triggered[issue.replace("Symbolic mismatch: ", "").strip()] += 1
+
+        return {
+            "mismatch_count": len(mismatched_facts),
+            "rules_triggered": dict(sorted(rules_triggered.items())),
+            "metrics_affected": dict(sorted(metrics_affected.items())),
+        }
+
+    def _validate_with_symbolic_logic(self, facts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Pillar 1: Symbolic-Neural Hybrid Validation.
+        Checks facts against accounting identities and tags mismatches.
+        """
+        # Create a lookup for metrics in the current context
+        metric_map = {}
+        for f in facts:
+            metric = str(f.get("metric") or f.get("relation") or "").strip().lower()
+            val = f.get("value")
+            if metric and val is not None:
+                parsed = self._parse_numeric(val)
+                if parsed is not None:
+                    metric_map[metric] = parsed
+
+        validated_facts = deepcopy(facts)
+        for rule in self.ACCOUNTING_IDENTITIES:
+            target_metric = str(rule.target_metric).strip().lower()
+            component_metrics = [str(m).strip().lower() for m in rule.component_metrics]
+            target_val = metric_map.get(target_metric)
+            component_vals = [metric_map.get(m) for m in component_metrics]
+            
+            if target_val is not None and all(v is not None for v in component_vals):
+                # Perform arithmetic check
+                calculated = 0.0
+                if rule.operation == "sum":
+                    calculated = sum(component_vals)
+                elif rule.operation == "difference":
+                    calculated = component_vals[0] - sum(component_vals[1:])
+                else:
+                    continue
+                
+                # Check for discrepancy (> 1% tolerance)
+                discrepancy = abs(calculated - target_val)
+                if target_val != 0 and (discrepancy / abs(target_val)) > 0.01:
+                    # Tag all related facts
+                    for f in validated_facts:
+                        f_metric = str(f.get("metric") or f.get("relation") or "").strip().lower()
+                        if f_metric == target_metric or f_metric in component_metrics:
+                            f["tags"] = f.get("tags", []) + ["symbolic_mismatch"]
+                            f["confidence"] = "low"
+                            f["reflection_issues"] = f.get("reflection_issues", []) + [f"Symbolic mismatch: {rule.description}"]
+
+        return validated_facts

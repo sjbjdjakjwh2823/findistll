@@ -8,42 +8,34 @@
 **목표:** 데이터 전처리 최적화 및 에이전틱 자아 성찰 루프 완성.
 
 ### 1.1 FinDistill: 초고정밀 데이터 정제 엔진
-- [x] **Agentic Reflection 루프 (Pillar 1)**: 추출된 팩트를 스스로 검증하고 수정하는 비판적 에이전트 레이어 구현.
-- [ ] **Multi-modal 최적화**: PDF/XBRL을 넘어 고해상도 이미지 내 표(Table), 차트(Chart)의 수치를 99.9% 정확도로 디지털화.
-- [ ] **Data Lineage(데이터 계보) 추적**: 정제된 모든 데이터 포인트가 원본 문서의 몇 페이지, 어느 위치에서 왔는지 "Anchor" 포인트 연결.
+- [x] **Agentic Reflection 루프 (Pillar 1)**: 추출된 팩트를 스스로 검증하고 수정하는 비판적 에이전트 레이어 구현 완료.
+- [x] **Data Lineage(데이터 계보) 추적**: 정제된 모든 데이터 포인트가 원본 문서의 정확한 픽셀 좌표(x, y)와 연결되도록 구현 완료.
+- [ ] **Multi-modal 최적화**: 고해상도 이미지 내 표와 차트의 수치를 99.9% 정확도로 디지털화하는 작업 진행 예정.
 
-### 1.2 FinRobot: 4단계 레이어 아키텍처 확립
-- [x] **Layer 1 (Agents)**: 금융 전문가 페르소나를 탑재한 도메인 에이전트 고도화.
-- [ ] **Layer 2 (LLM Hybrid)**: 오픈소스(Llama 3)와 클로즈드(GPT-5, Claude 3.5) 모델을 태스크별로 자동 할당하는 Smart Router 구현.
-- [ ] **Layer 3 (Workflow)**: "Agent-in-the-loop" 시스템을 통해 에이전트 간 협업 로그(CoT)를 표준화.
-- [ ] **Layer 4 (RAG-FLARKO)**: 다단계 그래프 검색을 통한 인과관계 기반 답변 생성.
+### 1.2 Audit Vault: 불변의 신뢰 시스템 구축
+- [x] **Merkle-Chain 무결성**: 모든 데이터 처리 이력을 SHA-256 해시로 체이닝하여 위변조가 불가능한 구조 확보 완료.
+- [x] **Full CoT 시각화 준비**: 에이전트 간의 사고 과정(CoT)을 구조화된 로그로 저장 완료.
 
 ---
 
-## 🎨 Phase 2: The Presence - Premium UI/UX (2개월 ~ 4개월)
-**목표:** 팔란티어의 권위와 스케일 AI의 세련미를 결합한 "사람들이 찾아오는" 사이트 구축.
+## 🔮 Phase 2: Intelligent Causality (완료 및 고도화 중)
+**목표:** 단순 분석을 넘어선 '미래 예측력'의 실체화.
 
-### 2.1 Design System: "Obsidian Authority"
-- **Aesthetics**: 심해의 어둠(Deep Obsidian) 배경, 데이터 포인트에 글래스모피즘(Glassmorphism) 적용.
-- **Typography**: Inter(UI)와 JetBrains Mono(Data)의 조화로 전문성 극대화.
-- **Micro-Animations**: 데이터 로딩 및 에이전트 추론 과정에서 "생동감 넘치는" 마이크로 인터랙션 추가.
+### 2.1 The Oracle: 인과 추론 엔진 구현
+- [x] **Causal Discovery & Propagation**: PC/NOTEARS 영감을 받은 인과 추론 엔진 및 시계열 감쇄 모델 구현 완료.
+- [x] **What-if 시뮬레이터**: 특정 변수 변화에 따른 파급력을 그래프로 추적하는 API 구축 완료.
 
-### 2.2 Core UI Components (The Toolkit)
-- **Decision Timeline**: 증거(Evidence) → 추론(CoT) → 최종 결정(Decision)으로 이어지는 선형적 흐름 시각화.
-- **Temporal Ontology Graph**: 시계열에 따라 변화하는 노드와 엣지의 관계를 3D 그래프로 탐색 (Pillar 3 적용).
-- **Audit Vault Dashboard**: 수정 불가능한 감사 로그를 시각적으로 보여주어 기업 신뢰도 확보.
+### 2.2 Agentic Brain: Tri-Agent 협업 체계
+- [x] **Analyst-Critic-Strategist**: 에이전트 간 비판적 검토 루프(LangGraph 스타일) 구현 완료.
 
 ---
 
-## 🔮 Phase 3: The Oracle - Predictive Intelligence (5개월 ~ 7개월)
-**목표:** 과거 데이터 분석을 넘어선 "미래 시장 시뮬레이션" 도구 판매.
+## 🎨 Phase 3: The Presence - Premium UI/UX (진행 중)
+**목표:** 팔란티어의 권위와 스케일 AI의 세련미를 결합한 인터페이스.
 
-### 3.1 Advanced Causal Inference (Pillar 2)
-- **Causal Discovery**: 단순 상관관계를 배제하고 "진짜 원인"을 찾아내는 PC/NOTEARS 알고리즘 탑재.
-- **Counterfactual Simulator**: "만약 X라는 변수가 바뀌었다면?"에 대한 시뮬레이션 결과를 그래프로 즉시 확인.
-
-### 3.2 Forecasting Toolkit (Pillar 3)
-- **TimeGate GAT**: 시간에 따른 지식의 감쇄와 파급력을 계산하여 3개월/6개월 후의 시장 시나리오 제시.
+### 2.1 Design System: "Obsidian & Stitch"
+- [x] **Stitch Integration**: 구글 Stitch 디자인 토큰 및 팔란티어 스타일의 초고밀도 다크 테마 적용 완료.
+- [x] **Interactive Page**: 3D 그래프와 PDF 좌표 앵커링 뷰어(LineageViewer) 통합 완료.
 
 ---
 

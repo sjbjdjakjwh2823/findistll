@@ -1,0 +1,11 @@
+# PRECISO RECOVERY VAULT (ENCRYPTED ACCESS)
+
+## Forgeburn Recovery Codes
+- 6c15237bed8596e898bce7d38e7a38ffdeba52bb838df2da2f1cacb4040a8aa2
+- 8a002f9e35fe3854547123d60299de90a26098c03613a2d5139cabd06f4f7a90
+- bd871e742bb4f7ca21e9eaa4764bb932e086cee6b3c4d7bdfd48328a27a247ca
+- ea9d9121a15056501a09878689917588ec32f080daee99a75ac07cfeb762a830
+- 055c6602dd22eb8568ab62e2b122b3b67ac58eea6b19008cf8cb96e6d30670f7
+- 6cb0059449cfa879c9c3d9670b2b4c83eff6eaba36549794868b9ce4863cb5e7
+
+*Store this file with extreme caution. Mandatory for emergency system restoration.*

@@ -10,12 +10,15 @@ from app.models.schemas import (
     DistillResponse,
     DecisionResponse,
     PipelineResponse,
+    OracleSimulateRequest,
+    GraphDataResponse,
 )
 from app.services.distill_engine import FinDistillAdapter
 from app.services.oracle import OracleEngine
 from app.services.robot_engine import FinRobotAdapter
 from app.services.orchestrator import Orchestrator
 from app.services.spokes import SpokesEngine
+from app.services.toolkit import PrecisoToolkit
 
 settings = load_settings()
 
@@ -34,8 +37,10 @@ _robot = FinRobotAdapter()
 _spokes = SpokesEngine()
 _oracle = OracleEngine()
 _orchestrator = Orchestrator(_db, _distill, _robot, _spokes, _oracle)
+_toolkit = PrecisoToolkit()
 
 app.mount("/ui", StaticFiles(directory="app/ui"), name="ui")
+app.mount("/_next", StaticFiles(directory="app/ui/_next"), name="next")
 
 
 def _load_ui(page: str) -> str:
@@ -62,6 +67,18 @@ def ui_root():
 @app.get("/decisions.html", response_class=HTMLResponse)
 def ui_decisions():
     return _html_response("decisions.html")
+
+
+@app.get("/evidence", response_class=HTMLResponse)
+@app.get("/evidence.html", response_class=HTMLResponse)
+def ui_evidence():
+    return _html_response("evidence.html")
+
+
+@app.get("/analytics", response_class=HTMLResponse)
+@app.get("/analytics.html", response_class=HTMLResponse)
+def ui_analytics():
+    return _html_response("analytics.html")
 
 
 @app.get("/cases", response_class=HTMLResponse)
@@ -235,9 +252,156 @@ async def run_pipeline(case_id: str):
     )
 
 
+@app.post("/oracle/simulate")
+async def oracle_simulate(payload: OracleSimulateRequest):
+    edges = []
+    if payload.case_id:
+        edges = _db.list_graph_edges(payload.case_id)
+        if not edges:
+            case = _db.get_case(payload.case_id)
+            if case and case.get("distill"):
+                # Handle both dict and object if distill is saved differently
+                distill = case["distill"]
+                if hasattr(distill, "facts"):
+                    edges = distill.facts
+                elif isinstance(distill, dict):
+                    edges = distill.get("facts", [])
+    else:
+        all_cases = _db.list_cases()
+        for case in all_cases:
+            cid = case.get("case_id")
+            if cid:
+                case_edges = _db.list_graph_edges(cid)
+                if case_edges:
+                    edges.extend(case_edges)
+                elif case.get("distill"):
+                    distill = case["distill"]
+                    if hasattr(distill, "facts"):
+                        edges.extend(distill.facts)
+                    elif isinstance(distill, dict):
+                        edges.extend(distill.get("facts", []))
+
+    causal_graph = _oracle.build_causal_skeleton(edges)
+    result = _oracle.simulate_what_if(
+        node_id=payload.node_id,
+        value_delta=payload.value_delta,
+        causal_graph=causal_graph,
+        horizon_steps=payload.horizon_steps
+    )
+    return result
+
+
+@app.get("/graph/data", response_model=GraphDataResponse)
+async def get_graph_data(case_id: str = None):
+    edges = []
+    if case_id:
+        edges = _db.list_graph_edges(case_id)
+        if not edges:
+            case = _db.get_case(case_id)
+            if case and case.get("distill"):
+                distill = case["distill"]
+                if hasattr(distill, "facts"):
+                    edges = distill.facts
+                elif isinstance(distill, dict):
+                    edges = distill.get("facts", [])
+    else:
+        all_cases = _db.list_cases()
+        for case in all_cases:
+            cid = case.get("case_id")
+            if cid:
+                case_edges = _db.list_graph_edges(cid)
+                if case_edges:
+                    edges.extend(case_edges)
+                elif case.get("distill"):
+                    distill = case["distill"]
+                    if hasattr(distill, "facts"):
+                        edges.extend(distill.facts)
+                    elif isinstance(distill, dict):
+                        edges.extend(distill.get("facts", []))
+
+    causal_graph = _oracle.build_causal_skeleton(edges)
+    
+    nodes_map = {}
+    links = []
+    
+    for link in causal_graph:
+        source = link.get("head_node")
+        target = link.get("tail_node")
+        if not source or not target:
+            continue
+            
+        if source not in nodes_map:
+            nodes_map[source] = {
+                "id": source, 
+                "label": source, 
+                "group": (link.get("head_object") or {}).get("object_type", "entity"),
+                "attributes": (link.get("head_object") or {}).get("attributes", {})
+            }
+        if target not in nodes_map:
+            nodes_map[target] = {
+                "id": target, 
+                "label": target, 
+                "group": (link.get("tail_object") or {}).get("object_type", "metric"),
+                "attributes": (link.get("tail_object") or {}).get("attributes", {})
+            }
+            
+        links.append({
+            "source": source,
+            "target": target,
+            "value": float(link.get("strength", 0.5)),
+            "polarity": float(link.get("polarity", 1.0)),
+            "relation": link.get("relation")
+        })
+        
+    return {
+        "nodes": list(nodes_map.values()),
+        "links": links
+    }
+
+
 @app.get("/cases/{case_id}")
 def get_case(case_id: str):
     case = _db.get_case(case_id)
     if not case:
         raise HTTPException(status_code=404, detail="case not found")
     return case
+
+
+# --- B2B TOOLKIT API ENDPOINTS ---
+
+@app.post("/api/v1/toolkit/distill")
+async def toolkit_distill(payload: Dict[str, Any]):
+    """B2B Endpoint for high-precision data extraction."""
+    # Logic to handle raw data or base64
+    content_b64 = payload.get("content_base64")
+    if not content_b64:
+        raise HTTPException(status_code=400, detail="content_base64 required")
+    
+    file_bytes = base64.b64decode(content_b64)
+    filename = payload.get("filename", "api_upload.pdf")
+    mime_type = payload.get("mime_type", "application/pdf")
+    
+    result = await _toolkit.distill_document(file_bytes, filename, mime_type)
+    return result
+
+@app.post("/api/v1/toolkit/predict")
+async def toolkit_predict(payload: Dict[str, Any]):
+    """B2B Endpoint for causal impact simulation."""
+    node_id = payload.get("node_id")
+    delta = payload.get("delta", 1.0)
+    causal_graph = payload.get("causal_graph", [])
+    
+    if not node_id:
+        raise HTTPException(status_code=400, detail="node_id required")
+        
+    return _toolkit.predict_impact(node_id, delta, causal_graph)
+
+@app.post("/api/v1/toolkit/verify")
+async def toolkit_verify(payload: Dict[str, Any]):
+    """B2B Endpoint for cryptographic integrity check."""
+    chain = payload.get("event_chain", [])
+    if not chain:
+        raise HTTPException(status_code=400, detail="event_chain required")
+        
+    is_valid = _toolkit.verify_integrity(chain)
+    return {"integrity_valid": is_valid}

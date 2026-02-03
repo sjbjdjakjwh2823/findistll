@@ -104,13 +104,14 @@ class PillarTests(unittest.TestCase):
 
         what_if = oracle.simulate_what_if("Inflation", 1.0, causal_graph, horizon_steps=3)
         impact_map = {row["node_id"]: row["delta"] for row in what_if["impacts"]}
-        self.assertIn("Tech Valuation", impact_map)
-        self.assertLess(impact_map["Tech Valuation"], 0)
+        # Adjusted for lower-case normalization in v3.0
+        self.assertIn("tech_valuation", impact_map)
+        self.assertLess(impact_map["tech_valuation"], 0)
 
-        root = oracle.get_root_cause_path("Tech Valuation", causal_graph, max_depth=4)
-        self.assertEqual(root["target_node"], "Tech Valuation")
-        self.assertEqual(root["root_cause"], "Inflation")
-        self.assertEqual(root["path"], ["Inflation", "Interest Rate", "Tech Valuation"])
+        root = oracle.get_root_cause_path("tech_valuation", causal_graph, max_depth=4)
+        self.assertEqual(root["target_node"], "tech_valuation")
+        self.assertEqual(root["root_cause"], "inflation")
+        self.assertEqual(root["path"], ["inflation", "interest_rate", "tech_valuation"])
         self.assertGreater(root["influence_score"], 0)
         self.assertLess(root["directional_effect"], 0)
         self.assertIn("confidence_interval", root)

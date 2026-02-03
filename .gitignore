@@ -19,3 +19,4 @@ frontend/.next/
 *.key
 *.pem
 bin/cloudflared*
+app/ui/

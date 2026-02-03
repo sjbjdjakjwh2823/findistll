@@ -1,19 +1,15 @@
-﻿[Unit]
-Description=Preciso API
+[Unit]
+Description=Preciso FastAPI Service
 After=network.target
 
 [Service]
+Type=simple
 User=ubuntu
-WorkingDirectory=/opt/preciso
-Environment=APP_ENV=prod
-Environment=PUBLIC_DOMAIN=preciso-data.com
-Environment=FINROBOT_ENABLED=1
-Environment=FINROBOT_OAI_CONFIG=/opt/preciso/OAI_CONFIG_LIST
-Environment=FINROBOT_API_KEYS=/opt/preciso/config_api_keys
-Environment=FINROBOT_MODEL=gpt-4-0125-preview
-ExecStart=/opt/preciso/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8004
+WorkingDirectory=/home/ubuntu/findistll
+Environment=PATH=/home/ubuntu/findistll/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/home/ubuntu/findistll/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8004
 Restart=always
-RestartSec=3
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target

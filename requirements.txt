@@ -1,3 +1,7 @@
-﻿fastapi
+fastapi
 uvicorn
 pydantic
+supabase
+python-dotenv
+httpx
+typing-extensions

@@ -1,10 +1,21 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, Space_Grotesk } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import Sidebar from "@/components/layout/Sidebar";
+import Header from "@/components/layout/Header";
 
-const spaceGrotesk = Space_Grotesk({ subsets: ["latin"], variable: "--font-space-grotesk" });
-const ibmPlexMono = IBM_Plex_Mono({ subsets: ["latin"], variable: "--font-ibm-plex-mono", weight: ["400", "500", "600"] });
+// Configure fonts as requested
+const inter = Inter({ 
+  subsets: ["latin"], 
+  variable: "--font-inter",
+  display: "swap",
+});
+
+const jetbrainsMono = JetBrains_Mono({ 
+  subsets: ["latin"], 
+  variable: "--font-jetbrains-mono",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Preciso | Sovereign Financial Intelligence",
@@ -17,13 +28,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className={`${spaceGrotesk.variable} ${ibmPlexMono.variable} font-sans bg-background text-foreground antialiased`}>
-        <div className="flex h-screen overflow-hidden">
+    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
+      <body className="font-sans bg-[#1a1c1e] text-foreground antialiased bp5-dark">
+        <div className="flex h-screen overflow-hidden bg-[#1a1c1e]">
           <Sidebar />
-          <main className="flex-1 overflow-y-auto">
-            {children}
-          </main>
+          <div className="flex-1 flex flex-col overflow-hidden bg-[#1a1c1e]">
+            <Header />
+            <main className="flex-1 overflow-y-auto bg-[#1a1c1e] p-0">
+              {children}
+            </main>
+          </div>
         </div>
       </body>
     </html>

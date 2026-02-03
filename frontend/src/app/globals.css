@@ -1,81 +1,136 @@
 @import "tailwindcss";
 
-/* Palantir Blueprint Theme - Obsidian & Gold */
+@layer base {
+  :root {
+    /* Palantir Foundry Inspired Color Palette */
+    --background: #1a1c1e;
+    --foreground: #f6f7f9;
+    --card: #202b33;
+    --card-foreground: #f6f7f9;
+    --popover: #202b33;
+    --popover-foreground: #f6f7f9;
+    --primary: #2B95D6;
+    --primary-foreground: #ffffff;
+    --secondary: #21ce99; /* Success Green */
+    --secondary-foreground: #10161a;
+    --muted: #5c7080;
+    --muted-foreground: #a7b6c2;
+    --accent: #293742;
+    --accent-foreground: #f6f7f9;
+    --destructive: #db3737;
+    --destructive-foreground: #ffffff;
+    --border: #30404d;
+    --input: #182026;
+    --ring: #2B95D6;
+    --radius: 0px; /* Sharp corners like Foundry */
+
+    /* Stitch Design Tokens */
+    --stitch-spacing-unit: 4px;
+    --stitch-header-height: 48px;
+    --stitch-sidebar-width: 200px;
+    --stitch-font-size-xs: 11px;
+    --stitch-font-size-sm: 13px;
+    --stitch-font-size-md: 15px;
+  }
+}
+
 @theme {
-  --color-background: #10161a;
-  --color-canvas: #0a0a0a;
-  --color-panel: #182026;
-  --color-card: #1c2127;
-  --color-foreground: #f5f8fa;
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
   
-  --color-primary: #137cbd; /* Blueprint Blue */
-  --color-secondary: #0f9960; /* Blueprint Green */
-  --color-accent: #d9822b; /* Blueprint Orange/Gold */
-  --color-danger: #db3737;
-  
-  --color-muted: #8a9ba8;
-  --color-border: #30404d;
-  --color-glass: rgba(16, 22, 26, 0.6);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, monospace;
 }
 
-:root {
-  --background: #10161a;
-  --foreground: #f5f8fa;
-  --font-inter: "Inter", sans-serif;
-  --font-mono: "IBM Plex Mono", monospace;
-}
-
-body {
-  background: var(--background);
+html, body {
+  background-color: #1a1c1e !important;
   color: var(--foreground);
-  font-family: var(--font-inter);
+  font-family: var(--font-sans);
+  overflow: hidden;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-.glass-panel {
-  background: #182026;
-  border: 1px solid #30404d;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-}
-
-.object-card {
-  background: #1c2127;
-  border: 1px solid #30404d;
-  transition: all 0.15s ease-out;
-}
-
-.object-card:hover {
-  background: #202b33;
-  border-color: #137cbd;
-  transform: translateY(-1px);
-}
-
-.object-card[data-selected="true"] {
-  border-color: #137cbd;
-  background: #182026;
-  box-shadow: inset 0 0 0 1px #137cbd;
-}
-
-.badge {
-  background: #293742;
-  color: #8a9ba8;
-  border: 1px solid #30404d;
-}
-
-.data-font {
+h1, h2, h3, h4, h5, h6, .font-mono {
   font-family: var(--font-mono);
+  letter-spacing: -0.01em;
 }
 
-@keyframes beacon {
-  0% { transform: scale(1); opacity: 1; }
-  100% { transform: scale(3.5); opacity: 0; }
+/* Foundry Typography & Layout */
+.text-foundry-header {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #a7b6c2;
 }
 
-@keyframes fadeRise {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+/* Scrollbar styling - Industrial Tech */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
 
-.fade-rise {
-  animation: fadeRise 0.4s ease-out forwards;
+::-webkit-scrollbar-track {
+  background: #1a1c1e;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #394b59;
+  border-radius: 0px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #5c7080; 
+}
+
+/* BlueprintJS Overrides */
+.bp5-dark {
+  background-color: #1a1c1e !important;
+  color: #f6f7f9 !important;
+}
+
+.bp5-button {
+  border-radius: 0px !important;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* Glassmorphism Accents */
+.glass-panel {
+  background: rgba(32, 43, 51, 0.4);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(48, 64, 77, 0.5);
+}
+
+/* Stitch Components Emulation */
+.stitch-input {
+  background: #182026;
+  border: 1px solid #30404d;
+  color: #f6f7f9;
+  padding: 4px 8px;
+  font-size: 13px;
+  outline: none;
+}
+
+.stitch-input:focus {
+  border-color: #2B95D6;
+  box-shadow: 0 0 0 1px #2B95D6;
 }

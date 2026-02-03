@@ -1,12 +1,14 @@
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 from app.db.client import DBClient
 from app.services.distill_engine import DistillEngine
 from app.services.oracle import OracleEngine
 from app.services.robot_engine import RobotBrain
 from app.services.spokes import SpokesEngine
-from app.services.types import PipelineResult
+from app.services.agentic_brain import AgenticBrain
+from app.services.audit import AuditVault
+from app.services.types import PipelineResult, DistillResult, DecisionResult
 
 
 class Orchestrator:
@@ -23,10 +25,21 @@ class Orchestrator:
         self.robot = robot
         self.spokes = spokes
         self.oracle = oracle
+        self.audit_vault = AuditVault()
+        self.agentic_brain = AgenticBrain()
+        self._current_chain_hash = "0" * 64
 
     async def run(self, case_id: str, document: dict) -> PipelineResult:
+        # Initialize chain from DB
+        history = self.db.list_audit_events(case_id)
+        if history:
+            self._current_chain_hash = history[-1].get("event_hash", "0" * 64)
+        else:
+            self._current_chain_hash = "0" * 64
+
         self._audit(case_id, stage="pipeline", status="started", payload={"doc_id": document.get("doc_id")})
 
+        # 1. Distill
         distill_result = await self.distill.extract(document)
         self.db.save_distill(case_id, distill_result)
         self._audit(
@@ -36,6 +49,7 @@ class Orchestrator:
             payload={"facts_count": len(distill_result.facts)},
         )
 
+        # 2. Spokes (Ontology)
         edges = []
         if self.spokes:
             edges = self.spokes.build_graph_edges(
@@ -53,6 +67,7 @@ class Orchestrator:
                 payload={"graph_edges_generated": len(edges)},
             )
 
+        # 3. Oracle (Causality)
         if self.oracle and edges:
             oracle_forecast = self.oracle.forecast_from_edges(edges)
             sample_node = edges[0].get("head_node")
@@ -77,7 +92,8 @@ class Orchestrator:
                 payload={"reason": "no_graph_edges"},
             )
 
-        decision_result = self.robot.decide(distill_result)
+        # 4. Decision (Agentic Collaboration)
+        decision_result = await self.agentic_brain.process_collaboration(distill_result)
         self.db.save_decision(case_id, decision_result)
         self._audit(case_id, stage="decision", status="completed", payload={"decision": decision_result.decision})
         self._audit(case_id, stage="pipeline", status="completed", payload={"case_id": case_id})
@@ -86,10 +102,16 @@ class Orchestrator:
 
     def _audit(self, case_id: str, stage: str, status: str, payload: Optional[dict] = None) -> None:
         event = {
+            "case_id": case_id,
             "event_type": "pipeline_stage",
             "stage": stage,
             "status": status,
             "payload": payload or {},
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
-        self.db.save_audit_event(case_id, event)
+        
+        # Create Chained Event
+        chained = self.audit_vault.create_merkle_chain([event], prev_hash=self._current_chain_hash)[0]
+        self._current_chain_hash = chained["event_hash"]
+        
+        self.db.save_audit_event(case_id, chained)

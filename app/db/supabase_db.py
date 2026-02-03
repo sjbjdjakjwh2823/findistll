@@ -91,12 +91,15 @@ class SupabaseDB:
             "stage": event.get("stage"),
             "status": event.get("status"),
             "payload": event.get("payload", {}),
+            "event_hash": event.get("event_hash"),
+            "prev_hash": event.get("prev_hash"),
+            "integrity_version": event.get("integrity_version"),
             "created_at": event.get("created_at"),
         }
         try:
             self.client.table("audit_log").insert(payload).execute()
-        except Exception:
-            # Keep pipeline execution non-blocking if audit table is not provisioned yet.
+        except Exception as e:
+            print(f"[Audit] Failed to save chained event: {e}")
             pass
 
     def list_audit_events(self, case_id: str) -> List[Dict]:
