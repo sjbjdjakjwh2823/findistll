@@ -3,12 +3,15 @@ import base64
 import os
 import sys
 
+import pytest
+
 # Add preciso_work to path
 sys.path.append(os.path.abspath("preciso_work"))
 
 from app.services.distill_engine import FinDistillAdapter
 from app.services.types import DistillResult
 
+@pytest.mark.asyncio
 async def test_lineage_extraction():
     # 1. Create a dummy PDF with specific text
     import fitz

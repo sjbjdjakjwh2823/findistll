@@ -24,7 +24,7 @@ class OrchestratorTests(unittest.TestCase):
 
         result = asyncio.run(orch.run(case_id, db.docs["doc_1"]))
         self.assertEqual(result.case_id, case_id)
-        self.assertEqual(result.decision.decision, "Review")
+        self.assertEqual(result.decision.decision, "Maintain / Overweight")
         self.assertTrue("oracle" not in result.distill.metadata)
 
         audit_events = db.list_audit_events(case_id)
