@@ -32,16 +32,20 @@ export default function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <div className="w-64 h-screen border-r border-border bg-background flex flex-col">
-      <div className="p-6">
-        <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
-          <div className="w-6 h-6 bg-primary rounded-md flex items-center justify-center text-xs text-white">P</div>
-          PRECISO
-        </h1>
-        <p className="text-[10px] text-muted uppercase tracking-widest mt-1 font-medium">Sovereign Intelligence</p>
+    <div className="w-[200px] h-screen border-r border-[#30404d] bg-[#1a1c1e] flex flex-col font-sans select-none shrink-0">
+      <div className="h-[48px] flex items-center px-3 border-b border-[#30404d]">
+        <div className="flex items-center gap-2">
+          <div className="w-5 h-5 bg-[#2B95D6] flex items-center justify-center text-[9px] font-bold text-white square">
+            P
+          </div>
+          <div className="flex flex-col">
+            <h1 className="text-[12px] font-bold tracking-tight text-[#f6f7f9] leading-none">PRECISO</h1>
+            <span className="text-[8px] text-[#5c7080] uppercase tracking-wider font-mono mt-0.5">V.2.0.4_STITCH</span>
+          </div>
+        </div>
       </div>
 
-      <nav className="flex-1 px-3 py-2 space-y-1">
+      <nav className="flex-1 py-1 space-y-[0px]">
         {navItems.map((item) => {
           const isActive = pathname === item.href;
           return (
@@ -49,29 +53,31 @@ export default function Sidebar() {
               key={item.name}
               href={item.href}
               className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                "group flex items-center gap-2.5 px-3 py-1.5 text-[11px] font-medium transition-colors",
                 isActive 
-                  ? "bg-primary/10 text-primary" 
-                  : "text-muted hover:text-foreground hover:bg-glass"
+                  ? "bg-[#202b33] text-[#2B95D6] shadow-[inset_3px_0_0_0_#2B95D6]" 
+                  : "text-[#a7b6c2] hover:bg-[#1c242c] hover:text-[#f6f7f9]"
               )}
             >
-              <item.icon size={18} />
-              {item.name}
+              <item.icon size={12} className={isActive ? "text-[#2B95D6]" : "text-[#5c7080] group-hover:text-[#f6f7f9]"} />
+              <span className="tracking-tight">{item.name.toUpperCase()}</span>
             </Link>
           );
         })}
       </nav>
 
-      <div className="p-4 border-t border-border">
-        <button className="flex items-center gap-3 px-3 py-2 w-full text-muted hover:text-foreground transition-colors text-sm font-medium">
-          <Settings size={18} />
-          Settings
+      <div className="border-t border-[#30404d] bg-[#1a1c1e]">
+        <button className="flex items-center gap-2.5 px-3 py-2 w-full text-[#a7b6c2] hover:bg-[#202b33] hover:text-[#f6f7f9] text-[11px] font-medium transition-colors">
+          <Settings size={12} />
+          <span className="tracking-tight uppercase">Settings</span>
         </button>
-        <div className="mt-4 flex items-center gap-3 px-3">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-primary to-secondary" />
-          <div className="flex flex-col">
-            <span className="text-xs font-semibold">Lee Sangmin</span>
-            <span className="text-[10px] text-muted">Master</span>
+        <div className="px-3 py-2 border-t border-[#30404d] flex items-center gap-2.5 bg-[#182026]">
+          <div className="w-5 h-5 bg-[#293742] flex items-center justify-center text-[9px] text-[#a7b6c2] font-mono border border-[#30404d]">
+            LS
+          </div>
+          <div className="flex flex-col min-w-0">
+            <span className="text-[11px] font-semibold text-[#f6f7f9] truncate">Sangmin Lee</span>
+            <span className="text-[8px] text-[#5c7080] font-mono uppercase tracking-tighter">Master_Auth</span>
           </div>
         </div>
       </div>

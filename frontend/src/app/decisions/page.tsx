@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { motion } from "framer-motion";
 import {
   BadgeCheck,
   FileSignature,
@@ -11,6 +10,8 @@ import {
   Scale,
   Sparkles,
 } from "lucide-react";
+import { Button, Slider, Checkbox, TextArea, InputGroup, Card, Elevation } from "@blueprintjs/core";
+import DecisionTimeline from "../../components/dashboard/DecisionTimeline";
 
 type Recommendation = {
   id: string;
@@ -137,225 +138,167 @@ export default function DecisionsPage() {
   }, [selectedRecommendations, selectedEvidence]);
 
   return (
-    <div className="min-h-full p-8 space-y-8 bg-[radial-gradient(circle_at_12%_20%,rgba(99,102,241,0.18),transparent_34%),radial-gradient(circle_at_80%_10%,rgba(16,185,129,0.14),transparent_28%),linear-gradient(180deg,#060607_0%,#0a0a0a_56%,#080808_100%)]">
-      <motion.section
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35 }}
-        className="glass-panel p-6 lg:p-7"
-      >
-        <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
-          <div className="space-y-2">
-            <p className="text-[11px] text-primary uppercase tracking-[0.2em] font-semibold flex items-center gap-2">
-              <Sparkles size={12} /> Sovereign Decision Composer
-            </p>
-            <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">Agent Recommendation Governance</h1>
-            <p className="text-sm text-muted max-w-3xl">
-              에이전트 제안과 근거를 실시간으로 조정하고, Oracle의 인과 경로를 반영해 최종 결정을 서명합니다.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2 text-xs font-semibold">
-            <span className="px-3 py-1 rounded-full bg-primary/15 text-primary border border-primary/40">Case: NVDA-Duration-2026Q1</span>
-            <span className="px-3 py-1 rounded-full bg-secondary/15 text-secondary border border-secondary/40">Live Evidence Sync</span>
-            <span className="px-3 py-1 rounded-full bg-amber-400/15 text-amber-300 border border-amber-300/30">Human-in-Command</span>
-          </div>
+    <div className="h-full flex flex-col bg-[#1a1c1e] text-[#f6f7f9]">
+      {/* Header */}
+      <div className="h-16 border-b border-[#30404d] bg-[#202b33] flex items-center justify-between px-6 shrink-0">
+        <div className="space-y-1">
+          <p className="text-[10px] text-[#2B95D6] uppercase tracking-[0.2em] font-semibold flex items-center gap-2">
+            <Sparkles size={12} /> Sovereign Decision Composer
+          </p>
+          <h1 className="text-lg font-bold tracking-tight text-[#f6f7f9] uppercase">Agent Recommendation Governance</h1>
         </div>
-      </motion.section>
-
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
-        <motion.section
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.05 }}
-          className="xl:col-span-2 glass-panel p-5 lg:p-6 space-y-4"
-        >
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold tracking-wider uppercase text-muted">Recommendation Stack</h2>
-            <span className="text-xs text-primary font-semibold">Selected {selectedRecommendations.length}/{recommendations.length}</span>
-          </div>
-
-          <div className="space-y-3">
-            {recommendations.map((row) => (
-              <article key={row.id} className="rounded-xl border border-border bg-black/30 p-4 space-y-3">
-                <div className="flex flex-col lg:flex-row lg:items-center gap-2 justify-between">
-                  <label className="flex items-center gap-2 text-sm font-semibold">
-                    <input
-                      type="checkbox"
-                      checked={row.selected}
-                      onChange={() =>
-                        setRecommendations((prev) =>
-                          prev.map((item) =>
-                            item.id === row.id ? { ...item, selected: !item.selected } : item
-                          )
-                        )
-                      }
-                      className="accent-primary"
-                    />
-                    {row.title}
-                  </label>
-                  <div className="text-[11px] uppercase tracking-wider text-muted">{row.agent}</div>
-                </div>
-
-                <textarea
-                  value={row.action}
-                  onChange={(event) =>
-                    setRecommendations((prev) =>
-                      prev.map((item) =>
-                        item.id === row.id ? { ...item, action: event.target.value } : item
-                      )
-                    )
-                  }
-                  rows={2}
-                  className="w-full rounded-lg bg-glass border border-border px-3 py-2 text-sm focus:outline-none focus:border-primary"
-                />
-
-                <p className="text-xs text-muted">{row.rationale}</p>
-
-                <div className="space-y-2">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted">Confidence</span>
-                    <span className="data-font text-secondary">{row.confidence.toFixed(0)}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={45}
-                    max={99}
-                    value={row.confidence}
-                    onChange={(event) =>
-                      setRecommendations((prev) =>
-                        prev.map((item) =>
-                          item.id === row.id ? { ...item, confidence: Number(event.target.value) } : item
-                        )
-                      )
-                    }
-                    className="w-full accent-primary"
-                  />
-                </div>
-              </article>
-            ))}
-          </div>
-        </motion.section>
-
-        <motion.section
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.1 }}
-          className="glass-panel p-5 lg:p-6 space-y-5"
-        >
-          <h2 className="text-sm font-bold tracking-wider uppercase text-muted">Decision Core</h2>
-
-          <div className="rounded-xl border border-border bg-black/35 p-4 space-y-3">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-muted">Disposition</span>
-              <span className="font-semibold text-primary">{composer.disposition}</span>
-            </div>
-            <div className="space-y-2 text-xs">
-              <div className="flex items-center justify-between"><span>Agent Score</span><span className="data-font text-secondary">{composer.recScore.toFixed(1)}</span></div>
-              <div className="flex items-center justify-between"><span>Evidence Score</span><span className="data-font text-secondary">{composer.evidenceScore.toFixed(1)}</span></div>
-              <div className="h-px bg-border" />
-              <div className="flex items-center justify-between text-sm font-semibold"><span>Weighted</span><span className="data-font text-primary">{composer.weightedScore.toFixed(1)}</span></div>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-border bg-black/35 p-4 space-y-3">
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted">
-              <FlaskConical size={14} /> Oracle Root Cause
-            </div>
-            <div className="text-[11px] text-secondary font-semibold">Strongest Cause: {rootCausePath.root}</div>
-            <div className="flex flex-wrap gap-2">
-              {rootCausePath.hops.map((hop, index) => (
-                <React.Fragment key={hop}>
-                  <span className="px-2.5 py-1 rounded-md border border-border bg-glass text-[11px]">{hop}</span>
-                  {index < rootCausePath.hops.length - 1 ? <span className="text-muted text-[11px] pt-1">→</span> : null}
-                </React.Fragment>
-              ))}
-            </div>
-            <div className="text-[11px] text-muted">Influence score {rootCausePath.influence.toFixed(2)} / directional {rootCausePath.directionalEffect.toFixed(2)}</div>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-xs uppercase tracking-wider text-muted">Approver Signature</label>
-            <input
-              value={approver}
-              onChange={(event) => setApprover(event.target.value)}
-              className="w-full rounded-lg bg-glass border border-border px-3 py-2 text-sm focus:outline-none focus:border-primary"
-            />
-            <textarea
-              rows={3}
-              value={decisionMemo}
-              onChange={(event) => setDecisionMemo(event.target.value)}
-              className="w-full rounded-lg bg-glass border border-border px-3 py-2 text-sm focus:outline-none focus:border-primary"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 gap-2">
-            <button className="flex items-center justify-center gap-2 rounded-lg bg-primary hover:bg-indigo-500 px-3 py-2 text-sm font-semibold text-white transition-colors">
-              <FileSignature size={16} /> Approve & Sign Packet
-            </button>
-            <button className="flex items-center justify-center gap-2 rounded-lg border border-border bg-glass hover:bg-white/[0.06] px-3 py-2 text-sm font-semibold transition-colors">
-              <PencilLine size={16} /> Send Revision to Agent Team
-            </button>
-          </div>
-        </motion.section>
+        <div className="flex flex-wrap gap-2 text-xs font-semibold">
+          <span className="px-3 py-1 bg-[#2B95D6]/10 text-[#2B95D6] border border-[#2B95D6]/30">Case: NVDA-Duration-2026Q1</span>
+          <span className="px-3 py-1 bg-[#21ce99]/10 text-[#21ce99] border border-[#21ce99]/30">Live Evidence Sync</span>
+          <span className="px-3 py-1 bg-[#d9822b]/10 text-[#d9822b] border border-[#d9822b]/30">Human-in-Command</span>
+        </div>
       </div>
 
-      <motion.section
-        initial={{ opacity: 0, y: 18 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.45, delay: 0.15 }}
-        className="glass-panel p-5 lg:p-6 space-y-4"
-      >
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-          <h2 className="text-sm font-bold tracking-wider uppercase text-muted">Evidence Control Board</h2>
-          <div className="flex items-center gap-3 text-xs text-muted">
-            <span className="inline-flex items-center gap-1"><BadgeCheck size={14} /> curated {selectedEvidence.length}/{evidence.length}</span>
-            <span className="inline-flex items-center gap-1"><Fingerprint size={14} /> immutable audit ready</span>
-            <span className="inline-flex items-center gap-1"><Scale size={14} /> policy compliant</span>
+      <div className="flex-1 overflow-y-auto p-4">
+        <div className="grid grid-cols-12 gap-4">
+          
+          {/* Main Recommendations Column */}
+          <div className="col-span-8 flex flex-col gap-4">
+            
+            {/* Recommendation Stack */}
+            <div className="border border-[#30404d] bg-[#202b33] flex flex-col">
+              <div className="h-10 border-b border-[#30404d] bg-[#293742] flex items-center justify-between px-4">
+                <h2 className="text-xs font-bold tracking-wider uppercase text-[#a7b6c2] font-mono">Recommendation Stack</h2>
+                <span className="text-[10px] text-[#2B95D6] font-semibold font-mono">Selected {selectedRecommendations.length}/{recommendations.length}</span>
+              </div>
+              <div className="p-4 space-y-4 bg-[#1a1c1e]">
+                {recommendations.map((row) => (
+                  <div key={row.id} className="border border-[#30404d] bg-[#202b33] p-4 flex flex-col gap-3 group hover:border-[#5c7080] transition-colors">
+                    <div className="flex items-center justify-between">
+                      <Checkbox 
+                        checked={row.selected} 
+                        onChange={() => setRecommendations(prev => prev.map(item => item.id === row.id ? { ...item, selected: !item.selected } : item))}
+                        label={row.title}
+                        className="!m-0 !text-sm !font-bold !text-[#f6f7f9]"
+                      />
+                      <span className="text-[10px] uppercase tracking-wider text-[#5c7080] font-mono">{row.agent}</span>
+                    </div>
+
+                    <InputGroup 
+                      value={row.action}
+                      onChange={(e) => setRecommendations(prev => prev.map(item => item.id === row.id ? { ...item, action: e.target.value } : item))}
+                      className="!bg-[#182026] !text-[#a7b6c2] !text-xs font-mono"
+                      small
+                    />
+                    
+                    <p className="text-xs text-[#5c7080] italic">{row.rationale}</p>
+
+                    <div className="flex items-center gap-4">
+                      <span className="text-[10px] text-[#5c7080] uppercase">Confidence</span>
+                      <div className="flex-1 px-2">
+                        <Slider 
+                           min={45} max={99} stepSize={1} 
+                           value={row.confidence} 
+                           onChange={(val) => setRecommendations(prev => prev.map(item => item.id === row.id ? { ...item, confidence: val } : item))}
+                           labelStepSize={50}
+                           className=""
+                        />
+                      </div>
+                      <span className="text-xs font-bold text-[#21ce99] font-mono">{row.confidence.toFixed(0)}%</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Evidence Control Board */}
+            <div className="border border-[#30404d] bg-[#202b33] flex flex-col">
+              <div className="h-10 border-b border-[#30404d] bg-[#293742] flex items-center justify-between px-4">
+                 <h2 className="text-xs font-bold tracking-wider uppercase text-[#a7b6c2] font-mono">Evidence Control Board</h2>
+                 <div className="flex items-center gap-3 text-[10px] text-[#5c7080] font-mono">
+                    <span className="inline-flex items-center gap-1"><BadgeCheck size={10} /> {selectedEvidence.length}/{evidence.length}</span>
+                    <span className="inline-flex items-center gap-1"><Fingerprint size={10} /> AUDIT READY</span>
+                 </div>
+              </div>
+              <div className="p-4 grid grid-cols-2 gap-3 bg-[#1a1c1e]">
+                 {evidence.map((row) => (
+                    <div key={row.id} className="border border-[#30404d] bg-[#202b33] p-3 flex flex-col gap-2 hover:border-[#5c7080]">
+                       <div className="flex items-center justify-between">
+                          <Checkbox 
+                            checked={row.selected}
+                            onChange={() => setEvidence(prev => prev.map(item => item.id === row.id ? { ...item, selected: !item.selected } : item))}
+                            label={row.source}
+                            className="!m-0 !text-xs !font-bold !text-[#f6f7f9]"
+                          />
+                          <span className="text-[9px] font-mono text-[#21ce99]">W={row.weight}</span>
+                       </div>
+                       <p className="text-[10px] text-[#a7b6c2] leading-tight">{row.quote}</p>
+                    </div>
+                 ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Decision Core Column */}
+          <div className="col-span-4 flex flex-col gap-4">
+            
+            {/* Decision Timeline */}
+            <div className="flex-1 min-h-[300px]">
+              <DecisionTimeline />
+            </div>
+
+            {/* Scorecard */}
+            <div className="border border-[#30404d] bg-[#202b33] p-0">
+               <div className="h-10 border-b border-[#30404d] bg-[#293742] flex items-center px-4">
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-[#a7b6c2] font-mono">Decision Core</h2>
+               </div>
+               <div className="p-4 bg-[#1a1c1e] space-y-4">
+                  <div className="border border-[#30404d] bg-[#202b33] p-3">
+                     <div className="flex items-center justify-between text-xs mb-2">
+                        <span className="text-[#a7b6c2]">Disposition</span>
+                        <span className="font-bold text-[#2B95D6] uppercase tracking-wider">{composer.disposition}</span>
+                     </div>
+                     <div className="space-y-1 text-xs font-mono">
+                        <div className="flex justify-between"><span>AGENT_SCORE</span><span className="text-[#21ce99]">{composer.recScore.toFixed(1)}</span></div>
+                        <div className="flex justify-between"><span>EVIDENCE_SCORE</span><span className="text-[#21ce99]">{composer.evidenceScore.toFixed(1)}</span></div>
+                        <div className="h-px bg-[#30404d] my-1" />
+                        <div className="flex justify-between font-bold text-[#f6f7f9]"><span>WEIGHTED_AVG</span><span>{composer.weightedScore.toFixed(1)}</span></div>
+                     </div>
+                  </div>
+
+                  <div className="border border-[#30404d] bg-[#202b33] p-3 space-y-2">
+                     <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#a7b6c2]">
+                        <FlaskConical size={12} /> Oracle Root Cause
+                     </div>
+                     <div className="text-[10px] text-[#21ce99] font-mono font-bold">Strongest: {rootCausePath.root}</div>
+                     <div className="flex flex-wrap gap-1">
+                        {rootCausePath.hops.map((hop, index) => (
+                           <React.Fragment key={hop}>
+                              <span className="px-1.5 py-0.5 border border-[#30404d] bg-[#1a1c1e] text-[9px] text-[#a7b6c2]">{hop}</span>
+                              {index < rootCausePath.hops.length - 1 ? <span className="text-[#30404d] text-[9px]">→</span> : null}
+                           </React.Fragment>
+                        ))}
+                     </div>
+                  </div>
+               </div>
+            </div>
+
+            {/* Approval */}
+            <div className="border border-[#30404d] bg-[#202b33] p-4 flex flex-col gap-3">
+               <label className="text-[10px] uppercase tracking-wider text-[#5c7080] font-bold">Approver Signature</label>
+               <InputGroup 
+                  value={approver}
+                  onChange={(e) => setApprover(e.target.value)}
+                  className="!bg-[#182026] !text-xs font-mono"
+               />
+               <TextArea 
+                  value={decisionMemo}
+                  onChange={(e) => setDecisionMemo(e.target.value)}
+                  className="!bg-[#182026] !text-[#a7b6c2] !text-xs !resize-none"
+                  rows={4}
+               />
+               <Button icon="edit" text="Approve & Sign" intent="primary" className="w-full !font-bold !rounded-none" />
+               <Button icon="annotation" text="Request Revision" className="w-full !bg-transparent !border !border-[#30404d] !text-[#a7b6c2] !rounded-none" />
+            </div>
+
           </div>
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {evidence.map((row) => (
-            <article key={row.id} className="rounded-xl border border-border bg-black/30 p-4 space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <label className="flex items-center gap-2 text-sm font-semibold">
-                  <input
-                    type="checkbox"
-                    checked={row.selected}
-                    onChange={() =>
-                      setEvidence((prev) =>
-                        prev.map((item) =>
-                          item.id === row.id ? { ...item, selected: !item.selected } : item
-                        )
-                      )
-                    }
-                    className="accent-secondary"
-                  />
-                  {row.source}
-                </label>
-                <span className="text-[10px] font-mono text-secondary">w={row.weight}</span>
-              </div>
-
-              <p className="text-xs text-muted leading-relaxed">{row.quote}</p>
-
-              <input
-                type="range"
-                min={40}
-                max={99}
-                value={row.weight}
-                onChange={(event) =>
-                  setEvidence((prev) =>
-                    prev.map((item) =>
-                      item.id === row.id ? { ...item, weight: Number(event.target.value) } : item
-                    )
-                  )
-                }
-                className="w-full accent-secondary"
-              />
-            </article>
-          ))}
-        </div>
-      </motion.section>
+      </div>
     </div>
   );
 }

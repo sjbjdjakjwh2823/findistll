@@ -7,6 +7,7 @@ class DistillResult:
     facts: List[Dict[str, Any]] = field(default_factory=list)
     cot_markdown: str = ""
     metadata: Dict[str, Any] = field(default_factory=dict)
+    source_anchors: Dict[str, Any] = field(default_factory=dict) # Added for pixel lineage
 
 
 @dataclass

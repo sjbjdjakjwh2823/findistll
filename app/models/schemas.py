@@ -33,3 +33,15 @@ class PipelineResponse(BaseModel):
     case_id: str
     distill: DistillResponse
     decision: DecisionResponse
+
+
+class OracleSimulateRequest(BaseModel):
+    case_id: Optional[str] = None
+    node_id: str
+    value_delta: float
+    horizon_steps: int = 3
+
+
+class GraphDataResponse(BaseModel):
+    nodes: List[Dict[str, Any]]
+    links: List[Dict[str, Any]]

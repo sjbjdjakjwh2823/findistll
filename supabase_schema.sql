@@ -54,7 +54,7 @@ create index if not exists idx_spoke_d_graph_case_id on public.spoke_d_graph(cas
 create index if not exists idx_spoke_d_graph_event_time on public.spoke_d_graph(event_time);
 create index if not exists idx_spoke_d_graph_valid_window on public.spoke_d_graph(valid_from, valid_to);
 
--- Pipeline audit trail (Orchestrator v2)
+-- Pipeline audit trail (Orchestrator v2 + Integrity Vault)
 create table if not exists public.audit_log (
   id uuid default gen_random_uuid() primary key,
   case_id text not null,
@@ -62,6 +62,9 @@ create table if not exists public.audit_log (
   stage text not null,
   status text not null,
   payload jsonb,
+  event_hash text,
+  prev_hash text,
+  integrity_version text,
   created_at timestamptz default now()
 );
 
