@@ -12,6 +12,7 @@ except ImportError:
     fitz = None
 
 from app.services.types import DistillResult
+from app.services.zkp_validator import ZKPValidator
 
 @dataclass
 class SymbolicRule:
@@ -61,6 +62,33 @@ class FinDistillAdapter(DistillEngine):
     ]
 
     async def extract(self, document: Dict[str, Any]) -> DistillResult:
+        document_metadata = document.get("metadata") or {}
+        zkp_payload = document_metadata.get("zkp_proof")
+        if zkp_payload is not None:
+            validator = ZKPValidator()
+            proof = zkp_payload.get("proof") if isinstance(zkp_payload, dict) else {}
+            public_signals = zkp_payload.get("public_signals", []) if isinstance(zkp_payload, dict) else []
+            verification_key = zkp_payload.get("verification_key", {}) if isinstance(zkp_payload, dict) else {}
+            scheme = zkp_payload.get("scheme", "groth16") if isinstance(zkp_payload, dict) else "groth16"
+            circuit_id = zkp_payload.get("circuit_id") if isinstance(zkp_payload, dict) else None
+            verification = validator.verify_proof(
+                proof=proof,
+                public_signals=public_signals,
+                verification_key=verification_key,
+                scheme=scheme,
+                circuit_id=circuit_id,
+            )
+            if not verification["valid"]:
+                return DistillResult(
+                    facts=[],
+                    cot_markdown="",
+                    metadata={
+                        "integrity_status": "compromised_integrity",
+                        "confidence_score": 0,
+                        "zkp_verification": verification,
+                    },
+                )
+
         if os.getenv("DISTILL_OFFLINE", "0") == "1":
             content = document.get("content", "")
             return DistillResult(
@@ -124,6 +152,8 @@ class FinDistillAdapter(DistillEngine):
             "summary": normalized.get("summary"),
             "self_reflection": reflection_summary,
         }
+        if zkp_payload is not None:
+            metadata["zkp_verification"] = verification
 
         return DistillResult(facts=reflected_facts, cot_markdown=cot, metadata=metadata)
 

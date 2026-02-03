@@ -43,7 +43,13 @@ class PrecisoToolkit:
         self._audit_events.append(chained)
         return chained
 
-    async def distill_document(self, file_bytes: bytes, filename: str, mime_type: str) -> Dict[str, Any]:
+    async def distill_document(
+        self,
+        file_bytes: bytes,
+        filename: str,
+        mime_type: str,
+        zkp_proof: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """Preciso Distill: High-precision data extraction with pixel lineage."""
         self.log_sovereign_event(
             event_type="inference_request",
@@ -53,13 +59,15 @@ class PrecisoToolkit:
                 "mime_type": mime_type,
                 "source": "api_toolkit",
                 "bytes_len": len(file_bytes),
+                "zkp_proof_present": zkp_proof is not None,
             },
         )
         document = {
             "file_bytes": file_bytes,
             "filename": filename,
             "mime_type": mime_type,
-            "source": "api_toolkit"
+            "source": "api_toolkit",
+            "metadata": {"zkp_proof": zkp_proof} if zkp_proof is not None else {},
         }
         result = await self.distill.extract(document)
         return {

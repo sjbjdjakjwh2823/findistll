@@ -1,5 +1,9 @@
+import os
 import unittest
 
+import pytest
+
+from app.services.distill_engine import FinDistillAdapter
 from app.services.zkp_validator import ZKPValidator
 
 
@@ -43,6 +47,34 @@ class ZKPValidatorTests(unittest.TestCase):
         self.assertEqual(result["status"], "verified")
         self.assertTrue(result["checks"].get("relation_hash_match"))
         self.assertTrue(result["checks"].get("commitments_present"))
+
+
+@pytest.mark.asyncio
+async def test_extract_with_invalid_zkp_flags_compromised():
+    adapter = FinDistillAdapter()
+    previous_offline = os.environ.get("DISTILL_OFFLINE")
+    os.environ["DISTILL_OFFLINE"] = "1"
+    try:
+        document = {
+            "content": "Revenue 100",
+            "metadata": {
+                "zkp_proof": {
+                    "proof": {"pi_a": ["0x01"]},
+                    "public_signals": [],
+                    "verification_key": {"protocol": "groth16"},
+                    "scheme": "groth16",
+                }
+            },
+        }
+        result = await adapter.extract(document)
+    finally:
+        if previous_offline is None:
+            os.environ.pop("DISTILL_OFFLINE", None)
+        else:
+            os.environ["DISTILL_OFFLINE"] = previous_offline
+
+    assert result.metadata.get("integrity_status") == "compromised_integrity"
+    assert result.metadata.get("confidence_score") == 0
 
 
 if __name__ == "__main__":
