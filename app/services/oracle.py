@@ -225,8 +225,11 @@ class OracleEngine:
 
     def build_causal_skeleton(self, edges: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        Builds DAG with Pillar 2 filtering and Cross-Source Consensus.
+        Builds DAG with Pillar 2 filtering, Cross-Source Consensus, and Dynamic Learning.
         """
+        # Pillar 3.8: Learn Dynamic Weights from temporal proximity
+        dynamic_weights = self._learn_dynamic_weights(edges)
+        
         grouped: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
         for raw_edge in edges:
             edge = self._to_ontology_edge(raw_edge)
@@ -240,6 +243,12 @@ class OracleEngine:
                 continue
 
             key = (head, relation, tail)
+            
+            # Apply dynamic learning boost
+            dynamic_boost = dynamic_weights.get((head, tail), 1.0)
+            scored["strength"] = self._clamp(scored["strength"] * dynamic_boost, 0.05, 0.98)
+            if dynamic_boost > 1.05:
+                scored["reasoning_tags"].append("dynamic_learning_boost")
             
             # v3.0: Cross-Source Verification (Consensus Loop)
             # If multiple sources report the same link, increase confidence.
@@ -477,6 +486,41 @@ class OracleEngine:
                 unique.append(a)
                 seen.add(a["action_id"])
         return unique
+
+    def _learn_dynamic_weights(self, edges: List[Dict[str, Any]]) -> Dict[Tuple[str, str], float]:
+        """
+        Pillar 3.8: Simplified Dynamic NOTEARS Learning.
+        Learns edge weights based on temporal proximity and historical data support.
+        """
+        pair_data = defaultdict(list)
+        for raw_edge in edges:
+            head = self._as_str(raw_edge.get("head_node") or raw_edge.get("entity")).lower().replace(" ", "_")
+            tail = self._as_str(raw_edge.get("tail_node") or raw_edge.get("value")).lower().replace(" ", "_")
+            if head and tail:
+                pair_data[(head, tail)].append(raw_edge)
+
+        dynamic_weights = {}
+        for pair, pair_edges in pair_data.items():
+            # Factor 1: Recency (favor recent event_time)
+            # Heuristic: if any edge is from the last 12 months, boost it.
+            recency_boost = 1.0
+            now = datetime.now(timezone.utc)
+            for e in pair_edges:
+                et = e.get("event_time")
+                if et:
+                    try:
+                        dt = datetime.fromisoformat(et.replace("Z", "+00:00"))
+                        if (now - dt).days < 365:
+                            recency_boost = 1.15
+                            break
+                    except: pass
+            
+            # Factor 2: Support Count
+            support_boost = min(len(pair_edges) * 0.05, 0.2)
+            
+            dynamic_weights[pair] = recency_boost + support_boost
+            
+        return dynamic_weights
 
     def forecast_from_edges(self, edges: List[Dict[str, Any]]) -> Dict[str, Any]:
         """

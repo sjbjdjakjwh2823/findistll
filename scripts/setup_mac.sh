@@ -9,8 +9,8 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 py_version="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
-if [[ "$py_version" != "3.12" ]]; then
-  echo "Python 3.12 required. Current: $py_version"
+if [[ "$py_version" != "3.12" && "$py_version" != "3.14" ]]; then
+  echo "Python 3.12 or 3.14 required. Current: $py_version"
   exit 1
 fi
 

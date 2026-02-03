@@ -109,5 +109,53 @@ class EvolutionV3Tests(unittest.TestCase):
         self.assertEqual(mismatched[0]["confidence"], "low")
         self.assertTrue(any("Symbolic mismatch" in issue for issue in mismatched[0]["reflection_issues"]))
 
+    def test_agent_mixer_regime_boost(self):
+        """v4.0: Test if AgentMixer correctly boosts Critic/Strategist in Crisis."""
+        from app.services.orchestrator import AgentMixer
+        mixer = AgentMixer({"analyst": 1.0, "critic": 1.0, "strategist": 1.0})
+        
+        # Normal Regime
+        tracks = {"analyst": "A", "critic": "C", "strategist": "S"}
+        normal_mix = mixer.mix(tracks, regime_shift=None)
+        self.assertAlmostEqual(normal_mix["weights_used"]["analyst"], 0.33, places=2)
+        
+        # Crisis Regime
+        crisis_mix = mixer.mix(tracks, regime_shift="Crisis")
+        # critic and strategist should be boosted by 1.5x
+        # New relative weights: analyst: 1.0, critic: 1.5, strategist: 1.5 (Total 4.0)
+        # analyst: 1/4 = 0.25, critic: 1.5/4 = 0.375
+        self.assertEqual(crisis_mix["weights_used"]["analyst"], 0.25)
+        self.assertEqual(crisis_mix["weights_used"]["critic"], 0.375)
+
+    def test_oracle_regime_shift_detection(self):
+        """v3.7: Test if OracleEngine correctly detects High Volatility and Crisis."""
+        oracle = OracleEngine()
+        
+        # Scenario: Moderate impacts
+        impacts_low = {"A": 0.05, "B": -0.05}
+        self.assertIsNone(oracle.detect_regime_shift(impacts_low))
+        
+        # Scenario: High Volatility (one node hit > 0.3)
+        impacts_high_vol = {"A": 0.4, "B": 0.05}
+        self.assertEqual(oracle.detect_regime_shift(impacts_high_vol), "High Volatility")
+        
+        # Scenario: Crisis (one node hit > 0.6 or total > 1.5)
+        impacts_crisis = {"A": 0.7, "B": 0.5, "C": 0.5}
+        self.assertEqual(oracle.detect_regime_shift(impacts_crisis), "Crisis")
+
+    def test_dynamic_weight_learning(self):
+        """Pillar 3.8: Test if Oracle learns higher weights for recent data."""
+        oracle = OracleEngine()
+        now_iso = datetime.now(timezone.utc).isoformat()
+        old_iso = "2020-01-01T00:00:00+00:00"
+        
+        edges = [
+            {"head_node": "A", "relation": "drives", "tail_node": "B", "event_time": now_iso},
+            {"head_node": "C", "relation": "drives", "tail_node": "D", "event_time": old_iso}
+        ]
+        
+        weights = oracle._learn_dynamic_weights(edges)
+        self.assertGreater(weights[("a", "b")], weights[("c", "d")])
+
 if __name__ == "__main__":
     unittest.main()

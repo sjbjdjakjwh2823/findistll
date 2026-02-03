@@ -11,6 +11,51 @@ from app.services.audit import AuditVault
 from app.services.types import PipelineResult, DistillResult, DecisionResult
 
 
+class AgentMixer:
+    def __init__(self, track_weights: Dict[str, float]) -> None:
+        self.track_weights = {self._normalize_role(role): float(weight) for role, weight in track_weights.items()}
+
+    def mix(self, tracks: Dict[str, str], regime_shift: Optional[str] = None) -> Dict[str, Any]:
+        boosted = self._apply_regime_boost(self.track_weights, regime_shift)
+        normalized = self._normalize_weights(boosted, tracks)
+        ordered = sorted(normalized.items(), key=lambda item: item[1], reverse=True)
+        segments = []
+        for role, weight in ordered:
+            content = tracks.get(role, "")
+            if content:
+                segments.append(f"{role.upper()}[{weight:.2f}]: {content}")
+        mixed_rationale = " | ".join(segments)
+        dominant_role = ordered[0][0] if ordered else ""
+        return {
+            "mixed_rationale": mixed_rationale,
+            "weights_used": normalized,
+            "weights_raw": boosted,
+            "dominant_role": dominant_role,
+        }
+
+    def _apply_regime_boost(self, weights: Dict[str, float], regime_shift: Optional[str]) -> Dict[str, float]:
+        adjusted = dict(weights)
+        if regime_shift == "Crisis":
+            for role in ("critic", "strategist"):
+                adjusted[role] = adjusted.get(role, 0.0) * 1.5
+        return adjusted
+
+    def _normalize_weights(self, weights: Dict[str, float], tracks: Dict[str, str]) -> Dict[str, float]:
+        available = {
+            self._normalize_role(role): float(weight)
+            for role, weight in weights.items()
+            if weight > 0 and tracks.get(self._normalize_role(role))
+        }
+        total = sum(available.values())
+        if total <= 0:
+            return {}
+        return {role: weight / total for role, weight in available.items()}
+
+    @staticmethod
+    def _normalize_role(role: str) -> str:
+        return role.lower().strip()
+
+
 class Orchestrator:
     def __init__(
         self,
@@ -27,6 +72,13 @@ class Orchestrator:
         self.oracle = oracle
         self.audit_vault = AuditVault()
         self.agentic_brain = AgenticBrain()
+        self.agent_mixer = AgentMixer(
+            {
+                "analyst": 0.8,
+                "critic": 0.5,
+                "strategist": 1.0,
+            }
+        )
         self._current_chain_hash = "0" * 64
 
     async def run(self, case_id: str, document: dict) -> PipelineResult:
@@ -68,6 +120,7 @@ class Orchestrator:
             )
 
         # 3. Oracle (Causality)
+        regime_shift = None
         if self.oracle and edges:
             oracle_forecast = self.oracle.forecast_from_edges(edges)
             sample_node = edges[0].get("head_node")
@@ -77,6 +130,7 @@ class Orchestrator:
                 causal_graph=oracle_forecast.get("top_links", []),
                 horizon_steps=3,
             )
+            regime_shift = what_if.get("regime_shift")
             distill_result.metadata["oracle"] = {"forecast": oracle_forecast, "sample_what_if": what_if}
             self._audit(
                 case_id,
@@ -92,8 +146,40 @@ class Orchestrator:
                 payload={"reason": "no_graph_edges"},
             )
 
-        # 4. Decision (Agentic Collaboration)
-        decision_result = await self.agentic_brain.process_collaboration(distill_result)
+        # 4. Decision (Agentic Collaboration + Mixer)
+        analyst_output = await self.agentic_brain._run_analyst(distill_result)
+        critique = ""
+        current_analysis = analyst_output
+        for _ in range(2):
+            critique = await self.agentic_brain._run_critic(current_analysis, distill_result)
+            if "APPROVED" in critique.upper():
+                break
+            current_analysis = await self.agentic_brain._refine_analysis(current_analysis, critique)
+
+        strategist_output = await self.agentic_brain._run_strategist(current_analysis, critique)
+        tracks = {
+            "analyst": analyst_output,
+            "critic": critique,
+            "strategist": strategist_output.get("logic", ""),
+        }
+        mix = self.agent_mixer.mix(tracks, regime_shift=regime_shift)
+        self._audit(
+            case_id,
+            stage="mixer",
+            status="completed",
+            payload={
+                "regime_shift": regime_shift,
+                "weights_used": mix.get("weights_used", {}),
+                "dominant_role": mix.get("dominant_role", ""),
+            },
+        )
+
+        decision_result = DecisionResult(
+            decision=strategist_output.get("recommendation", "Review"),
+            rationale=mix.get("mixed_rationale", ""),
+            actions=strategist_output.get("actions", []),
+            approvals=[{"role": "strategist", "status": "completed"}],
+        )
         self.db.save_decision(case_id, decision_result)
         self._audit(case_id, stage="decision", status="completed", payload={"decision": decision_result.decision})
         self._audit(case_id, stage="pipeline", status="completed", payload={"case_id": case_id})
