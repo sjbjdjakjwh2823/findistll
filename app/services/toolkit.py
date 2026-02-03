@@ -4,6 +4,7 @@ from app.services.distill_engine import FinDistillAdapter
 from app.services.oracle import OracleEngine
 from app.services.agentic_brain import AgenticBrain
 from app.services.audit import AuditVault
+from app.services.zkp_validator import ZKPValidator
 
 class PrecisoToolkit:
     """
@@ -16,6 +17,7 @@ class PrecisoToolkit:
         self.oracle = OracleEngine()
         self.brain = AgenticBrain()
         self.vault = AuditVault()
+        self.zkp = ZKPValidator()
         self._current_chain_hash = "0" * 64
         self._audit_events: List[Dict[str, Any]] = []
 
@@ -100,6 +102,46 @@ class PrecisoToolkit:
     def verify_integrity(self, event_chain: List[Dict]) -> bool:
         """Preciso Sovereign Vault: Cryptographic integrity verification."""
         return self.vault.verify_chain(event_chain)
+
+    def verify_external_data(
+        self,
+        provider_id: str,
+        proof: Dict[str, Any],
+        public_signals: List[Any],
+        verification_key: Dict[str, Any],
+        scheme: str = "groth16",
+        circuit_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Validate external data integrity using a mock ZKP verifier."""
+        verification = self.zkp.verify_proof(
+            proof=proof,
+            public_signals=public_signals,
+            verification_key=verification_key,
+            scheme=scheme,
+            circuit_id=circuit_id,
+        )
+        self.log_sovereign_event(
+            event_type="zkp_verification",
+            stage="zkp",
+            status="verified" if verification["valid"] else "rejected",
+            payload={
+                "provider_id": provider_id,
+                "scheme": verification["scheme"],
+                "circuit_id": verification["circuit_id"],
+                "proof_hash": verification["proof_hash"],
+                "signals_hash": verification["signals_hash"],
+                "vk_hash": verification["vk_hash"],
+                "checks": verification["checks"],
+                "errors": verification["errors"],
+                "metadata": metadata or {},
+            },
+        )
+        return {
+            "status": verification["status"],
+            "verified": verification["valid"],
+            "verification": verification,
+        }
 
     def generate_compliance_report(self, limit: int = 50) -> Dict[str, Any]:
         """Aggregate recent audit logs into a compliance-focused summary."""
