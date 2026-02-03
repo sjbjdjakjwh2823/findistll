@@ -84,6 +84,61 @@ class ZKPValidator:
             "errors": errors,
         }
 
+    def verify_accounting_proof(
+        self,
+        proof: Dict[str, Any],
+        public_signals: List[Any],
+        verification_key: Dict[str, Any],
+        scheme: str = "groth16",
+    ) -> Dict[str, Any]:
+        """
+        Verify the IntegrityCheck circuit: Revenue - Expenses = Net Income.
+
+        This mock verifier expects net income as the first public signal and
+        optionally checks a relation hash for private inputs.
+        """
+        result = self.verify_proof(
+            proof=proof,
+            public_signals=public_signals,
+            verification_key=verification_key,
+            scheme=scheme,
+            circuit_id="integrity_check",
+        )
+
+        extra_errors: List[str] = []
+        extra_checks: Dict[str, bool] = {}
+
+        net_income = public_signals[0] if public_signals else None
+        if net_income is None:
+            extra_errors.append("net_income_missing")
+
+        expected_relation_hash = (
+            verification_key.get("expected_relation_hash")
+            or verification_key.get("relation_hash")
+        )
+        if expected_relation_hash:
+            actual_relation_hash = proof.get("relation_hash")
+            if actual_relation_hash is None:
+                extra_errors.append("relation_hash_missing")
+            extra_checks["relation_hash_match"] = actual_relation_hash == expected_relation_hash
+
+        revenue = proof.get("revenue")
+        expenses = proof.get("expenses")
+        if revenue is not None and expenses is not None and net_income is not None:
+            try:
+                computed = float(revenue) - float(expenses)
+                extra_checks["arithmetic_match"] = float(net_income) == computed
+            except (TypeError, ValueError):
+                extra_errors.append("arithmetic_type_error")
+        elif "revenue_commitment" in proof and "expenses_commitment" in proof:
+            extra_checks["commitments_present"] = True
+
+        result["errors"].extend(extra_errors)
+        result["checks"].update(extra_checks)
+        result["valid"] = result["valid"] and not extra_errors and all(extra_checks.values() or [True])
+        result["status"] = "verified" if result["valid"] else "invalid"
+        return result
+
     def _missing_fields(self, proof: Dict[str, Any], scheme: str) -> List[str]:
         required = self._required_fields_for_scheme(scheme)
         if not required:
