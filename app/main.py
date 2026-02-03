@@ -1,9 +1,9 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+from typing import Any, Optional
 from app.core.config import load_settings
 from app.db.client import InMemoryDB
-from app.db.supabase_db import SupabaseDB
 from app.models.schemas import (
     CaseCreate,
     DocumentCreate,
@@ -25,7 +25,11 @@ settings = load_settings()
 
 def init_db():
     if settings.supabase_url and settings.supabase_service_role_key:
-        return SupabaseDB(settings.supabase_url, settings.supabase_service_role_key)
+        try:
+            from app.db.supabase_db import SupabaseDB
+            return SupabaseDB(settings.supabase_url, settings.supabase_service_role_key)
+        except ImportError:
+            print("Supabase package not found, falling back to InMemoryDB")
     return InMemoryDB()
 
 
@@ -370,7 +374,7 @@ def get_case(case_id: str):
 # --- B2B TOOLKIT API ENDPOINTS ---
 
 @app.post("/api/v1/toolkit/distill")
-async def toolkit_distill(payload: Dict[str, Any]):
+async def toolkit_distill(payload: dict[str, Any]):
     """B2B Endpoint for high-precision data extraction."""
     # Logic to handle raw data or base64
     content_b64 = payload.get("content_base64")
@@ -385,7 +389,7 @@ async def toolkit_distill(payload: Dict[str, Any]):
     return result
 
 @app.post("/api/v1/toolkit/predict")
-async def toolkit_predict(payload: Dict[str, Any]):
+async def toolkit_predict(payload: dict[str, Any]):
     """B2B Endpoint for causal impact simulation."""
     node_id = payload.get("node_id")
     delta = payload.get("delta", 1.0)
@@ -397,7 +401,7 @@ async def toolkit_predict(payload: Dict[str, Any]):
     return _toolkit.predict_impact(node_id, delta, causal_graph)
 
 @app.post("/api/v1/toolkit/verify")
-async def toolkit_verify(payload: Dict[str, Any]):
+async def toolkit_verify(payload: dict[str, Any]):
     """B2B Endpoint for cryptographic integrity check."""
     chain = payload.get("event_chain", [])
     if not chain:
