@@ -15,6 +15,7 @@ from app.models.schemas import (
 )
 from app.services.distill_engine import FinDistillAdapter
 from app.services.oracle import OracleEngine
+from app.services.global_engine import GlobalInterconnectednessEngine
 from app.services.robot_engine import FinRobotAdapter
 from app.services.orchestrator import Orchestrator
 from app.services.spokes import SpokesEngine
@@ -40,6 +41,7 @@ _distill = FinDistillAdapter()
 _robot = FinRobotAdapter()
 _spokes = SpokesEngine()
 _oracle = OracleEngine()
+_global_engine = GlobalInterconnectednessEngine(_oracle)
 _orchestrator = Orchestrator(_db, _distill, _robot, _spokes, _oracle)
 _toolkit = PrecisoToolkit()
 
@@ -325,9 +327,35 @@ async def get_graph_data(case_id: str = None):
 
     causal_graph = _oracle.build_causal_skeleton(edges)
     
+    # Phase 5.0 Alpha: Integrate global interconnectedness if viewing main graph
+    global_graph = _global_engine.get_global_contagion_graph()
+    global_nodes = global_graph["nodes"]
+    global_links = global_graph["links"]
+
     nodes_map = {}
     links = []
     
+    # Add global nodes first
+    for node in global_nodes:
+        nodes_map[node["id"]] = {
+            "id": node["id"],
+            "label": node["label"],
+            "group": "market",
+            "region": node.get("region"),
+            "weight": node.get("weight", 0.5),
+            "attributes": node.get("attributes", {})
+        }
+
+    for link in global_links:
+        links.append({
+            "source": link["head_node"],
+            "target": link["tail_node"],
+            "value": float(link.get("strength", 0.5)),
+            "polarity": float(link.get("polarity", 1.0)),
+            "relation": link.get("relation")
+        })
+
+    # Add case-specific nodes/links
     for link in causal_graph:
         source = link.get("head_node")
         target = link.get("tail_node")
@@ -409,3 +437,31 @@ async def toolkit_verify(payload: dict[str, Any]):
         
     is_valid = _toolkit.verify_integrity(chain)
     return {"integrity_valid": is_valid}
+
+
+# --- GLOBAL INTERCONNECTEDNESS API ENDPOINTS ---
+
+@app.get("/api/v1/global/contagion")
+async def get_global_contagion():
+    """Returns the current global interconnectedness graph."""
+    return _global_engine.get_global_contagion_graph()
+
+@app.post("/api/v1/global/shock")
+async def simulate_global_shock(payload: dict[str, Any]):
+    """Simulates a global shock originating from a specific region."""
+    origin = payload.get("origin", "US")
+    magnitude = payload.get("magnitude", 0.5)
+    shock_type = payload.get("shock_type", "policy")
+    
+    return _global_engine.simulate_global_shock(origin, magnitude, shock_type)
+
+@app.patch("/api/v1/global/state/{region_id}")
+async def update_regional_state(region_id: str, payload: dict[str, Any]):
+    """Updates the macro state for a specific region."""
+    _global_engine.update_regional_state(
+        region_id=region_id,
+        rate=payload.get("rate"),
+        gpr=payload.get("gpr"),
+        fxv=payload.get("fxv")
+    )
+    return {"status": "updated", "region_id": region_id}
