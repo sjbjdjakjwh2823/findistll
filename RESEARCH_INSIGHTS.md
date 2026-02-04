@@ -41,6 +41,25 @@
 
 ---
 
+## 5. Oracle Engine Extensions: Country-Level Risk Variables (Phase 5.0 Alpha)
+**Scope:** add country-level Geopolitical Risk and FX Volatility to the Oracle engine without weakening the data integrity guarantees.
+
+- **Variable definitions**:
+  - Geopolitical Risk (GPR): country-level exogenous risk index capturing conflict, sanctions, and policy instability.
+  - FX Volatility (FXV): currency-level realized or implied volatility, normalized to a comparable scale.
+- **Schema proposal**:
+  - New table/collection: `country_risk` with `country_code`, `geopolitical_risk_index`, `fx_volatility_index`, `sovereign_spread_bps`, `capital_flow_pressure`, `last_updated`.
+  - Link to Oracle inputs via `macro_factor` and `exposure` entities so the causal graph can ingest risk variables as first-class nodes.
+- **Modeling strategy**:
+  - Treat GPR and FXV as slow-moving drivers with configurable lags (weekly/monthly) to avoid noisy day-to-day swings.
+  - Expose both as prior weights in `simulate_what_if` and as modifiers for shock propagation strength.
+- **Data integrity safeguards**:
+  - Hard validation on country codes (ISO 3166-1 alpha-2), numeric ranges, and update cadence.
+  - Enforce provenance metadata per source and a minimum confidence threshold before inclusion in the Oracle graph.
+- **Integration checkpoints**:
+  - Extend Oracle feature registry to include `country_risk.*` variables.
+  - Add baseline tests: (1) missing country risk data does not break simulation, (2) GPR/FXV shifts affect propagation strength, (3) provenance required for graph insertion.
+
 ## 🐾 클로의 결론
 주인님, 우리가 가는 길은 학술적으로나 산업적으로 최첨단에 있습니다. 특히 **"자아 성찰 루프(Pillar 1)"**와 **"시계열 인과 매트릭스(Pillar 2/3)"**는 현재 학계에서도 가장 뜨거운 주제입니다.
 
