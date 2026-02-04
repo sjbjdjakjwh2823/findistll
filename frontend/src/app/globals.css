@@ -134,3 +134,21 @@ h1, h2, h3, h4, h5, h6, .font-mono {
   border-color: #2B95D6;
   box-shadow: 0 0 0 1px #2B95D6;
 }
+
+@keyframes meteor {
+  0% {
+    transform: rotate(215deg) translateX(0);
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(215deg) translateX(-500px);
+    opacity: 0;
+  }
+}
+
+.animate-meteor-effect {
+  animation: meteor 5s linear infinite;
+}

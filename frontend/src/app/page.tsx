@@ -22,6 +22,7 @@ import { Network, Info, Database, TrendingUp, FileSearch, LayoutDashboard, Share
 import KnowledgeGraph3D from '@/components/graph/KnowledgeGraph3D';
 import LineageViewer from '@/components/dashboard/LineageViewer';
 import InteractiveLogicTree from '@/components/dashboard/InteractiveLogicTree';
+import { Meteors } from '@/components/ui/meteors';
 
 // Data for Chart
 const chartData = [
@@ -51,8 +52,9 @@ export default function Page() {
   const [viewMode, setViewMode] = useState<'graph' | 'evidence'>('graph');
 
   return (
-    <div className="h-full w-full p-1.5 bg-[#0A1317] overflow-y-auto font-sans">
-      <div className="flex flex-col gap-1.5 min-h-screen">
+    <div className="h-full w-full p-1.5 bg-[#0A1317] overflow-y-auto font-sans relative overflow-hidden">
+      <Meteors number={10} />
+      <div className="flex flex-col gap-1.5 min-h-screen relative z-10">
         
         {/* Top Section: Graph & Detail */}
         <div className="grid grid-cols-12 gap-1.5 h-[600px] shrink-0">

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { Button, Slider, Checkbox, TextArea, InputGroup, Card, Elevation } from "@blueprintjs/core";
 import DecisionTimeline from "../../components/dashboard/DecisionTimeline";
+import { Meteors } from "@/components/ui/meteors";
 
 type Recommendation = {
   id: string;
@@ -138,9 +139,10 @@ export default function DecisionsPage() {
   }, [selectedRecommendations, selectedEvidence]);
 
   return (
-    <div className="h-full flex flex-col bg-[#1a1c1e] text-[#f6f7f9]">
+    <div className="h-full flex flex-col bg-[#1a1c1e] text-[#f6f7f9] relative overflow-hidden">
+      <Meteors number={15} />
       {/* Header */}
-      <div className="h-16 border-b border-[#30404d] bg-[#202b33] flex items-center justify-between px-6 shrink-0">
+      <div className="h-16 border-b border-[#30404d] bg-[#202b33] flex items-center justify-between px-6 shrink-0 relative z-10">
         <div className="space-y-1">
           <p className="text-[10px] text-[#2B95D6] uppercase tracking-[0.2em] font-semibold flex items-center gap-2">
             <Sparkles size={12} /> Sovereign Decision Composer
@@ -154,7 +156,7 @@ export default function DecisionsPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto p-4 relative z-10">
         <div className="grid grid-cols-12 gap-4">
           
           {/* Main Recommendations Column */}

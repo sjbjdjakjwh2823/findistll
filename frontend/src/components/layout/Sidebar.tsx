@@ -8,12 +8,14 @@ import {
   GitBranch, 
   Clock, 
   Settings,
-  Briefcase
+  Briefcase,
+  RefreshCw
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { useAuthStore } from "@/store/useAuthStore";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -22,6 +24,7 @@ function cn(...inputs: ClassValue[]) {
 const navItems = [
   { name: "Cases", icon: Briefcase, href: "/cases" },
   { name: "Evidence", icon: Database, href: "/evidence" },
+  { name: "Convert", icon: RefreshCw, href: "/convert" },
   { name: "Decisions", icon: ShieldCheck, href: "/decisions" },
   { name: "Temporal Graph", icon: GitBranch, href: "/graph" },
   { name: "Audit Trail", icon: Clock, href: "/audit" },
@@ -30,6 +33,8 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const user = useAuthStore((state) => state.user);
+  const logout = useAuthStore((state) => state.logout);
 
   return (
     <div className="w-[200px] h-screen border-r border-[#30404d] bg-[#1a1c1e] flex flex-col font-sans select-none shrink-0">
@@ -67,16 +72,19 @@ export default function Sidebar() {
       </nav>
 
       <div className="border-t border-[#30404d] bg-[#1a1c1e]">
-        <button className="flex items-center gap-2.5 px-3 py-2 w-full text-[#a7b6c2] hover:bg-[#202b33] hover:text-[#f6f7f9] text-[11px] font-medium transition-colors">
+        <button 
+          onClick={logout}
+          className="flex items-center gap-2.5 px-3 py-2 w-full text-[#a7b6c2] hover:bg-[#202b33] hover:text-[#f6f7f9] text-[11px] font-medium transition-colors cursor-pointer"
+        >
           <Settings size={12} />
-          <span className="tracking-tight uppercase">Settings</span>
+          <span className="tracking-tight uppercase">Logout</span>
         </button>
         <div className="px-3 py-2 border-t border-[#30404d] flex items-center gap-2.5 bg-[#182026]">
           <div className="w-5 h-5 bg-[#293742] flex items-center justify-center text-[9px] text-[#a7b6c2] font-mono border border-[#30404d]">
-            LS
+            {user?.name?.substring(0, 2).toUpperCase() || "LS"}
           </div>
           <div className="flex flex-col min-w-0">
-            <span className="text-[11px] font-semibold text-[#f6f7f9] truncate">Sangmin Lee</span>
+            <span className="text-[11px] font-semibold text-[#f6f7f9] truncate">{user?.name || "Sangmin Lee"}</span>
             <span className="text-[8px] text-[#5c7080] font-mono uppercase tracking-tighter">Master_Auth</span>
           </div>
         </div>
