@@ -157,5 +157,35 @@ class EvolutionV3Tests(unittest.TestCase):
         weights = oracle._learn_dynamic_weights(edges)
         self.assertGreater(weights[("a", "b")], weights[("c", "d")])
 
+    def test_fed_feed_real_time_override(self):
+        """Phase 4.5: Fed shock should consume real-time feed deltas."""
+        oracle = OracleEngine()
+        oracle.update_fed_snapshot({"dot_plot_change": 0.5}, observed_at=datetime.now(timezone.utc))
+        result = oracle.simulate_what_if("fed_dot_plot", 0.0, causal_graph=[], horizon_steps=1)
+        impact_map = {row["node_id"]: row["delta"] for row in result["impacts"]}
+        self.assertIn("tech_valuation", impact_map)
+        self.assertLess(impact_map["tech_valuation"], 0.0)
+
+    def test_contagion_velocity_amplifies_under_stress(self):
+        """Phase 4.5: Contagion velocity should rise with stress signals."""
+        oracle = OracleEngine()
+        base = oracle._calculate_contagion_velocity(
+            None,
+            "day",
+            shock_magnitude=0.05,
+            volatility=0.0,
+            connectivity=0.0,
+            liquidity_stress=0.0,
+        )
+        stressed = oracle._calculate_contagion_velocity(
+            "Crisis",
+            "day",
+            shock_magnitude=0.6,
+            volatility=0.05,
+            connectivity=3.0,
+            liquidity_stress=0.8,
+        )
+        self.assertGreater(stressed, base)
+
 if __name__ == "__main__":
     unittest.main()
