@@ -160,9 +160,39 @@ class UnstructuredHTMLParser:
         if is_pdf:
             # Operator requirement: OCR-first (Vision preferred), then fall back to local parsing.
             # Default is OCR-first to maximize extraction quality.
+            text_layer_probe_first = os.getenv("PDF_TEXT_LAYER_PROBE_FIRST", "0") == "1"
             ocr_probe_text = ""
             ocr_first = os.getenv("PDF_OCR_FIRST", "1") == "1"
             ocr_force = os.getenv("PDF_OCR_FORCE", "1") == "1"
+
+            # Optional reliability/performance mode:
+            # If the PDF has a sufficient text layer, skip OCR entirely.
+            # This preserves current default behavior unless explicitly enabled.
+            text_layer = ""
+            if text_layer_probe_first:
+                try:
+                    import pypdf
+
+                    reader = pypdf.PdfReader(io.BytesIO(content))
+                    for page in reader.pages[:20]:
+                        t = page.extract_text()
+                        if t:
+                            text_layer += t + "\n"
+                except (ImportError, OSError, ValueError) as e:
+                    logger.warning(f"PDF extraction failed: {e}.")
+                    text_layer = ""
+                if _text_sufficient(text_layer):
+                    text_content = text_layer
+                    # Final selection: keep deterministic text-layer if it is sufficient.
+                    text_content = _select_pdf_text_content(text_content, "")
+                else:
+                    text_layer = ""
+
+            if text_layer_probe_first and _text_sufficient(text_content):
+                # We already selected text-layer; do not OCR probe.
+                ocr_first = False
+                ocr_force = False
+
             if ocr_first:
                 try:
                     ocr_probe_pages = int(os.getenv("PDF_OCR_FIRST_PAGES", "1") or "1")
@@ -171,18 +201,18 @@ class UnstructuredHTMLParser:
                     ocr_probe_text = ""
 
             # Local text-layer parse (pypdf) is the fallback when OCR is empty/insufficient.
-            text_layer = ""
-            try:
-                import pypdf
+            if not text_layer:
+                try:
+                    import pypdf
 
-                reader = pypdf.PdfReader(io.BytesIO(content))
-                for page in reader.pages[:20]:
-                    t = page.extract_text()
-                    if t:
-                        text_layer += t + "\n"
-            except (ImportError, OSError, ValueError) as e:
-                logger.warning(f"PDF extraction failed: {e}.")
-                text_layer = ""
+                    reader = pypdf.PdfReader(io.BytesIO(content))
+                    for page in reader.pages[:20]:
+                        t = page.extract_text()
+                        if t:
+                            text_layer += t + "\n"
+                except (ImportError, OSError, ValueError) as e:
+                    logger.warning(f"PDF extraction failed: {e}.")
+                    text_layer = ""
 
             # If OCR indicates usable content and OCR is forced, do full OCR.
             # Otherwise, fall back to text layer if it is sufficient.
