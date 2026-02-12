@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: preciso
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - backend-deployment.yaml
+  - worker-deployment.yaml
+  - redis-deployment.yaml
+  - service-backend.yaml
+  - service-redis.yaml
+  - ingress.yaml
+  - lakehouse/minio.yaml
+  - lakehouse/spark-master.yaml
+  - lakehouse/spark-worker.yaml
+  - lakehouse/mlflow.yaml
+  - lakehouse/unity-catalog.yaml

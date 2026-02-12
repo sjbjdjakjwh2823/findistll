@@ -113,9 +113,8 @@ class SECDocument(HTMLDocument):
             cluster_elements: List[Text] = [self.elements[i] for i in idxs]
             if any(
                 [
-                    # TODO(alan): Maybe swap risk title out for something more generic? It helps to
-                    # have 2 markers though, I think.
-                    is_risk_title(el.text, self.filing_type)
+                    # Use a broader anchor title so TOC detection does not rely solely on risk headings.
+                    is_toc_anchor_title(el.text, self.filing_type)
                     for el in cluster_elements
                     if isinstance(el, Title)
                 ]
@@ -345,6 +344,30 @@ def is_risk_title(title: str, filing_type: Optional[str]) -> bool:
     elif filing_type in S1_TYPES:
         return is_s1_risk_title(clean_sec_text(title, lowercase=True))
     return False
+
+
+def is_toc_anchor_title(title: str, filing_type: Optional[str]) -> bool:
+    """
+    Broad anchor for TOC detection. We keep risk headings but also accept other
+    common section anchors to reduce false negatives when risk headings are absent.
+    """
+    clean_title = clean_sec_text(title, lowercase=True)
+    if is_risk_title(clean_title, filing_type):
+        return True
+    # Common anchors for 10-K / 10-Q / S-1
+    anchors = [
+        "management's discussion and analysis",
+        "md&a",
+        "business",
+        "overview",
+        "financial statements",
+        "notes to financial statements",
+        "item 1",
+        "item 2",
+        "item 7",
+        "item 8",
+    ]
+    return any(anchor in clean_title for anchor in anchors)
 
 
 def is_toc_title(title: str) -> bool:

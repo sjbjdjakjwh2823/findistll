@@ -4,14 +4,15 @@ from .functional.coding import CodingUtils
 
 from typing import List, Callable
 from functools import wraps
-from pandas import DataFrame
+import polars as pl
+import pandas as pd
 
 
 def stringify_output(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
         result = func(*args, **kwargs)
-        if isinstance(result, DataFrame):
+        if isinstance(result, (pl.DataFrame, pd.DataFrame)):
             return result.to_string()
         else:
             return str(result)

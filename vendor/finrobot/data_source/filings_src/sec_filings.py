@@ -36,11 +36,13 @@ from finrobot.data_source.filings_src.prepline_sec_filings.sections import (
     SECTIONS_S1,
 )
 import json
+import logging
 
 DATE_FORMAT_TOKENS = "%Y-%m-%d"
 DEFAULT_BEFORE_DATE = date.today().strftime(DATE_FORMAT_TOKENS)
 DEFAULT_AFTER_DATE = date(2000, 1, 1).strftime(DATE_FORMAT_TOKENS)
 
+logger = logging.getLogger(__name__)
 
 class timeout:
     def __init__(self, seconds=1, error_message="Timeout"):
@@ -54,14 +56,14 @@ class timeout:
         try:
             signal.signal(signal.SIGALRM, self.handle_timeout)
             signal.alarm(self.seconds)
-        except ValueError:
-            pass
+        except ValueError as exc:
+            logger.debug("SIGALRM setup skipped (non-main thread): %s", exc)
 
     def __exit__(self, type, value, traceback):
         try:
             signal.alarm(0)
-        except ValueError:
-            pass
+        except ValueError as exc:
+            logger.debug("SIGALRM teardown skipped (non-main thread): %s", exc)
 
 
 # pipeline-api
@@ -112,9 +114,9 @@ class SECExtractor:
         """
         details = filing_details.split("/")[-1]
         if self.filing_type == "10-K":
-            matches = re.findall("20\d{2}", details)
+            matches = re.findall(r"20\d{2}", details)
         elif self.filing_type == "10-Q":
-            matches = re.findall("20\d{4}", details)
+            matches = re.findall(r"20\d{4}", details)
 
         if matches:
             return matches[-1]  # Return the first match

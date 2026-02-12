@@ -15,8 +15,9 @@ try:
 except ImportError:
     ingestion_service = None
 
-# Configure logger
-logging.basicConfig(level=logging.INFO)
+# Avoid configuring global logging in a library module. The application should configure logging.
+if os.getenv("PRECISO_CONFIGURE_LOGGING", "0") == "1":
+    logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("hf_ingestor")
 
 class HuggingFaceIngestor:

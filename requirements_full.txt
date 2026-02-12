@@ -1,11 +1,15 @@
-﻿fastapi
+fastapi
 uvicorn
 pydantic
 supabase
 python-dotenv
+redis
+psycopg2-binary
 
 google-generativeai
-pandas
+polars
+fastexcel
+xlsx2csv
 beautifulsoup4
 lxml
 openpyxl
@@ -13,6 +17,13 @@ pypdf
 python-docx
 streamlit
 watchdog
+pytesseract
+Pillow
+paddleocr
+paddlepaddle
+pdf2image
+opencv-python-headless
+playwright
 
 pyautogen
 ipython
@@ -24,11 +35,11 @@ mplfinance
 backtrader
 sec_api
 numpy
+h5py
 pyPDF2
 reportlab
 praw
 tushare
-pandas_datareader
 pdfkit
 aiohttp
 langchain
@@ -39,4 +50,7 @@ scikit-learn
 tenacity
 tqdm
 typing_extensions
-unstructured
+cryptography
+pyspark
+delta-spark
+mlflow

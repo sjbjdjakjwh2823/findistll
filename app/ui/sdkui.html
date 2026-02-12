@@ -1,0 +1,676 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Preciso | SDK UI</title>
+    <style>
+:root {
+  --bg: #0b0f14;
+  --bg-2: #111826;
+  --panel: #121a24;
+  --panel-2: #0f1520;
+  --line: #1f2a3a;
+  --text: #e7edf5;
+  --muted: #9fb0c5;
+  --accent: #f2c94c;
+  --accent-2: #6ee7b7;
+  --danger: #ff6b6b;
+  --glow: rgba(242, 201, 76, 0.2);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  color: var(--text);
+  font-family: "Space Grotesk", "IBM Plex Sans", "Segoe UI", sans-serif;
+  background: radial-gradient(1200px 600px at 80% -10%, #1a2433 0%, transparent 55%),
+              radial-gradient(900px 500px at 10% 10%, #162230 0%, transparent 55%),
+              var(--bg);
+}
+.grid {
+  position: fixed;
+  inset: 0;
+  background-image: linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+  pointer-events: none;
+  opacity: 0.25;
+}
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 28px;
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(6px);
+}
+header h1 {
+  font-size: 20px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+header .status {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(110,231,183,0.12);
+  color: var(--accent-2);
+  font-weight: 600;
+  font-size: 12px;
+}
+.shell {
+  display: grid;
+  grid-template-columns: 240px 1fr 320px;
+  gap: 20px;
+  padding: 20px;
+}
+nav {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 16px;
+  height: calc(100vh - 120px);
+}
+nav h3 {
+  margin: 0 0 14px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+}
+nav a {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 12px;
+  color: var(--text);
+  text-decoration: none;
+  margin-bottom: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+}
+nav a.active {
+  background: rgba(242,201,76,0.08);
+  border-color: rgba(242,201,76,0.4);
+}
+main {
+  display: grid;
+  gap: 20px;
+}
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 18px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+}
+.panel h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+.panel p {
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.field label {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+.field input, .field textarea, .field select {
+  background: #0c121b;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--text);
+  padding: 10px 12px;
+  font-size: 14px;
+}
+.actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+button {
+  background: var(--accent);
+  color: #1a1a1a;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 8px 24px var(--glow);
+}
+button.secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--line);
+  box-shadow: none;
+}
+.chips {
+  display: grid;
+  gap: 10px;
+}
+.chip {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #0b121c;
+  font-size: 13px;
+}
+.chip strong { color: var(--accent); }
+.right-panel .panel { height: calc((100vh - 140px) / 2); overflow: auto; }
+pre {
+  background: #0b121c;
+  border-radius: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  color: #cbe3ff;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.table th, .table td {
+  border-bottom: 1px solid var(--line);
+  padding: 8px;
+  text-align: left;
+}
+.table th {
+  color: var(--muted);
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+}
+@media (max-width: 1100px) {
+  .shell { grid-template-columns: 1fr; }
+  nav { height: auto; }
+  .right-panel .panel { height: auto; }
+  .row { grid-template-columns: 1fr; }
+}
+    </style>
+  </head>
+  <body>
+    <div class="grid"></div>
+    <header>
+      <h1>PRECISO / SDK UI</h1>
+      <div class="status">PARTNER + INTEGRATIONS</div>
+    </header>
+
+    <div class="shell">
+      <nav>
+        <h3>Operations</h3>
+        <a href="/ui/">Cases</a>
+        <a href="/ui/cases.html">Evidence</a>
+        <a href="/ui/decisions.html">Decisions</a>
+        <a href="/ui/audit.html">Audit</a>
+        <a href="/ui/admin.html">Admin</a>
+        <a class="active" href="/ui/sdkui.html">SDK UI</a>
+      </nav>
+
+      <main>
+        <div class="panel">
+          <h2>Admin Access</h2>
+          <p>Admin endpoints require either RBAC admin role or an admin token.</p>
+          <p class="muted">Security note: credentials are not stored in browser storage.</p>
+          <div class="row">
+            <div>
+              <div class="field">
+                <label>Admin Token</label>
+                <input id="adminToken" placeholder="ADMIN_API_TOKEN" />
+              </div>
+              <div class="field">
+                <label>RBAC User ID</label>
+                <input id="rbacUserId" placeholder="ops-admin" />
+              </div>
+              <div class="field">
+                <label>RBAC Role</label>
+                <input id="rbacRole" placeholder="admin" />
+              </div>
+              <div class="actions">
+                <button id="saveHeaders">Save Headers</button>
+                <button class="secondary" id="clearHeaders">Clear</button>
+              </div>
+            </div>
+            <div>
+              <div class="field">
+                <label>Public Config</label>
+                <textarea id="publicConfig" rows="8" placeholder="Load config"></textarea>
+              </div>
+              <div class="actions">
+                <button class="secondary" id="loadConfig">Load /api/v1/config/public</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Supabase Setup</h2>
+          <p>제품 사용자가 자신의 Supabase DB를 연결하기 위한 점검 패널입니다.</p>
+          <div class="row">
+            <div>
+              <div class="field">
+                <label>Supabase URL</label>
+                <input id="supabaseUrl" placeholder="https://xxxxx.supabase.co" />
+              </div>
+              <div class="field">
+                <label>Service Role Key</label>
+                <input id="supabaseServiceKey" placeholder="service_role key" />
+              </div>
+              <div class="actions">
+                <button id="validateSupabase">Validate Connection</button>
+              </div>
+              <p>환경변수로는 <code>SUPABASE_URL</code>, <code>SUPABASE_SERVICE_ROLE_KEY</code>를 사용합니다.</p>
+              <p>스키마 생성 SQL: <code>supabase_bootstrap_preciso.sql</code></p>
+            </div>
+            <div>
+              <pre id="supabaseOut">Waiting for validation...</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Connectivity</h2>
+          <p>외부 DB/서버/캐시 연결 상태를 한번에 점검합니다.</p>
+          <div class="row">
+            <div>
+              <div class="field">
+                <label>Postgres DB URL</label>
+                <input id="dbUrl" placeholder="postgresql://user:pass@host:5432/db" />
+              </div>
+              <div class="field">
+                <label>Redis URL</label>
+                <input id="redisUrl" placeholder="redis://localhost:6379" />
+              </div>
+              <div class="field">
+                <label>HTTP URL</label>
+                <input id="httpUrl" placeholder="https://your-api-domain/health" />
+              </div>
+              <div class="actions">
+                <button id="validateConnectivity">Validate Connectivity</button>
+              </div>
+              <p>운영에서는 <code>SUPABASE_DB_URL</code>, <code>REDIS_URL</code>, <code>PUBLIC_DOMAIN</code>를 사용합니다.</p>
+            </div>
+            <div>
+              <pre id="connectivityOut">Waiting for connectivity check...</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Partner Onboarding</h2>
+          <p>Create partner accounts and issue API keys for financial data ingestion.</p>
+          <div class="row">
+            <div>
+              <div class="field">
+                <label>Partner ID</label>
+                <input id="partnerId" placeholder="acme-inc" />
+              </div>
+              <div class="field">
+                <label>Partner Name</label>
+                <input id="partnerName" placeholder="Acme Inc." />
+              </div>
+              <div class="field">
+                <label>Key Label</label>
+                <input id="partnerKeyLabel" placeholder="default" />
+              </div>
+              <div class="field">
+                <label>Metadata (JSON)</label>
+                <textarea id="partnerMeta" rows="4" placeholder='{"tier":"enterprise"}'></textarea>
+              </div>
+              <div class="actions">
+                <button id="createPartner">Create Partner + Key</button>
+                <button class="secondary" id="listPartners">List Partners</button>
+              </div>
+            </div>
+            <div>
+              <div class="field">
+                <label>Key Label (Issue)</label>
+                <input id="issueKeyLabel" placeholder="rotation-2026-02" />
+              </div>
+              <div class="field">
+                <label>Key ID (Revoke)</label>
+                <input id="revokeKeyId" placeholder="key uuid" />
+              </div>
+              <div class="actions">
+                <button id="issueKey">Issue Key</button>
+                <button class="secondary" id="listKeys">List Keys</button>
+                <button class="secondary" id="revokeKey">Revoke Key</button>
+              </div>
+              <pre id="partnerOut">Waiting for partner actions...</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Integration Keys</h2>
+          <p>Register external data provider API keys (FRED, Finnhub, FMP, SEC).</p>
+          <div class="row">
+            <div>
+              <div class="field">
+                <label>Provider</label>
+                <select id="provider">
+                  <option value="fred">fred</option>
+                  <option value="finnhub">finnhub</option>
+                  <option value="fmp">fmp</option>
+                  <option value="sec">sec</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>API Key</label>
+                <input id="providerKey" placeholder="api key" />
+              </div>
+              <div class="field">
+                <label>Label</label>
+                <input id="providerLabel" placeholder="prod" />
+              </div>
+              <div class="actions">
+                <button id="setKey">Save Key</button>
+                <button class="secondary" id="listKeysGlobal">List Keys</button>
+                <button class="secondary" id="revokeProvider">Revoke Provider</button>
+              </div>
+            </div>
+            <div>
+              <div class="field">
+                <label>Test Symbol (finnhub/fmp/sec)</label>
+                <input id="testSymbol" placeholder="AAPL" />
+              </div>
+              <div class="field">
+                <label>FRED Series</label>
+                <input id="testSeries" placeholder="FEDFUNDS" />
+              </div>
+              <div class="actions">
+                <button id="testProvider">Test Provider</button>
+              </div>
+              <pre id="integrationOut">Waiting for integration actions...</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Partner Ingest</h2>
+          <p>Send partner financial payloads into Preciso ingestion pipeline.</p>
+          <div class="row">
+            <div>
+              <div class="field">
+                <label>Partner ID</label>
+                <input id="ingestPartnerId" placeholder="acme-inc" />
+              </div>
+              <div class="field">
+                <label>Partner API Key</label>
+                <input id="ingestPartnerKey" placeholder="api key" />
+              </div>
+              <div class="field">
+                <label>Document Type</label>
+                <input id="ingestDocType" placeholder="partner_financials" />
+              </div>
+              <div class="field">
+                <label>Payload (JSON)</label>
+                <textarea id="ingestPayload" rows="6" placeholder='{"company":"Acme","revenue":1200000,"currency":"USD"}'></textarea>
+              </div>
+              <div class="actions">
+                <button id="ingestPartner">Ingest Payload</button>
+                <button class="secondary" id="listPartnerDocs">List Partner Docs</button>
+              </div>
+            </div>
+            <div>
+              <pre id="ingestOut">Waiting for ingest...</pre>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <div class="right-panel">
+        <div class="panel">
+          <h2>Pipeline Usage Plan</h2>
+          <p>Recommended flow for external financial data.</p>
+          <pre id="planOut">1) Create partner + API key (admin)\n2) Partner pushes payloads to /api/v1/partners/financials\n3) Preciso normalizes into Spokes A/B/C/D\n4) Use /api/v1/quant and /api/v1/datasets for downstream exports\n5) Admin monitors metrics in /api/v1/metrics/recent</pre>
+        </div>
+        <div class="panel">
+          <h2>Last Response</h2>
+          <pre id="lastOut">No requests yet.</pre>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      function getHeaders(isJson = true) {
+        const headers = {};
+        if (isJson) headers["Content-Type"] = "application/json";
+        const adminToken = document.getElementById("adminToken").value.trim();
+        const userId = document.getElementById("rbacUserId").value.trim();
+        const role = document.getElementById("rbacRole").value.trim();
+        if (adminToken) headers["X-Admin-Token"] = adminToken;
+        if (userId) headers["X-Preciso-User-Id"] = userId;
+        if (role) headers["X-Preciso-User-Role"] = role;
+        return headers;
+      }
+
+      function setLast(obj) {
+        const out = document.getElementById("lastOut");
+        if (out) out.textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
+      }
+
+      function safeJson(text) {
+        try { return JSON.parse(text); } catch { return null; }
+      }
+
+      function bootHeaders() {
+        document.getElementById("adminToken").value = "";
+        document.getElementById("rbacUserId").value = "";
+        document.getElementById("rbacRole").value = "";
+      }
+
+      async function loadConfig() {
+        const res = await fetch("/api/v1/config/public", { cache: "no-store" });
+        const data = await res.json();
+        document.getElementById("publicConfig").value = JSON.stringify(data, null, 2);
+        setLast(data);
+      }
+
+      async function createPartner() {
+        const partnerId = document.getElementById("partnerId").value.trim();
+        const partnerName = document.getElementById("partnerName").value.trim();
+        const label = document.getElementById("partnerKeyLabel").value.trim() || "default";
+        const meta = safeJson(document.getElementById("partnerMeta").value) || {};
+        const payload = { partner_id: partnerId, name: partnerName, key_label: label, metadata: meta };
+        const res = await fetch("/api/v1/admin/partners", {
+          method: "POST",
+          headers: getHeaders(),
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        document.getElementById("partnerOut").textContent = JSON.stringify(data, null, 2);
+        setLast(data);
+      }
+
+      async function listPartners() {
+        const res = await fetch("/api/v1/admin/partners?limit=100", { headers: getHeaders(false) });
+        const data = await res.json();
+        document.getElementById("partnerOut").textContent = JSON.stringify(data, null, 2);
+        setLast(data);
+      }
+
+      async function issueKey() {
+        const partnerId = document.getElementById("partnerId").value.trim();
+        const label = document.getElementById("issueKeyLabel").value.trim() || "rotation";
+        const res = await fetch(`/api/v1/admin/partners/${partnerId}/keys`, {
+          method: "POST",
+          headers: getHeaders(),
+          body: JSON.stringify({ label })
+        });
+        const data = await res.json();
+        document.getElementById("partnerOut").textContent = JSON.stringify(data, null, 2);
+        setLast(data);
+      }
+
+      async function listKeys() {
+        const partnerId = document.getElementById("partnerId").value.trim();
+        const res = await fetch(`/api/v1/admin/partners/${partnerId}/keys?limit=200`, { headers: getHeaders(false) });
+        const data = await res.json();
+        document.getElementById("partnerOut").textContent = JSON.stringify(data, null, 2);
+        setLast(data);
+      }
+
+      async function revokeKey() {
+        const partnerId = document.getElementById("partnerId").value.trim();
+        const keyId = document.getElementById("revokeKeyId").value.trim();
+        const res = await fetch(`/api/v1/admin/partners/${partnerId}/keys/${keyId}/revoke`, {
+          method: "POST",
+          headers: getHeaders(false)
+        });
+        const data = await res.json();
+        document.getElementById("partnerOut").textContent = JSON.stringify(data, null, 2);
+        setLast(data);
+      }
+
+      async function listKeysGlobal() {
+        const res = await fetch("/api/v1/admin/integrations/keys?limit=50", { headers: getHeaders(false) });
+        const data = await res.json();
+        document.getElementById("integrationOut").textContent = JSON.stringify(data, null, 2);
+        setLast(data);
+      }
+
+      async function setKey() {
+        const provider = document.getElementById("provider").value;
+        const apiKey = document.getElementById("providerKey").value.trim();
+        const label = document.getElementById("providerLabel").value.trim();
+        const res = await fetch("/api/v1/admin/integrations/keys", {
+          method: "POST",
+          headers: getHeaders(),
+          body: JSON.stringify({ provider, api_key: apiKey, label })
+        });
+        const data = await res.json();
+        document.getElementById("integrationOut").textContent = JSON.stringify(data, null, 2);
+        setLast(data);
+      }
+
+      async function revokeProvider() {
+        const provider = document.getElementById("provider").value;
+        const res = await fetch(`/api/v1/admin/integrations/keys/${provider}`, {
+          method: "DELETE",
+          headers: getHeaders(false)
+        });
+        const data = await res.json();
+        document.getElementById("integrationOut").textContent = JSON.stringify(data, null, 2);
+        setLast(data);
+      }
+
+      async function testProvider() {
+        const provider = document.getElementById("provider").value;
+        const symbol = document.getElementById("testSymbol").value.trim() || "AAPL";
+        const series_id = document.getElementById("testSeries").value.trim() || "FEDFUNDS";
+        const res = await fetch(`/api/v1/admin/integrations/test/${provider}`, {
+          method: "POST",
+          headers: getHeaders(),
+          body: JSON.stringify({ symbol, series_id })
+        });
+        const data = await res.json();
+        document.getElementById("integrationOut").textContent = JSON.stringify(data, null, 2);
+        setLast(data);
+      }
+
+      async function ingestPartner() {
+        const partner_id = document.getElementById("ingestPartnerId").value.trim();
+        const key = document.getElementById("ingestPartnerKey").value.trim();
+        const document_type = document.getElementById("ingestDocType").value.trim() || "partner_financials";
+        const payload = safeJson(document.getElementById("ingestPayload").value) || {};
+        const res = await fetch("/api/v1/partners/financials", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Partner-API-Key": key },
+          body: JSON.stringify({ partner_id, document_type, payload })
+        });
+        const data = await res.json();
+        document.getElementById("ingestOut").textContent = JSON.stringify(data, null, 2);
+        setLast(data);
+      }
+
+      async function validateSupabase() {
+        const url = document.getElementById("supabaseUrl").value.trim();
+        const service_role_key = document.getElementById("supabaseServiceKey").value.trim();
+        const res = await fetch("/api/v1/admin/supabase/validate", {
+          method: "POST",
+          headers: getHeaders(),
+          body: JSON.stringify({ url, service_role_key })
+        });
+        const data = await res.json();
+        document.getElementById("supabaseOut").textContent = JSON.stringify(data, null, 2);
+        setLast(data);
+      }
+
+      async function validateConnectivity() {
+        const supabase_url = document.getElementById("supabaseUrl").value.trim();
+        const supabase_service_role_key = document.getElementById("supabaseServiceKey").value.trim();
+        const db_url = document.getElementById("dbUrl").value.trim();
+        const redis_url = document.getElementById("redisUrl").value.trim();
+        const http_url = document.getElementById("httpUrl").value.trim();
+        const res = await fetch("/api/v1/admin/connectivity/validate", {
+          method: "POST",
+          headers: getHeaders(),
+          body: JSON.stringify({
+            supabase_url,
+            supabase_service_role_key,
+            db_url,
+            redis_url,
+            http_url
+          })
+        });
+        const data = await res.json();
+        document.getElementById("connectivityOut").textContent = JSON.stringify(data, null, 2);
+        setLast(data);
+      }
+
+      async function listPartnerDocs() {
+        const partner_id = document.getElementById("ingestPartnerId").value.trim();
+        const key = document.getElementById("ingestPartnerKey").value.trim();
+        const res = await fetch(`/api/v1/partners/documents?partner_id=${encodeURIComponent(partner_id)}`, {
+          headers: { "X-Partner-API-Key": key }
+        });
+        const data = await res.json();
+        document.getElementById("ingestOut").textContent = JSON.stringify(data, null, 2);
+        setLast(data);
+      }
+
+      document.getElementById("saveHeaders").addEventListener("click", () => {
+        setLast("Headers ready (not stored in browser).");
+      });
+      document.getElementById("clearHeaders").addEventListener("click", () => {
+        bootHeaders();
+        setLast("Headers cleared.");
+      });
+
+      document.getElementById("loadConfig").addEventListener("click", loadConfig);
+      document.getElementById("createPartner").addEventListener("click", createPartner);
+      document.getElementById("listPartners").addEventListener("click", listPartners);
+      document.getElementById("issueKey").addEventListener("click", issueKey);
+      document.getElementById("listKeys").addEventListener("click", listKeys);
+      document.getElementById("revokeKey").addEventListener("click", revokeKey);
+      document.getElementById("setKey").addEventListener("click", setKey);
+      document.getElementById("listKeysGlobal").addEventListener("click", listKeysGlobal);
+      document.getElementById("revokeProvider").addEventListener("click", revokeProvider);
+      document.getElementById("testProvider").addEventListener("click", testProvider);
+      document.getElementById("ingestPartner").addEventListener("click", ingestPartner);
+      document.getElementById("listPartnerDocs").addEventListener("click", listPartnerDocs);
+      document.getElementById("validateSupabase").addEventListener("click", validateSupabase);
+      document.getElementById("validateConnectivity").addEventListener("click", validateConnectivity);
+
+      bootHeaders();
+      loadConfig();
+    </script>
+  </body>
+</html>

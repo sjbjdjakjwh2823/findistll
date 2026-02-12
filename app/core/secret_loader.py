@@ -1,15 +1,37 @@
 ﻿import os
+from pathlib import Path
 
 
-SECRET_PATH = r"C:\Users\Administrator\Desktop\중요.txt"
+def _iter_secret_paths() -> list[str]:
+    candidates: list[str] = []
+    env_path = os.getenv("SECRET_PATH")
+    if env_path:
+        candidates.append(env_path)
+
+    home = Path.home()
+    candidates.extend(
+        [
+            str(home / "Library/Mobile Documents/com~apple~TextEdit/Documents/api.rtf"),
+            str(home / "Library/Mobile Documents/com~apple~TextEdit/Documents/notes.txt"),
+            str(home / "Documents/preciso_secrets.txt"),
+            str(home / ".preciso/secrets.txt"),
+            r"C:\Users\Administrator\Desktop\중요.txt",
+        ]
+    )
+    return candidates
 
 
 def load_secrets_from_file() -> None:
-    if not os.path.exists(SECRET_PATH):
+    path = None
+    for candidate in _iter_secret_paths():
+        if candidate and os.path.exists(candidate):
+            path = candidate
+            break
+    if not path:
         return
 
     try:
-        with open(SECRET_PATH, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             content = f.read().splitlines()
     except Exception:
         return

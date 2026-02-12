@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lakehouse-spark-worker
+  namespace: preciso
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: lakehouse-spark-worker
+  template:
+    metadata:
+      labels:
+        app: lakehouse-spark-worker
+    spec:
+      containers:
+        - name: spark-worker
+          image: apache/spark:3.5.1
+          args: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://lakehouse-spark-master:7077"]

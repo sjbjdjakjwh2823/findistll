@@ -25,21 +25,20 @@ import xml.etree.ElementTree as ET
 from typing import Dict, Any, List, Optional
 import os
 import logging
+import os
 import copy
 import httpx
 
 # Standard imports assuming requirements.txt is satisfied
-import docx
 
-# Configure logger
-logging.basicConfig(level=logging.INFO)
+# Avoid configuring global logging in a library module. The application should configure logging.
+if os.getenv("PRECISO_CONFIGURE_LOGGING", "0") == "1":
+    logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Gemini API configuration
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
 
-
-import google.generativeai as genai
 
 # Import Exporter
 from .exporter import exporter
@@ -48,6 +47,16 @@ class GeminiClient:
     """Simple Gemini API client using Official SDK."""
     
     def __init__(self):
+        # Gemini is disabled by default in this repo. We prefer deterministic parsing and
+        # Vision OCR for scanned documents. To enable Gemini explicitly: set GEMINI_ENABLED=1.
+        if os.getenv("GEMINI_ENABLED", "0") != "1":
+            self.api_key = ""
+            self.model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+            self.model = None
+            self.genai_client = None
+            self.genai_types = None
+            return
+
         # Load API Key from file if environment variable is not set or dummy
         api_key = os.getenv("GEMINI_API_KEY", "")
         if not api_key or api_key == "dummy_key":
@@ -64,30 +73,52 @@ class GeminiClient:
                 logger.warning(f"Failed to load API key from file: {e}")
 
         self.api_key = api_key
-        self.model_name = "gemini-2.0-flash"
+        self.model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
         self.model = None
+        self.genai_client = None
+        self.genai_types = None
         
         if self.api_key and self.api_key != "dummy_key_for_test":
             try:
-                genai.configure(api_key=self.api_key)
-                self.model = genai.GenerativeModel(self.model_name)
+                # Prefer the new SDK if available.
+                try:
+                    import google.genai as genai
+                    from google.genai import types
+                    self.genai_client = genai.Client(api_key=self.api_key)
+                    self.genai_types = types
+                except Exception as new_err:
+                    logger.warning(f"google.genai unavailable, falling back to google.generativeai: {new_err}")
+                    import google.generativeai as genai
+                    genai.configure(api_key=self.api_key)
+                    self.model = genai.GenerativeModel(self.model_name)
             except Exception as e:
                 logger.warning(f"Failed to configure Gemini SDK: {e}")
         
     async def generate_content(self, contents: list, response_mime_type: str = None) -> str:
         """Generate content using Gemini SDK."""
-        if not self.model:
+        if not self.model and not self.genai_client:
             logger.warning("Gemini Model not initialized.")
             return ""
             
         generation_config = {}
         if response_mime_type:
             generation_config["response_mime_type"] = response_mime_type
+        temperature = os.getenv("GEMINI_TEMPERATURE")
+        max_tokens = os.getenv("GEMINI_MAX_OUTPUT_TOKENS")
+        if temperature:
+            try:
+                generation_config["temperature"] = float(temperature)
+            except ValueError:
+                logger.debug("Gemini temperature parse failed", exc_info=True)
+        if max_tokens:
+            try:
+                generation_config["max_output_tokens"] = int(max_tokens)
+            except ValueError:
+                logger.debug("Gemini max_output_tokens parse failed", exc_info=True)
         
         # Adapt content structure for SDK
         # The internal logic passes lists of dicts with 'parts'.
         # We need to flatten this to what SDK expects.
-        
         sdk_contents = []
         for c in contents:
             parts = c.get("parts", [])
@@ -101,13 +132,50 @@ class GeminiClient:
                     })
 
         try:
-            # SDK async generation
+            if self.genai_client:
+                # New SDK is sync; run in a worker thread.
+                import asyncio
+                def _call():
+                    cfg = {}
+                    if response_mime_type:
+                        cfg["response_mime_type"] = response_mime_type
+                    if temperature:
+                        try:
+                            cfg["temperature"] = float(temperature)
+                        except ValueError:
+                            logger.debug("Gemini temperature parse failed (genai)", exc_info=True)
+                    if max_tokens:
+                        try:
+                            cfg["max_output_tokens"] = int(max_tokens)
+                        except ValueError:
+                            logger.debug("Gemini max_output_tokens parse failed (genai)", exc_info=True)
+                    contents_parts = []
+                    for item in sdk_contents:
+                        if isinstance(item, str):
+                            contents_parts.append(self.genai_types.Part.from_text(text=item))
+                        elif isinstance(item, dict) and "mime_type" in item and "data" in item:
+                            contents_parts.append(self.genai_types.Part.from_bytes(
+                                data=item["data"], mime_type=item["mime_type"]
+                            ))
+                    response = self.genai_client.models.generate_content(
+                        model=self.model_name,
+                        contents=contents_parts,
+                        config=cfg or None,
+                    )
+                    return response.text
+                return await asyncio.to_thread(_call)
+
+            # Legacy SDK async generation
             response = await self.model.generate_content_async(sdk_contents, generation_config=generation_config)
             return response.text
         except Exception as e:
             error_str = str(e)
             # [Retry Logic] Robust Exponential Backoff for 429
             if "429" in error_str or "Resource exhausted" in error_str or "429" in repr(e):
+                # If the project has effectively zero quota, retries only waste time.
+                if "limit: 0" in error_str or "FreeTier" in error_str:
+                    logger.error("Gemini quota appears unavailable (limit: 0). Failing fast without retries.")
+                    raise e
                 import asyncio
                 logger.warning(f"Gemini 429 Limit Hit. Starting Exponential Backoff.")
                 
@@ -212,6 +280,12 @@ class FileIngestionService:
         mime_type: str
     ) -> Dict[str, Any]:
         """Process a file and extract structured financial data."""
+        # Detect HTML masquerading as PDF
+        if mime_type == "application/pdf":
+            sniff = file_content.lstrip()[:20].lower()
+            if sniff.startswith(b"<!doctype") or sniff.startswith(b"<html"):
+                mime_type = "text/html"
+
         file_type = self.SUPPORTED_FORMATS.get(mime_type, 'unknown')
         
         # Auto-detect XBRL/iXBRL by filename extension
@@ -239,7 +313,12 @@ class FileIngestionService:
         elif file_type == 'xbrl':
             result = await self._process_xbrl(file_content, filename)
         elif file_type == 'ixbrl':
-            result = await self._process_ixbrl(file_content, filename)
+            # Only treat as Inline XBRL if the content actually includes ix namespace usage.
+            lowered = file_content[:250_000].lower()
+            if b"ix:nonfraction" not in lowered and b"ix:nonnumeric" not in lowered and b"xmlns:ix" not in lowered:
+                result = await self._process_unstructured_html(file_content, filename)
+            else:
+                result = await self._process_ixbrl(file_content, filename)
             # Fallback logic is inside _process_ixbrl calling _process_unstructured_html if needed
             # But wait, logic was:
             # result = await self._process_ixbrl(file_content, filename)
@@ -261,12 +340,22 @@ class FileIngestionService:
         elif file_type == 'txt':
             try:
                 text_content = file_content.decode('utf-8', errors='ignore')
-                result = await self._analyze_text_with_gemini(text_content, filename, "txt")
+                # No Gemini: store text and mark for review. Downstream can still use this for RAG.
+                result = {
+                    "title": filename,
+                    "summary": "Text ingested (Gemini disabled).",
+                    "tables": [],
+                    "key_metrics": {},
+                    "facts": [],
+                    "metadata": {"file_type": "txt", "gemini_disabled": True, "needs_review": True},
+                    "raw_text": text_content[:200000],
+                }
             except Exception as e:
                  logger.error(f"Error processing TXT file: {e}")
                  raise ValueError(f"Failed to process text content: {e}")
         elif file_type in ('pdf', 'image'):
-            result = await self._process_with_gemini(file_content, filename, mime_type)
+            # Never use Gemini for PDF/Image. Use deterministic table extraction and OCR fallbacks.
+            result = await self._process_unstructured_html(file_content, filename)
         else:
             raise ValueError(f"Unsupported file type: {mime_type}")
             
@@ -278,7 +367,8 @@ class FileIngestionService:
 
     async def _process_unstructured_html(self, content: bytes, filename: str) -> Dict[str, Any]:
         """Process generic HTML using LLM parser."""
-        print(f"[DEBUG] _process_unstructured_html called for {filename}")
+        if os.getenv("PRECISO_DEBUG_LOGS", "0") == "1":
+            logger.info("_process_unstructured_html called for %s", filename)
         from .unstructured_parser import UnstructuredHTMLParser
         from .xbrl_semantic_engine import XBRLSemanticEngine
         
@@ -286,11 +376,10 @@ class FileIngestionService:
             parser = UnstructuredHTMLParser(self.gemini)
             # await parser.parse returns (facts, raw_data)
             facts, raw_data = await parser.parse(content, filename)
-            print(f"[DEBUG] HTML Parser returned {len(facts)} facts. Raw Title: {raw_data.get('title')}")
-        except Exception as e:
-            print(f"[ERROR] HTML Parser failed: {e}")
-            import traceback
-            traceback.print_exc()
+            if os.getenv("PRECISO_DEBUG_LOGS", "0") == "1":
+                logger.info("HTML Parser returned %s facts. Raw Title: %s", len(facts), raw_data.get("title"))
+        except Exception:
+            logger.exception("HTML Parser failed")
             facts, raw_data = [], {}
         
         engine = XBRLSemanticEngine(
@@ -312,18 +401,27 @@ class FileIngestionService:
                     "concept": f.concept,
                     "label": f.label,
                     "value": str(f.value),
+                    "raw_value": getattr(f, "raw_value", None),
                     "unit": f.unit,
                     "period": f.period,
+                    "context_ref": getattr(f, "context_ref", None),
+                    "decimals": getattr(f, "decimals", None),
+                    "dimensions": getattr(f, "dimensions", None),
+                    "page": (getattr(f, "dimensions", None) or {}).get("page") if isinstance(getattr(f, "dimensions", None), dict) else None,
                     "confidence_score": getattr(f, "confidence_score", 1.0), # v17.0 Export
                     "tags": getattr(f, "tags", [])
                 } for f in facts
             ],
-            "metadata": {"file_type": "html_unstructured", "company": raw_data.get("title", "Unknown")}
+            "tables": raw_data.get("tables", []),
+            "metadata": {
+                "file_type": raw_data.get("source") or "html_unstructured",
+                "company": raw_data.get("title", "Unknown"),
+            }
         }
 
     async def _process_docx(self, content: bytes, filename: str) -> Dict[str, Any]:
         """Process Word document using python-docx and Gemini."""
-        # Using global import docx
+        import docx
         doc = docx.Document(io.BytesIO(content))
         full_text = []
         
@@ -679,8 +777,10 @@ class FileIngestionService:
                                 label = f"PY_{d_str}"
                                 period_map[d_str] = label
                                 engine.period_date_map[label] = d_str # V13.7 Inject into Engine
-                        except: pass
-                except: pass
+                        except Exception:
+                            logger.debug("iXBRL date parse failed", exc_info=True)
+                except Exception:
+                    logger.debug("iXBRL CY date parse failed", exc_info=True)
                 
                 # 4. Apply Mapping to Facts
                 valid_facts = []
@@ -703,54 +803,47 @@ class FileIngestionService:
             
             # 4. Build Table Representation
             # Convert facts to dict list for table builder
-            from .xbrl_semantic_engine import ScaleProcessor
             facts_list = []
             for f in facts:
-                # [Step 3] Apply Global Unit Lock logic here for iXBRL facts
-                # iXBRL Parser usually extracts raw text. We need to normalize.
-                # Use default USD as unit_type for normalization if not specified (safe assumption for Tesla 10-K)
-                # However, f.unit should be preserved.
-                
-                # Check if it looks like a numeric fact
-                val_str = str(f.value)
-                # Try to normalize if it is numeric and large
+                # IXBRLParser already normalizes currency facts to the engine's "billions" convention
+                # via ScaleProcessor (including handling ix:scale). Do not re-normalize here.
                 normalized_val = f.value
-                
-                # Check for ScaleProcessor usage
+
+                # Keep iXBRL period aligned with XML/XBRL flows (date-like when possible).
+                # The engine maps raw dates into labels (CY / PY_YYYY-MM-DD). Preserve both:
+                # - period: raw ISO date (best-effort)
+                # - dimensions.period_label: CY/PY_* label for time-series grouping
+                period_label = getattr(f, "period", None)
+                period_raw = None
                 try:
-                    # Heuristic: If raw value is > 1 million, assume it needs checking
-                    # If f.value is already a number/Decimal? IXBRLParser might return float/Decimal.
-                    # Let's use ScaleProcessor.apply_self_healing logic but adapted
-                    
-                    # We re-process the value string through ScaleProcessor to ensure consistency
-                    # But ScaleProcessor.apply_self_healing takes (raw_val, decimals, unit_type)
-                    
-                    unit_type = 'currency'
-                    # [Updated Logic] Check both unit AND concept for Shares
-                    if 'share' in (f.unit or '').lower() or 'share' in f.concept.lower(): 
-                        unit_type = 'shares'
-                    elif 'pure' in (f.unit or '').lower(): unit_type = 'ratio'
-                    
-                    if unit_type == 'currency':
-                        # We pass the raw string value to get normalized (Billion) value
-                        norm_val, _, _ = ScaleProcessor.apply_self_healing(str(f.value), None, unit_type)
-                        
-                        # Update the fact value for CoT generation
-                        # Note: We are updating the object in the list 'facts' (reference)?
-                        # No, 'facts' is a list of objects. We can update f.value.
-                        f.value = norm_val
-                        
-                        # For the display list
-                        normalized_val = norm_val
-                except Exception as e:
-                    pass
+                    if period_label == "CY":
+                        period_raw = engine.period_date_map.get("CY")
+                    elif isinstance(period_label, str) and period_label.startswith("PY_"):
+                        period_raw = period_label.replace("PY_", "", 1)
+                    else:
+                        period_raw = period_label
+                except Exception:
+                    logger.debug("iXBRL period label parse failed", exc_info=True)
+                    period_raw = period_label
 
                 facts_list.append({
                     "concept": f.concept,
                     "label": f.label,
                     "value": str(normalized_val),
-                    "period": f.period,
+                    "raw_value": getattr(f, "raw_value", None) or str(f.value),
+                    "normalized_value": str(normalized_val),
+                    "period": period_raw,
                     "unit": f.unit,
+                    "source": "ixbrl",
+                    "dimensions": {"period_label": period_label} if period_label else {},
+                    "evidence": {
+                        "document_id": filename,
+                        "page": None,
+                        "section": f.concept,
+                        "snippet": str(getattr(f, "raw_value", ""))[:500],
+                        "method": "ixbrl",
+                        "confidence": getattr(f, "confidence_score", 1.0),
+                    },
                     "confidence_score": getattr(f, "confidence_score", 1.0),
                     "tags": getattr(f, "tags", [])
                 })
@@ -793,18 +886,18 @@ class FileIngestionService:
 
     async def _process_spreadsheet(self, content: bytes, filename: str, file_type: str) -> Dict[str, Any]:
         """Process Excel/CSV using SpreadsheetParser."""
-        print(f"[DEBUG] _process_spreadsheet called for {filename} ({file_type})")
+        if os.getenv("PRECISO_DEBUG_LOGS", "0") == "1":
+            logger.info("_process_spreadsheet called for %s (%s)", filename, file_type)
         from .spreadsheet_parser import SpreadsheetParser
         from .xbrl_semantic_engine import XBRLSemanticEngine
         
         try:
             parser = SpreadsheetParser(content, file_type)
             facts = parser.parse()
-            print(f"[DEBUG] Parser returned {len(facts)} facts")
-        except Exception as e:
-            print(f"[ERROR] SpreadsheetParser failed: {e}")
-            import traceback
-            traceback.print_exc()
+            if os.getenv("PRECISO_DEBUG_LOGS", "0") == "1":
+                logger.info("SpreadsheetParser returned %s facts", len(facts))
+        except Exception:
+            logger.exception("SpreadsheetParser failed")
             facts = []
         
         # Default fiscal year fallback if not found
@@ -942,6 +1035,9 @@ class FileIngestionService:
         # 3. Adapt Data to SemanticFacts
         adapter = PDFSemanticAdapter(doc_title, fiscal_year)
         facts = adapter.adapt(gemini_result)
+        if not facts:
+            logger.warning("Gemini returned 0 facts. Falling back to Unstructured HTML/OCR parser.")
+            return await self._process_unstructured_html(content, filename)
         
         # 4. Generate Reasoning QA (CoT)
         # We manually inject facts since we skipped XML parsing
@@ -970,6 +1066,8 @@ class FileIngestionService:
         ]
         gemini_result["reasoning_qa"] = qa_pairs
         gemini_result["jsonl_data"] = jsonl_data
+        gemini_result.setdefault("metadata", {})
+        gemini_result["metadata"]["gemini_used"] = True
         
         gemini_result["metadata"] = {
             "file_type": "pdf" if "pdf" in mime_type else "image",

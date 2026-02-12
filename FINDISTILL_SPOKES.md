@@ -84,14 +84,11 @@
 #### RAG 관련
 - DB 테이블 정의 있음: `spoke_c_rag_context`
   - `C:\Users\Administrator\Desktop\preciso\supabase_spokes.sql`
-- 실제 RAG 저장/연동 로직은 코드에 없음
+- 실제 RAG 저장/연동 로직 구현됨: Spoke C context 저장 + Retrieval API + 인과 체인 응답
 
 
 ### Spoke D (Graph)
-- UI/DB 정의만 존재
-  - UI: `C:\Users\Administrator\Desktop\preciso\app\ui\decisions.html` (Graph 엔진 연결 대기)
-  - DB: `spoke_d_graph` 테이블 정의
-- 실제 Graph 처리 로직 없음
+- Graph 처리 로직 구현됨: Spoke D graph 저장 + causal chain 구성
 
 
 ### Spoke E

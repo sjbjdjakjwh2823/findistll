@@ -1,0 +1,141 @@
+version: '3.8'
+
+services:
+  kong:
+    image: kong:3.6
+    environment:
+      - KONG_DATABASE=off
+      - KONG_DECLARATIVE_CONFIG=/kong/kong.yml
+      - KONG_PROXY_ACCESS_LOG=/dev/stdout
+      - KONG_ADMIN_ACCESS_LOG=/dev/stdout
+      - KONG_PROXY_ERROR_LOG=/dev/stderr
+      - KONG_ADMIN_ERROR_LOG=/dev/stderr
+    volumes:
+      - ./kong.yml:/kong/kong.yml:ro
+    ports:
+      - "127.0.0.1:8001:8001"
+      - "8000:8000"
+    depends_on:
+      - backend
+      - redis
+    restart: unless-stopped
+
+  frontend:
+    image: preciso-frontend:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_SUPABASE_URL=${CENTRAL_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  backend:
+    image: preciso-backend:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8002:8000"
+    environment:
+      - SUPABASE_URL=${CENTRAL_SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - LOCAL_DB_URL=${LOCAL_DB_URL}
+      - REDIS_URL=redis://redis:6379
+      - LICENSE_CHECK_ENABLED=1
+      - LICENSE_KEY=${LICENSE_KEY}
+      - LOG_TO_FILE=1
+      - LOG_FILE_PATH=/var/log/preciso/backend.log
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./data:/app/data
+      - ./logs:/var/log/preciso
+    depends_on:
+      - postgres
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  worker:
+    image: preciso-worker:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - LOCAL_DB_URL=${LOCAL_DB_URL}
+      - SUPABASE_URL=${CENTRAL_SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - LOG_TO_FILE=1
+      - LOG_FILE_PATH=/var/log/preciso/worker.log
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./logs:/var/log/preciso
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  event_worker:
+    image: preciso-worker:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    command: ["python", "-m", "app.event_worker"]
+    environment:
+      - SUPABASE_URL=${CENTRAL_SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - EVENT_INGEST_ENABLED=1
+      - EVENT_INGEST_INTERVAL_S=900
+      # Optional sources:
+      # - EVENT_RSS_FEEDS=https://www.federalreserve.gov/feeds/press_all.xml,https://home.treasury.gov/system/files/136/press-releases.xml
+      # - GDELT_ENABLED=1
+      # - GDELT_QUERY=regulation OR sanctions OR central bank OR treasury yield
+      - LOG_TO_FILE=1
+      - LOG_FILE_PATH=/var/log/preciso/event_worker.log
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./logs:/var/log/preciso
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_PASSWORD=${LOCAL_DB_PASSWORD}
+      - POSTGRES_DB=preciso
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  watchtower:
+    image: containrrr/watchtower
+    profiles: ["ops"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_POLL_INTERVAL=3600
+      - WATCHTOWER_CLEANUP=true
+    restart: unless-stopped
+
+volumes:
+  postgres-data:

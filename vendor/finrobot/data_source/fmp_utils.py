@@ -189,7 +189,6 @@ class FMPUtils:
                     "PB Ratio": round(key_metrics_data[year_offset]["pbRatio"],2),
                 }
                 # Append the year and metrics to the DataFrame
-                # Extracting the year from the date
                 year = income_data[year_offset]["date"][:4]
                 df[year] = pd.Series(metrics)
 

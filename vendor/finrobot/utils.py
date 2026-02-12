@@ -1,26 +1,46 @@
 import os
 import json
+import polars as pl
 import pandas as pd
 from datetime import date, timedelta, datetime
-from typing import Annotated
+from typing import Annotated, Union, Any
 
 
 # Define custom annotated types
-# VerboseType = Annotated[bool, "Whether to print data to console. Default to True."]
 SavePathType = Annotated[str, "File path to save data. If None, data is not saved."]
 
 
-# def process_output(data: pd.DataFrame, tag: str, verbose: VerboseType = True, save_path: SavePathType = None) -> None:
-#     if verbose:
-#         print(data.to_string())
-#     if save_path:
-#         data.to_csv(save_path)
-#         print(f"{tag} saved to {save_path}")
+def pandas_to_polars(df: Any) -> pl.DataFrame:
+    """
+    Convert Pandas DataFrame to Polars DataFrame.
+    Used for converting external API responses (yfinance, finnhub, etc.) to Polars.
+    """
+    if isinstance(df, pl.DataFrame):
+        return df
+
+    if isinstance(df, pd.DataFrame):
+        if df.index.name is not None:
+            df = df.reset_index()
+        return pl.from_pandas(df)
+
+    if isinstance(df, dict):
+        return pl.DataFrame(df)
+
+    if isinstance(df, list):
+        return pl.DataFrame(df)
+
+    raise TypeError(f"Unsupported data type for conversion: {type(df)}")
 
 
-def save_output(data: pd.DataFrame, tag: str, save_path: SavePathType = None) -> None:
+def save_output(data: Union[pl.DataFrame, pd.DataFrame], tag: str, save_path: SavePathType = None) -> None:
+    """Save output to CSV. Accepts both Polars and Pandas DataFrames."""
     if save_path:
-        data.to_csv(save_path)
+        if isinstance(data, pl.DataFrame):
+            data.write_csv(save_path)
+        elif isinstance(data, pd.DataFrame):
+            data.to_csv(save_path, index=False)
+        else:
+            raise TypeError(f"Unsupported data type: {type(data)}")
         print(f"{tag} saved to {save_path}")
 
 

@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: preciso-redis
+  namespace: preciso
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: preciso-redis
+  template:
+    metadata:
+      labels:
+        app: preciso-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7
+          ports:
+            - containerPort: 6379

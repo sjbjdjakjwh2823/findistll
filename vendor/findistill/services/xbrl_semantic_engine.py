@@ -14,7 +14,9 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Dict, List, Optional, Tuple
 
-logging.basicConfig(level=logging.INFO)
+# Avoid configuring global logging in a library module. The application should configure logging.
+if os.getenv("PRECISO_CONFIGURE_LOGGING", "0") == "1":
+    logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 from .xbrl_enhancements import LabelManager, DimensionManager
@@ -109,7 +111,7 @@ class ScaleProcessor:
                 return normalized, "healed_billion", 1.0 
             else:
                 return val, "raw_pass", 1.0
-        except:
+        except Exception:
             return Decimal("0"), "error_fallback", 0.0
 
 class ExpertCoTGenerator:
@@ -269,7 +271,8 @@ class XBRLSemanticEngine:
                 for f in os.listdir(self.base_dir):
                     if f.startswith(self.filename_base) and any(f.endswith(s) for s in suffix_list):
                         return os.path.join(self.base_dir, f)
-            except: pass
+            except Exception:
+                logger.debug("linkbase discovery failed", exc_info=True)
             return None
 
         # 1. Schema (.xsd)
@@ -374,7 +377,8 @@ class XBRLSemanticEngine:
          try:
              tree = ET.fromstring(open(path, 'rb').read())
              logger.info("Loaded Definitions (Placeholder).")
-         except: pass
+         except Exception:
+             logger.warning("DEF Load Failed", exc_info=True)
 
     def apply_arithmetic_self_healing(self):
         """Step 2: Arithmetic Self-Healing using CAL rules."""
@@ -422,7 +426,13 @@ class XBRLSemanticEngine:
 
                     if abs((calculated_sum / 1000) - parent_val) < Decimal("10.0"):
                          logger.warning(f"[Self-healing]: Scaled Children (div 1000) to match parent.")
-                         pass
+                         for child, _weight in children:
+                             if child in concepts:
+                                 concepts[child].value = concepts[child].value / 1000
+                                 concepts[child].raw_value += " [Healed: /1000]"
+                                 concepts[child].confidence_score = 0.7
+                                 concepts[child].tags.append("[Healed]")
+                         healed_count += 1
 
         if healed_count > 0:
             logger.info(f"Step 2 Complete: Applied {healed_count} arithmetic fixes.")
@@ -547,9 +557,10 @@ class XBRLSemanticEngine:
                 if '}' in elem.tag: elem.tag = elem.tag.split('}', 1)[1]
 
             contexts, context_dims = self._parse_contexts_and_dims(tree)
+            unit_currency = self._parse_units(tree)
             self._extract_metadata(tree)
             
-            facts = self._extract_facts(tree, contexts, context_dims, label_mgr)
+            facts = self._extract_facts(tree, contexts, context_dims, label_mgr, unit_currency)
             self.facts = facts
             
             self.apply_arithmetic_self_healing()
@@ -564,8 +575,7 @@ class XBRLSemanticEngine:
             return XBRLIntelligenceResult(True, self.company_name, self.fiscal_year, self.facts, qa_pairs, "# Report", jsonl_data, {}, summary, self.errors)
         except Exception as e:
             logger.error(f"Processing failed: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.exception("Processing failed")
             return XBRLIntelligenceResult(False, self.company_name, self.fiscal_year, [], [], "", [], {}, str(e), [str(e)])
 
     def _extract_metadata(self, tree: Any):
@@ -621,7 +631,31 @@ class XBRLSemanticEngine:
                 
         return context_map, context_dims
 
-    def _extract_facts(self, tree: Any, contexts: Dict[str, str], context_dims: Dict[str, Dict[str, str]], label_mgr: LabelManager) -> List[SemanticFact]:
+    def _parse_units(self, tree: Any) -> Dict[str, str]:
+        unit_currency: Dict[str, str] = {}
+        for unit in tree.findall(".//unit"):
+            unit_id = unit.get("id")
+            if not unit_id:
+                continue
+            for measure in unit.findall(".//measure"):
+                text = (measure.text or "").strip()
+                m = re.search(r"iso4217:([A-Za-z]{3})", text)
+                if m:
+                    unit_currency[unit_id] = m.group(1).upper()
+                    break
+                if re.match(r"^[A-Za-z]{3}$", text):
+                    unit_currency[unit_id] = text.upper()
+                    break
+        return unit_currency
+
+    def _extract_facts(
+        self,
+        tree: Any,
+        contexts: Dict[str, str],
+        context_dims: Dict[str, Dict[str, str]],
+        label_mgr: LabelManager,
+        unit_currency: Dict[str, str],
+    ) -> List[SemanticFact]:
         facts = []
         for elem in tree.iter():
             ctx_ref = elem.get("contextRef")
@@ -630,11 +664,23 @@ class XBRLSemanticEngine:
             if not raw_val or not any(char.isdigit() for char in raw_val): continue
             
             clean_str = raw_val.strip()
+            # Guard: ISO-8601 durations (e.g., "P1Y", "P3M", "P1Y6M") are not numeric facts.
+            # They often appear in XBRL as durationItemType but still contain digits.
+            if re.match(r"^P(?!\\d{4}-\\d{2}-\\d{2})([0-9]+Y)?([0-9]+M)?([0-9]+D)?(T.*)?$", clean_str):
+                continue
+            # Guard: enumerations/URIs are not numeric facts (often contain years/digits in URLs).
+            lower_clean = clean_str.lower()
+            if "http://" in lower_clean or "https://" in lower_clean or "://" in lower_clean:
+                continue
+            # Guard: non-numeric tokens that include letters (excluding scientific notation E/e).
+            if re.search(r"[A-DF-Za-df-z]", clean_str):
+                continue
             if re.match(r'^\d{4}-\d{2}-\d{2}$', clean_str): continue
             if re.match(r'^(19|20)\d{2}$', clean_str): continue
 
             dec_int = int(elem.get("decimals")) if elem.get("decimals") not in ('INF', 'None', None) else None
-            unit_type = UnitManager.detect_unit_type(elem.get("unitRef", "USD"), elem.tag)
+            unit_ref = elem.get("unitRef", "USD")
+            unit_type = UnitManager.detect_unit_type(unit_ref, elem.tag)
             
             # v16.0 Spoke B: Confidence Scoring from ScaleProcessor
             val, tag, conf_score = ScaleProcessor.apply_self_healing(raw_val, dec_int, unit_type)
@@ -644,7 +690,12 @@ class XBRLSemanticEngine:
             if elem.tag in self.label_map:
                 final_label = self.label_map[elem.tag]
             
-            dims = context_dims.get(ctx_ref, {})
+            dims = context_dims.get(ctx_ref, {}) or {}
+            if unit_type == "currency":
+                currency = unit_currency.get(unit_ref)
+                if currency and (not dims or "currency" not in dims):
+                    dims = dict(dims)
+                    dims["currency"] = currency
             if dims: final_label += f" ({', '.join([f'{k}:{v}' for k,v in dims.items()])})"
 
             facts.append(SemanticFact(

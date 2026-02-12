@@ -50,10 +50,12 @@ import csv
 from typing import Dict
 from unstructured.documents.elements import Text, NarrativeText, Title, ListItem
 from unstructured.staging.label_studio import stage_for_label_studio
+import logging
 
 
 app = FastAPI()
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def is_expected_response_type(media_type, response_type):
@@ -80,14 +82,14 @@ class timeout:
         try:
             signal.signal(signal.SIGALRM, self.handle_timeout)
             signal.alarm(self.seconds)
-        except ValueError:
-            pass
+        except ValueError as exc:
+            logger.debug("SIGALRM setup skipped (non-main thread): %s", exc)
 
     def __exit__(self, type, value, traceback):
         try:
             signal.alarm(0)
-        except ValueError:
-            pass
+        except ValueError as exc:
+            logger.debug("SIGALRM teardown skipped (non-main thread): %s", exc)
 
 
 def get_regex_enum(section_regex):

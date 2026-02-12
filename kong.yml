@@ -1,0 +1,70 @@
+_format_version: "3.0"
+
+services:
+  - name: preciso-api
+    url: http://backend:8000
+    routes:
+      - name: api-v1-route
+        paths:
+          - /api/v1
+        strip_path: false
+        methods:
+          - GET
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+      - name: partner-ingest-route
+        paths:
+          - /api/v1/partners
+        strip_path: false
+        methods:
+          - POST
+        plugins:
+          - name: key-auth
+            config:
+              key_names:
+                - X-Partner-API-Key
+              key_in_header: true
+              key_in_query: false
+              hide_credentials: true
+          - name: rate-limiting
+            config:
+              minute: 30
+              hour: 300
+              policy: redis
+              redis_host: redis
+              redis_port: 6379
+              redis_database: 0
+              fault_tolerant: true
+              hide_client_headers: false
+    plugins:
+      - name: key-auth
+        config:
+          key_names:
+            - X-API-Key
+            - apikey
+          key_in_header: true
+          key_in_query: true
+          hide_credentials: true
+      - name: rate-limiting
+        config:
+          minute: 60
+          hour: 1000
+          policy: redis
+          redis_host: redis
+          redis_port: 6379
+          redis_database: 0
+          fault_tolerant: true
+          hide_client_headers: false
+
+consumers:
+  - username: starter-tier
+    keyauth_credentials:
+      - key: ${STARTER_API_KEY}
+  - username: professional-tier
+    keyauth_credentials:
+      - key: ${PRO_API_KEY}
+  - username: enterprise-tier
+    keyauth_credentials:
+      - key: ${ENTERPRISE_API_KEY}

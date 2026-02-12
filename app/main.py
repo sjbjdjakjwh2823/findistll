@@ -1,276 +1,184 @@
-from typing import Optional
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from pathlib import Path
+
+import os
+import sys
+import subprocess
+import logging
+import asyncio
+from fastapi import FastAPI
+from contextlib import asynccontextmanager
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
+
 from app.core.config import load_settings
-from app.db.client import InMemoryDB
+from app.core.preflight import collect_preflight
+from app.api.v1 import dataforge
+from app.api.v1 import extract
+from app.api.v1 import ingest
+from app.api.v1 import generate
+from app.api.v1 import annotate
+from app.api.v1 import approval
+from app.api.v1 import opsgraph
+from app.api.v1 import export
+from app.api.v1 import metrics
+from app.api.v1 import retrieval
+from app.api.v1 import multi_agent
+from app.api.v1 import datasets
+from app.api.v1 import quant
+from app.api.v1 import market
+from app.api.v1 import partners
+from app.api.v1 import admin_partners
+from app.api.v1 import config_public
+from app.api.v1 import config_admin
+from app.api.v1 import admin_integrations
+from app.api.v1 import admin_supabase
+from app.api.v1 import admin_connectivity
+from app.api.v1 import admin_retention
+from app.api.v1 import causal
+from app.api.v1 import admin_logs
+from app.api.v1 import training
+from app.api.v1 import collab
+from app.api.v1 import pipeline
+from app.api.v1 import rag
+from app.api.v1 import policy
+from app.api.v1 import console
+from app.api.v1 import lakehouse
+from app.api.v1 import mlflow_api
+from app.api.v1 import governance
+from app.api.v1 import org
+from app.middleware.cache_control import CacheControlMiddleware
+from app.middleware.audit import AuditMiddleware
+from app.middleware.metrics import MetricsMiddleware
+from app.services.audit_logger import AuditLogger
+from app.middleware.tenant import TenantMiddleware
+from app.middleware.trace import TraceMiddleware
+from app.db.registry import set_db
 from app.db.supabase_db import SupabaseDB
-from app.models.schemas import (
-    CaseCreate,
-    DocumentCreate,
-    DistillResponse,
-    DecisionResponse,
-    PipelineResponse,
-)
-from app.services.distill_engine import FinDistillAdapter
-from app.services.robot_engine import FinRobotAdapter
-from app.services.orchestrator import Orchestrator
+from app.db.postgres_db import PostgresDB
+from app.db.client import InMemoryDB
+from app.middleware.rate_limit import RateLimitMiddleware
+from app.core.logging import configure_logging
+from app.services.auto_scaler import PerformanceAutoScaler
+from app.services.market_scheduler import MarketScheduler
+from app.services.market_data import market_data_service
 
-settings = load_settings()
+_settings = load_settings()
+configure_logging("backend")
+logger = logging.getLogger(__name__)
+_db_backend = (_settings.db_backend or "").strip().lower()
+if not _db_backend:
+    _db_backend = "supabase" if _settings.supabase_url and _settings.supabase_service_role_key else "memory"
 
+if _db_backend == "postgres" and _settings.database_url:
+    _db = PostgresDB(_settings.database_url)
+elif _db_backend == "supabase" and _settings.supabase_url and _settings.supabase_service_role_key:
+    _db = SupabaseDB(_settings.supabase_url, _settings.supabase_service_role_key)
+else:
+    _db = InMemoryDB()
+set_db(_db)
 
-def init_db():
-    if settings.supabase_url and settings.supabase_service_role_key:
-        return SupabaseDB(settings.supabase_url, settings.supabase_service_role_key)
-    return InMemoryDB()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _apply_unstructured_patch()
+    report = collect_preflight(_settings, _db)
+    if _settings.app_env.lower() == "prod" and report["blockers"]:
+        blocker_keys = [c["key"] for c in report["blockers"]]
+        raise RuntimeError(f"Enterprise preflight failed (blockers): {', '.join(blocker_keys)}")
+    scaler = PerformanceAutoScaler()
+    task = asyncio.create_task(scaler.run())
+    scheduler = MarketScheduler()
+    task_scheduler = asyncio.create_task(scheduler.run())
+    yield
+    task.cancel()
+    task_scheduler.cancel()
+    try:
+        await market_data_service.close()
+    except Exception:
+        logger.warning("market data session close failed", exc_info=True)
+    for t in (task, task_scheduler):
+        try:
+            await t
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.warning("background task shutdown error", exc_info=True)
 
+app = FastAPI(lifespan=lifespan)
 
-app = FastAPI(title="Preciso Core", version="0.1.0")
+app.add_middleware(TenantMiddleware)
+app.add_middleware(TraceMiddleware)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+app.add_middleware(CacheControlMiddleware)
+app.add_middleware(MetricsMiddleware)
+app.add_middleware(AuditMiddleware, audit_logger=AuditLogger(_db))
+app.add_middleware(RateLimitMiddleware)
 
-_db = init_db()
-_distill = FinDistillAdapter()
-_robot = FinRobotAdapter()
-_orchestrator = Orchestrator(_db, _distill, _robot)
+_ui_path = Path(__file__).resolve().parent / "ui"
+legacy_ui_enabled = os.getenv("LEGACY_UI_ENABLED", "0") == "1"
+if _ui_path.exists() and (_settings.app_env.lower() != "prod" or legacy_ui_enabled):
+    app.mount("/ui", StaticFiles(directory=str(_ui_path), html=True), name="ui")
 
-app.mount("/ui", StaticFiles(directory="app/ui"), name="ui")
+app.include_router(dataforge.router, prefix="/api/v1")
+app.include_router(extract.router, prefix="/api/v1")
+app.include_router(ingest.router, prefix="/api/v1")
+app.include_router(generate.router, prefix="/api/v1")
+app.include_router(annotate.router, prefix="/api/v1")
+app.include_router(approval.router, prefix="/api/v1")
+app.include_router(opsgraph.router, prefix="/api/v1")
+app.include_router(export.router, prefix="/api/v1")
+app.include_router(metrics.router, prefix="/api/v1")
+app.include_router(retrieval.router, prefix="/api/v1")
+app.include_router(multi_agent.router, prefix="/api/v1")
+app.include_router(datasets.router, prefix="/api/v1")
+app.include_router(quant.router, prefix="/api/v1")
+app.include_router(market.router, prefix="/api/v1")
+app.include_router(partners.router, prefix="/api/v1")
+app.include_router(admin_partners.router, prefix="/api/v1")
+app.include_router(config_public.router, prefix="/api/v1")
+app.include_router(config_admin.router, prefix="/api/v1")
+app.include_router(admin_integrations.router, prefix="/api/v1")
+app.include_router(admin_supabase.router, prefix="/api/v1")
+app.include_router(admin_connectivity.router, prefix="/api/v1")
+app.include_router(admin_retention.router, prefix="/api/v1")
+app.include_router(causal.router, prefix="/api/v1")
+app.include_router(admin_logs.router, prefix="/api/v1")
+app.include_router(training.router, prefix="/api/v1")
+app.include_router(collab.router, prefix="/api/v1")
+app.include_router(pipeline.router, prefix="/api/v1")
+app.include_router(rag.router, prefix="/api/v1")
+app.include_router(policy.router, prefix="/api/v1")
+app.include_router(console.router, prefix="/api/v1")
+app.include_router(lakehouse.router, prefix="/api/v1")
+app.include_router(mlflow_api.router, prefix="/api/v1")
+app.include_router(governance.router, prefix="/api/v1")
+app.include_router(org.router, prefix="/api/v1")
 
-
-def _load_ui(page: str) -> str:
-    with open(f"app/ui/{page}", "r", encoding="utf-8") as f:
-        return f.read()
-
-
-def _html_response(page: str) -> HTMLResponse:
-    content = _load_ui(page)
-    return HTMLResponse(
-        content=content,
-        headers={
-            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-            "Pragma": "no-cache",
-            "Expires": "0",
-        },
-    )
-
-
-@app.get("/", response_class=HTMLResponse)
-def ui_root():
-    return _html_response("index.html")
-
-
-@app.get("/cases.html", response_class=HTMLResponse)
-def ui_cases():
-    return _html_response("cases.html")
-
-
-@app.get("/decisions.html", response_class=HTMLResponse)
-def ui_decisions():
-    return _html_response("decisions.html")
-
-
-@app.get("/audit.html", response_class=HTMLResponse)
-def ui_audit():
-    return _html_response("audit.html")
-
-
-@app.get("/admin.html", response_class=HTMLResponse)
-def ui_admin():
-    return _html_response("admin.html")
-
-
-@app.get("/debug.html", response_class=HTMLResponse)
-def ui_debug():
-    return _html_response("debug.html")
-
+def _apply_unstructured_patch() -> None:
+    repo_root = os.getenv("PRECISO_REPO_ROOT", str(Path(__file__).resolve().parents[1]))
+    patch_script = Path(repo_root) / "scripts" / "patch_unstructured_api.py"
+    if not patch_script.exists():
+        return
+    try:
+        result = subprocess.run(
+            [sys.executable, str(patch_script)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            logger.warning("Unstructured patch script failed: %s", result.stderr.strip() or result.stdout.strip())
+        else:
+            logger.info("Unstructured patch script executed: %s", result.stdout.strip())
+    except Exception as exc:
+        logger.warning("Unstructured patch script execution error: %s", exc)
 
 @app.get("/health")
-def health():
-    return {"status": "ok", "env": settings.app_env, "domain": settings.public_domain}
+async def health():
+    return {"status": "ok"}
 
-
-@app.get("/plain", response_class=PlainTextResponse)
-def plain():
-    return PlainTextResponse(
-        "PRECISO OK",
-        headers={
-            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-            "Pragma": "no-cache",
-            "Expires": "0",
-        },
-    )
-
-
-@app.get("/simple", response_class=HTMLResponse)
-def simple():
-    html = """<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Preciso Simple</title>
-    <style>
-      html, body { margin: 0; padding: 0; background: #ffffff; color: #111111; font-family: Arial, sans-serif; }
-      .wrap { padding: 32px; }
-      h1 { font-size: 28px; margin: 0 0 12px; }
-      p { font-size: 16px; }
-    </style>
-  </head>
-  <body>
-    <div class="wrap">
-      <h1>PRECISO SIMPLE OK</h1>
-      <p>If you see this, rendering works.</p>
-    </div>
-  </body>
-</html>"""
-    return HTMLResponse(
-        content=html,
-        headers={
-            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-            "Pragma": "no-cache",
-            "Expires": "0",
-        },
-    )
-
-
-@app.post("/cases")
-def create_case(payload: CaseCreate):
-    case_id = _db.create_case({"title": payload.title})
-    return {"case_id": case_id}
-
-
-@app.get("/cases")
-def list_cases():
-    return _db.list_cases()
-
-
-@app.get("/documents")
-def list_documents():
-    return _db.list_documents()
-
-
-@app.post("/cases/{case_id}/documents")
-def add_document(case_id: str, payload: DocumentCreate):
-    if not _db.get_case(case_id):
-        raise HTTPException(status_code=404, detail="case not found")
-    doc_id = _db.add_document(case_id, payload.dict())
-    return {"doc_id": doc_id}
-
-
-@app.post("/cases/{case_id}/distill", response_model=DistillResponse)
-async def distill(case_id: str):
-    case = _db.get_case(case_id)
-    if not case:
-        raise HTTPException(status_code=404, detail="case not found")
-    if not case.get("documents"):
-        raise HTTPException(status_code=400, detail="no documents")
-    doc_id = case["documents"][0]
-    document = _db.docs.get(doc_id, {}) if hasattr(_db, "docs") else {}
-    if not document:
-        documents = _db.list_documents()
-        document = next((d.get("payload", {}) for d in documents if d.get("doc_id") == doc_id), {})
-    distill_result = await _distill.extract(document)
-    _db.save_distill(case_id, distill_result)
-    return DistillResponse(
-        facts=distill_result.facts,
-        cot_markdown=distill_result.cot_markdown,
-        metadata=distill_result.metadata,
-    )
-
-
-@app.post("/cases/{case_id}/decide", response_model=DecisionResponse)
-def decide(case_id: str):
-    case = _db.get_case(case_id)
-    if not case:
-        raise HTTPException(status_code=404, detail="case not found")
-    distill_result = case.get("distill")
-    if not distill_result:
-        raise HTTPException(status_code=400, detail="distill required")
-    decision_result = _robot.decide(distill_result)
-    _db.save_decision(case_id, decision_result)
-    return DecisionResponse(
-        decision=decision_result.decision,
-        rationale=decision_result.rationale,
-        actions=decision_result.actions,
-        approvals=decision_result.approvals,
-    )
-
-
-@app.post("/cases/{case_id}/run", response_model=PipelineResponse)
-async def run_pipeline(case_id: str):
-    case = _db.get_case(case_id)
-    if not case:
-        raise HTTPException(status_code=404, detail="case not found")
-    if not case.get("documents"):
-        raise HTTPException(status_code=400, detail="no documents")
-    doc_id = case["documents"][0]
-    document = _db.docs.get(doc_id, {}) if hasattr(_db, "docs") else {}
-    if not document:
-        documents = _db.list_documents()
-        document = next((d.get("payload", {}) for d in documents if d.get("doc_id") == doc_id), {})
-
-    result = await _orchestrator.run(case_id, document)
-    return PipelineResponse(
-        case_id=result.case_id,
-        distill=DistillResponse(
-            facts=result.distill.facts,
-            cot_markdown=result.distill.cot_markdown,
-            metadata=result.distill.metadata,
-        ),
-        decision=DecisionResponse(
-            decision=result.decision.decision,
-            rationale=result.decision.rationale,
-            actions=result.decision.actions,
-            approvals=result.decision.approvals,
-        ),
-    )
-
-
-@app.get("/cases/{case_id}")
-def get_case(case_id: str):
-    case = _db.get_case(case_id)
-    if not case:
-        raise HTTPException(status_code=404, detail="case not found")
-    return case
-
-
-@app.get("/rag/list")
-def rag_list(limit: int = 100):
-    return _db.list_rag_context(limit=limit)
-
-
-@app.get("/rag/search")
-def rag_search(
-    entity: Optional[str] = None,
-    period: Optional[str] = None,
-    keyword: Optional[str] = None,
-    limit: int = 50,
-):
-    return _db.search_rag_context(entity=entity, period=period, keyword=keyword, limit=limit)
-
-
-@app.get("/graph/list")
-def graph_list(limit: int = 100):
-    return _db.list_graph_triples(limit=limit)
-
-
-@app.get("/graph/search")
-def graph_search(
-    head: Optional[str] = None,
-    relation: Optional[str] = None,
-    tail: Optional[str] = None,
-    limit: int = 50,
-):
-    return _db.search_graph_triples(head=head, relation=relation, tail=tail, limit=limit)
-
-
-@app.get("/training-sets/list")
-def training_sets_list(limit: int = 100):
-    return _db.list_training_sets(limit=limit)
-
-
-@app.get("/training-sets/search")
-def training_sets_search(
-    case_id: Optional[str] = None,
-    keyword: Optional[str] = None,
-    limit: int = 50,
-):
-    return _db.search_training_sets(case_id=case_id, keyword=keyword, limit=limit)
+@app.get("/api/v1/status")
+async def get_status():
+    report = collect_preflight(_settings, _db)
+    report["status_message"] = "Preciso DataForge API running"
+    report["runtime"]["python"] = os.getenv("PYTHON_VERSION") or None
+    return report

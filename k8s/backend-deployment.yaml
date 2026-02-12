@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: preciso-backend
+  namespace: preciso
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: preciso-backend
+  template:
+    metadata:
+      labels:
+        app: preciso-backend
+    spec:
+      containers:
+        - name: backend
+          image: IMAGE_BACKEND
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: preciso-config
+            - secretRef:
+                name: preciso-secrets
+          readinessProbe:
+            httpGet:
+              path: /api/v1/status
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/v1/status
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 20

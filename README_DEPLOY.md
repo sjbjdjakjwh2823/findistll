@@ -242,3 +242,51 @@ bash scripts/run_mac.sh
 - `SETUP_MAC.md`
 - `RUN_MAC.md`
 - `DEPLOY_MAC.md`
+
+---
+
+## 🔐 Kong Gateway (Rate Limiting)
+
+Kong declarative config added at:
+- `kong.yml`
+
+This config applies API key auth + rate limiting for:
+- `/rag/*`
+- `/api/v1/*`
+
+Environment variables required:
+- `STARTER_API_KEY`
+- `PRO_API_KEY`
+- `ENTERPRISE_API_KEY`
+
+Redis required for rate-limiting plugin:
+- host: `redis`
+- port: `6379`
+
+## On-Prem Deployment (Docker Compose)
+
+Files:
+- `docker-compose.onprem.yml`
+- `.env.template`
+- `launcher.sh` / `launcher.bat`
+
+Quick start:
+1. Copy `.env.template` to `.env` and fill in values.
+2. Run `./launcher.sh` (macOS/Linux) or `launcher.bat` (Windows).
+
+Notes:
+- Set `LICENSE_CHECK_ENABLED=1` to enforce license validation.
+- If you use a private registry, set `REGISTRY` before running the launcher.
+
+## Docker Update (Rolling)
+Use the built-in update script:
+- `scripts/docker_update.sh`
+
+Example:
+```
+COMPOSE_FILE=docker-compose.onprem.yml ./scripts/docker_update.sh
+```
+
+## Kubernetes (Prepared)
+Kubernetes manifests are prepared under `k8s/` for future rollout.
+They are not active by default and require secrets configuration.

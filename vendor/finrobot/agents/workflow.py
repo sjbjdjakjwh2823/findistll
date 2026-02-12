@@ -115,11 +115,11 @@ class SingleAssistantBase(ABC):
 
     @abstractmethod
     def chat(self):
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def reset(self):
-        pass
+        raise NotImplementedError
 
 
 class SingleAssistant(SingleAssistantBase):
@@ -333,7 +333,7 @@ class MultiAssistantBase(ABC):
 
     @abstractmethod
     def _get_representative(self) -> ConversableAgent:
-        pass
+        raise NotImplementedError
 
     def chat(self, message: str, use_cache=False, **kwargs):
         with Cache.disk() as cache:

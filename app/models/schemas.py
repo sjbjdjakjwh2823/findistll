@@ -7,6 +7,7 @@ class CaseCreate(BaseModel):
 
 
 class DocumentCreate(BaseModel):
+    company_id: Optional[str] = None
     source: str = "upload"
     filename: str = "document.txt"
     mime_type: str = "text/plain"

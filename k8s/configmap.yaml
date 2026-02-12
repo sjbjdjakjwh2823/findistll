@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: preciso-config
+  namespace: preciso
+data:
+  APP_ENV: "prod"
+  RBAC_ENFORCED: "1"
+  TENANT_HEADER_REQUIRED: "1"
+  DB_BACKEND: "supabase"
+  RATE_LIMIT_ENABLED: "1"
+  RATE_LIMIT_PER_MINUTE: "60"
+  RATE_LIMIT_PARTNER_PER_MINUTE: "30"
+  DEFAULT_TENANT_ID: "public"
+  RETENTION_DAYS_AUDIT: "365"
+  RETENTION_DAYS_DOCS: "0"
+  RETENTION_DAYS_SPOKES: "0"
+  AUDIT_IMMUTABLE: "0"
+  LAKEHOUSE_ENABLED: "1"
+  DELTA_ROOT_URI: "s3a://preciso-lakehouse"
+  MINIO_ENDPOINT: "http://lakehouse-minio:9000"
+  SPARK_API_URL: "http://lakehouse-spark-master:8080"
+  AIRFLOW_API_URL: ""
+  MLFLOW_TRACKING_URI: "http://lakehouse-mlflow:5000"
+  UNITY_CATALOG_API_URL: "http://lakehouse-unity-catalog:8085"

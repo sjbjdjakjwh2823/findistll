@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: preciso
+resources:
+  - minio.yaml
+  - spark-master.yaml
+  - spark-worker.yaml
+  - mlflow.yaml
+  - unity-catalog.yaml

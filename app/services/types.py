@@ -15,6 +15,8 @@ class DecisionResult:
     rationale: str
     actions: List[Dict[str, Any]] = field(default_factory=list)
     approvals: List[Dict[str, Any]] = field(default_factory=list)
+    trace: Optional[Dict[str, Any]] = None  # Phase 2: AI Brain traceability
+    selfcheck: Optional[Dict[str, Any]] = None  # Phase 7.5: SelfCheck consistency
 
 
 @dataclass

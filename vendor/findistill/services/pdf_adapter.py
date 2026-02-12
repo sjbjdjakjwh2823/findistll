@@ -35,6 +35,14 @@ class PDFSemanticAdapter:
 
     def _adapt_table(self, table: Dict[str, Any]) -> List[SemanticFact]:
         facts = []
+        table_name = str(table.get("name") or "")
+        page_num = None
+        m = re.search(r"\bp\s*(\d+)\b", table_name, re.IGNORECASE)
+        if m:
+            try:
+                page_num = int(m.group(1))
+            except Exception:
+                page_num = None
         headers = table.get("headers", [])
         rows = table.get("rows", [])
         
@@ -67,7 +75,8 @@ class PDFSemanticAdapter:
                     h_val = int(str(h).strip())
                     if 1990 <= h_val <= 2030:
                         col_periods[idx] = str(h_val)
-                except: pass
+                except Exception:
+                    logger.debug("pdf adapter header year parse failed", exc_info=True)
             
             if not col_periods:
                 # Still empty, use positional fallback
@@ -75,13 +84,14 @@ class PDFSemanticAdapter:
                 try:
                     col_periods[2] = str(int(self.fiscal_year) - 1)
                 except:
-                    pass
+                    logger.debug("pdf adapter prior year fallback failed", exc_info=True)
 
-        for row in rows:
+        for row_idx, row in enumerate(rows):
             if not row or len(row) < 2:
                 continue
                 
             label = str(row[0]) # First col is usually label
+            concept = self._canonical_concept(label)
             
             for idx, cell_val in enumerate(row):
                 if idx == 0: continue # Skip label col
@@ -228,18 +238,27 @@ class PDFSemanticAdapter:
                     # So I should modify `unstructured_parser.py` to use the `found_concept` (Value) as the row label
                     # if semantic alignment succeeded.
                     
-                    pass
+                    logger.warning("semantic alignment unavailable; using raw label", exc_info=True)
 
+                    dims = {"raw_label": label, "table": table_name, "row_idx": row_idx, "col_idx": idx}
+                    try:
+                        if idx < len(headers):
+                            dims["col_name"] = str(headers[idx])
+                    except Exception:
+                        logger.debug("pdf adapter col_name parse failed", exc_info=True)
+                    if page_num is not None:
+                        dims["page"] = str(page_num)
                     facts.append(SemanticFact(
-                        concept=self._sanitize_concept(label),
+                        concept=concept,
                         label=label,
                         value=clean_val,
                         raw_value=str(cell_val),
                         unit=unit_type,
                         period=period_label,
-                        context_ref=f"ctx_{period_label}",
+                        context_ref=f"ctx_{period_label}" + (f"_p{page_num}" if page_num is not None else ""),
                         decimals=None,
-                        is_consolidated=True
+                        is_consolidated=True,
+                        dimensions=dims,
                     ))
                     
         return facts
@@ -335,15 +354,42 @@ class PDFSemanticAdapter:
                 # V14.2 Fix: Use absolute value for check to handle negative numbers correctly
                 if abs(num_val) > Decimal("1000000"):
                     num_val = num_val / Decimal("1000000000")
-                
                 # If it was "12.5B" (12.5 * 1e9), the above check also handles it correctly.
-                pass
             
             return num_val, unit_type
             
-        except:
+        except Exception:
+            logger.debug("pdf adapter parse_value failed", exc_info=True)
             return None, unit_type
 
     def _sanitize_concept(self, label: str) -> str:
         """Convert 'Total Revenue' -> 'TotalRevenue'."""
         return re.sub(r'[^a-zA-Z0-9]', '', label)
+
+    def _canonical_concept(self, label: str) -> str:
+        """
+        Map common financial statement labels to stable concepts.
+        This dramatically improves downstream joins/metrics for unstructured PDFs.
+        """
+        s = (label or "").strip().lower()
+        s = re.sub(r"\s+", " ", s)
+        # Income statement
+        if re.search(r"\b(total\s+)?revenue(s)?\b", s) or re.search(r"\bnet\s+sales\b", s):
+            return "Revenue"
+        if re.search(r"\bnet\s+income\b", s) or re.search(r"\bnet\s+earnings\b", s):
+            return "NetIncome"
+        if re.search(r"\boperating\s+income\b", s) or re.search(r"\bincome\s+from\s+operations\b", s):
+            return "OperatingIncome"
+        if re.search(r"\bcost\s+of\s+revenue\b", s) or re.search(r"\bcost\s+of\s+sales\b", s):
+            return "CostOfRevenue"
+        # Balance sheet
+        if re.search(r"\btotal\s+assets\b", s):
+            return "TotalAssets"
+        if re.search(r"\btotal\s+liabilit", s):
+            return "TotalLiabilities"
+        if re.search(r"\bcash\s+and\s+cash\s+equivalents\b", s) or re.search(r"\bcash\s+and\s+equivalents\b", s):
+            return "CashAndCashEquivalents"
+        # Per-share
+        if re.search(r"\bearnings\s+per\s+share\b", s) or re.search(r"\beps\b", s):
+            return "EarningsPerShare"
+        return self._sanitize_concept(label)

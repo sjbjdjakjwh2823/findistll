@@ -10,15 +10,85 @@ Exports normalized financial data to:
 
 import json
 import logging
+import os
 from typing import Dict, Any
 from datetime import datetime
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Avoid configuring global logging in a library module. The application should configure logging.
+if os.getenv("PRECISO_CONFIGURE_LOGGING", "0") == "1":
+    logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class DataExporter:
     """Exports financial data to various formats for AI training."""
+
+    def export_facts(self, facts, metadata: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize SemanticFact list into a stable table structure.
+        This avoids hard failures when only facts are available.
+        """
+        def _get(item, key):
+            if isinstance(item, dict):
+                return item.get(key)
+            return getattr(item, key, None)
+        rows = []
+        for fact in facts or []:
+            row = {
+                "concept": _get(fact, "concept"),
+                "value": _get(fact, "value"),
+                "raw_value": _get(fact, "raw_value"),
+                "normalized_value": _get(fact, "normalized_value"),
+                "period": _get(fact, "period"),
+                "unit": _get(fact, "unit"),
+                "currency": _get(fact, "currency"),
+                "entity": _get(fact, "entity"),
+                "dimensions": _get(fact, "dimensions"),
+                "source": _get(fact, "source"),
+                "confidence": _get(fact, "confidence"),
+                "evidence": _get(fact, "evidence"),
+            }
+            rows.append(row)
+
+        return {
+            "title": metadata.get("company", "Financial Document"),
+            "metadata": metadata or {},
+            "tables": [
+                {
+                    "name": "facts",
+                    "headers": [
+                        "concept",
+                        "value",
+                        "raw_value",
+                        "normalized_value",
+                        "period",
+                        "unit",
+                        "currency",
+                        "entity",
+                        "dimensions",
+                        "source",
+                        "confidence",
+                        "evidence",
+                    ],
+                    "rows": [
+                        [r.get(h) for h in [
+                            "concept",
+                            "value",
+                            "raw_value",
+                            "normalized_value",
+                            "period",
+                            "unit",
+                            "currency",
+                            "entity",
+                            "dimensions",
+                            "source",
+                            "confidence",
+                            "evidence",
+                        ]]
+                        for r in rows
+                    ],
+                }
+            ],
+        }
     
     def to_jsonl(self, data: Dict[str, Any]) -> str:
         """
@@ -34,9 +104,27 @@ class DataExporter:
             return "\n".join(data["jsonl_data"])
             
         if not reasoning_qa:
-            # STOP EXECUTION if no data is present. Do not create 0-byte or empty status files.
-            logger.error("CRITICAL: reasoning_qa is empty. Aborting export.")
-            raise ValueError("CRITICAL ERROR: Reasoning QA list is empty. Engine failed to generate data.")
+            # Keep exports robust: some ingestion paths produce facts without CoT/Q&A.
+            # For AI training, quant, and RAG, it's better to emit a minimal JSONL than fail the whole pipeline.
+            facts = data.get("facts", []) or []
+            if not facts:
+                logger.warning("reasoning_qa is empty and no facts were extracted. Returning empty JSONL.")
+                return ""
+
+            def chunks(items, n):
+                for i in range(0, len(items), n):
+                    yield items[i:i+n]
+
+            lines = []
+            for chunk in chunks(facts, 50):
+                entry = {
+                    "instruction": "Normalize extracted financial facts into structured JSON for downstream analysis.",
+                    "input": data.get("title", "Financial Document"),
+                    "output": json.dumps({"facts": chunk}, ensure_ascii=False),
+                    "metadata": data.get("metadata", {}),
+                }
+                lines.append(json.dumps(entry, ensure_ascii=False))
+            return "\n".join(lines)
 
         # Fallback for data structures without pre-generated JSONL
         lines = []
@@ -53,8 +141,8 @@ class DataExporter:
         if not lines:
              raise ValueError("CRITICAL ERROR: JSONL line generation failed despite presence of reasoning_qa.")
 
-        # EXPLICIT CONFIRMATION LOG
-        print(f"V11.5 EXPORT READY: {len(lines)} Rows Found")
+        if os.getenv("PRECISO_DEBUG_LOGS", "0") == "1":
+            logger.info("EXPORT READY: %s rows", len(lines))
         
         return "\n".join(lines)
     
@@ -120,14 +208,12 @@ class DataExporter:
     
     def to_parquet(self, data: Dict[str, Any]) -> bytes:
         """
-        Convert to Parquet format.
-        Warning: This requires pandas/pyarrow which are not installed in serverless mode to save size.
+        Convert to Parquet format using Polars.
+        Warning: This requires polars/fastexcel which are not installed in serverless mode to save size.
         Will raise an error if called.
         """
         try:
-            import pandas as pd
-            import pyarrow as pa
-            import pyarrow.parquet as pq
+            import polars as pl
             import io
             
             # Implementation if libraries exist
@@ -138,22 +224,54 @@ class DataExporter:
                 rows = table.get("rows", [])
                 
                 if headers and rows:
-                    df = pd.DataFrame(rows, columns=headers)
-                    df["_source_table"] = table_name
-                    dfs.append(df)
+                    # Clean rows to ensure string consistency or let polars infer?
+                    # Polars orient='row' expects keys if using list of dicts, or just list of lists if schema is provided.
+                    # Warning: rows must be list of lists.
+                    try:
+                        # Some tables contain mixed numeric/text cells (footnotes, labels).
+                        # For export robustness, coerce cells to strings here; typed analytics should
+                        # use Spoke B facts/features Parquet instead of raw mixed tables.
+                        cleaned_rows = [
+                            [None if v is None else str(v) for v in row]
+                            for row in rows
+                        ]
+                        df = pl.DataFrame(cleaned_rows, schema=headers, orient="row")
+                        df = df.with_columns(pl.lit(table_name).alias("_source_table"))
+                        dfs.append(df)
+                    except Exception as e:
+                        logger.warning(f"Skipping table {table_name} due to Polars creation error: {e}")
             
             if not dfs:
-                 combined = pd.DataFrame({"info": ["no data"]})
+                 combined = pl.DataFrame({"info": ["no data"]})
             else:
-                 combined = pd.concat(dfs, ignore_index=True)
+                 combined = pl.concat(dfs, how="diagonal")
             
             buffer = io.BytesIO()
-            table = pa.Table.from_pandas(combined)
-            pq.write_table(table, buffer, compression='snappy')
+            combined.write_parquet(buffer, compression='snappy')
             return buffer.getvalue()
             
         except ImportError:
-            raise RuntimeError("Parquet export not supported in serverless mode (requires pyarrow/pandas)")
+            raise RuntimeError("Parquet export not supported in serverless mode (requires polars)")
+
+    def to_triples_csv(self, triples: list) -> str:
+        """
+        Convert Spoke D triples into CSV format:
+        head_node,relation,tail_node,properties
+        """
+        import csv
+        import io
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["head_node", "relation", "tail_node", "properties"])
+        for t in triples or []:
+            writer.writerow([
+                t.get("head_node"),
+                t.get("relation"),
+                t.get("tail_node"),
+                json.dumps(t.get("properties"), ensure_ascii=False),
+            ])
+        return output.getvalue()
 
     def to_hdf5(self, data: Dict[str, Any]) -> bytes:
         """
@@ -237,6 +355,23 @@ class DataExporter:
         except ImportError:
             raise RuntimeError("HDF5 export not supported (requires h5py/numpy). Install with: pip install h5py numpy")
 
+    def to_kg_triples(self, data: Dict[str, Any]) -> list:
+        """Convert facts to Knowledge Graph triples."""
+        triples = []
+        for fact in data.get("facts", []) or []:
+            concept = fact.get("concept") or fact.get("label")
+            value = fact.get("value")
+            period = fact.get("period")
+            unit = fact.get("unit")
+            if concept is None or value is None:
+                continue
+            triples.append({"subject": concept, "predicate": "value", "object": value})
+            if period:
+                triples.append({"subject": concept, "predicate": "period", "object": period})
+            if unit:
+                triples.append({"subject": concept, "predicate": "unit", "object": unit})
+        return triples
+
     def _table_to_text(self, table: Dict[str, Any]) -> str:
         """Convert a table to readable text format."""
         lines = []
@@ -258,4 +393,3 @@ class DataExporter:
 
 # Singleton instance
 exporter = DataExporter()
-
