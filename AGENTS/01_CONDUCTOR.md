@@ -28,6 +28,13 @@ Golden rule:
 - **Workers never touch the same file concurrently.**
 - Conductor merges only when: tests pass + behavior stable + feature flags default off (if change is big).
 
+## Worker Handshake (Automation Gate)
+Before any worker starts coding (or after context switches), they must:
+1. Read `AGENTS/00_PERSISTENT_MEMORY.md` and this file.
+2. Confirm they will only touch files owned by their workstream.
+3. Confirm they will not edit shared contract files (Conductor-only).
+4. Send `git rev-parse --abbrev-ref HEAD` to Conductor (so Conductor can track which branch is active).
+
 ### Worktrees (expected paths)
 - Conductor: main working tree (this directory)
 - Worker 1 (Pipeline/Queue/API): `.worktrees/ws-pipeline-queue`

@@ -6,6 +6,14 @@ Hard rules (must follow):
 - Before doing any work, read:
   - `AGENTS/01_CONDUCTOR.md`
   - `PLANS/Preciso_Enterprise_NonDev_Central_RAG_LLM_Master_Plan_v1.md`
+- Worker handshake (must do every time a worker session starts or switches tasks):
+  - Confirm they read `AGENTS/00_PERSISTENT_MEMORY.md` + `AGENTS/01_CONDUCTOR.md`
+  - Only touch files owned by their workstream (if overlap is needed: stop and ask Conductor)
+  - Do NOT edit shared contract files (propose changes only):
+    - `app/services/types.py`
+    - `app/core/auth.py`
+    - plus any other shared contract file listed in `AGENTS/01_CONDUCTOR.md`
+  - Report `git rev-parse --abbrev-ref HEAD` back to Conductor before starting work
 - Workstreams use **file ownership**. Do not modify files owned by another workstream.
 - Shared contracts are modified in **one branch only** (Conductor branch):
   - `app/services/types.py`
@@ -24,4 +32,3 @@ Worktree rule:
 
 Iteration rule:
 - When a plan phase is close to "DoD", Conductor must create a "Next Plan" to improve quality and keep momentum.
-
