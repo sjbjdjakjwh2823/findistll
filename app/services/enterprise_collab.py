@@ -1643,8 +1643,8 @@ class EnterpriseCollabStore:
         }
         if output_ref is not None:
             payload["output_ref"] = output_ref
-        if error is not None:
-            payload["error"] = error
+        # Allow clearing error by explicitly passing error=None from callers.
+        payload["error"] = error
 
         try:
             if self.kind == "memory":

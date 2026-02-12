@@ -157,30 +157,37 @@ def rag_query(payload: RagQueryIn, user: CurrentUser = Depends(get_current_user)
         files = store.list_files(user_id=user.user_id, role=user.role, limit=500)
         allowed = {str(f.get("doc_id") or "") for f in files if f.get("doc_id")}
         allowed = {d for d in allowed if d}
-        if allowed:
-            allowed_doc_ids = allowed
-            metadata_filter.setdefault("doc_ids", sorted(list(allowed_doc_ids))[:500])
+        allowed_doc_ids = allowed
+        # Always override caller-provided doc_ids to avoid scope escalation (async path cannot re-check ACL).
+        metadata_filter["doc_ids"] = sorted(list(allowed_doc_ids))[:500]
     except Exception:
         allowed_doc_ids = None
+        # Safety fallback: if ACL store is unavailable, force owner scoping for non-admin.
+        if (user.role or "").lower() != "admin":
+            metadata_filter["owner_user_id"] = user.user_id
 
     # Observability + quota: register a tenant-shared pipeline job for this RAG query.
     # This remains synchronous (no queue yet), but makes UI/ops logs consistent.
     if user.user_id and user.user_id != "anonymous":
         try:
             manager = TenantPipelineManager(db)
+            input_ref = {
+                "query": payload.query[:2000],
+                "top_k": k,
+                "threshold": payload.threshold,
+                "doc_scope_count": len(allowed_doc_ids or []),
+                "mode": mode,
+                "metadata_filter": metadata_filter,
+                "role": user.role,
+            }
             job = manager.submit(
                 user_id=user.user_id,
                 job_type="rag",
                 flow="interactive",
-                input_ref={
-                    "query": payload.query[:2000],
-                    "top_k": k,
-                    "threshold": payload.threshold,
-                    "doc_scope_count": len(allowed_doc_ids or []),
-                },
+                input_ref=input_ref,
             )
             job_id = str(job.get("id") or "")
-            if job_id and store is not None:
+            if job_id and store is not None and mode != "async":
                 store.update_pipeline_job_status(
                     actor_user_id=user.user_id,
                     job_id=job_id,
@@ -214,6 +221,16 @@ def rag_query(payload: RagQueryIn, user: CurrentUser = Depends(get_current_user)
             )
         tenant_id = get_effective_tenant_id()
         try:
+            # Mark as queued (pending) after enqueue; worker will transition to processing.
+            try:
+                store.update_pipeline_job_status(
+                    actor_user_id=user.user_id,
+                    job_id=job_id,
+                    status="pending",
+                    output_ref={"mode": "async", "queued": True},
+                )
+            except Exception:
+                pass
             queue.enqueue_rag_query(
                 job_id=job_id,
                 tenant_id=tenant_id,

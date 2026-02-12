@@ -587,7 +587,10 @@ async def ingest_document(
     
     # Process with Polars
     processed_content = process_with_polars(request.content, request.source)
-    
+
+    pipeline_job_id: Optional[str] = None
+    pipeline_store = None
+
     # Insert into database
     doc_data = {
         "source": request.source,
@@ -607,6 +610,45 @@ async def ingest_document(
         doc_id = insert_raw_document(db, doc_data)
         update_document_status(db, doc_id, "completed")
         _auto_register_collab_file(db, owner_user_id=x_preciso_user_id, doc_id=doc_id)
+
+        if x_preciso_user_id and x_preciso_user_id != "anonymous":
+            # Best-effort: track sync ingest as a tenant pipeline job for UX + observability.
+            try:
+                from app.services.enterprise_collab import TenantPipelineManager
+
+                manager = TenantPipelineManager(db)
+                pipeline_store = manager.store
+                job = manager.submit(
+                    user_id=x_preciso_user_id,
+                    job_type="ingest",
+                    flow="interactive",
+                    input_ref={
+                        "doc_id": doc_id,
+                        "file_hash": file_hash,
+                        "source": request.source,
+                        "ticker": request.ticker,
+                        "document_type": request.document_type,
+                        "document_date": request.document_date,
+                    },
+                )
+                pipeline_job_id = str(job.get("id") or "")
+                if pipeline_job_id:
+                    meta = (doc_data.get("metadata") or {}) if isinstance(doc_data, dict) else {}
+                    meta = dict(meta) if isinstance(meta, dict) else {}
+                    meta["pipeline_job_id"] = pipeline_job_id
+                    update_document_metadata(db, doc_id, meta)
+                    try:
+                        pipeline_store.update_pipeline_job_status(
+                            actor_user_id=x_preciso_user_id,
+                            job_id=pipeline_job_id,
+                            status="completed",
+                            output_ref={"doc_id": doc_id, "status": "completed"},
+                        )
+                    except Exception:
+                        pass
+            except Exception:
+                pipeline_job_id = None
+
         _seed_rag_context(
             db=db,
             doc_id=doc_id,
@@ -624,10 +666,21 @@ async def ingest_document(
             document_id=doc_id,
             status="success",
             message="Document ingested successfully",
-            file_hash=file_hash
+            file_hash=file_hash,
+            job_id=pipeline_job_id,
         )
     except Exception as e:
         logger.error(f"Ingestion failed: {e}")
+        if pipeline_job_id and pipeline_store is not None and x_preciso_user_id:
+            try:
+                pipeline_store.update_pipeline_job_status(
+                    actor_user_id=x_preciso_user_id,
+                    job_id=pipeline_job_id,
+                    status="failed",
+                    error=str(e),
+                )
+            except Exception:
+                pass
         raise HTTPException(status_code=500, detail=f"Ingestion failed: {str(e)}")
 
 
@@ -684,7 +737,10 @@ async def upload_file(
     
     # Process with Polars
     processed_content = process_with_polars(raw_content, source)
-    
+
+    pipeline_job_id: Optional[str] = None
+    pipeline_store = None
+
     # Insert into database
     doc_data = {
         "source": source,
@@ -707,6 +763,45 @@ async def upload_file(
         doc_id = insert_raw_document(db, doc_data)
         update_document_status(db, doc_id, "completed")
         _auto_register_collab_file(db, owner_user_id=x_preciso_user_id, doc_id=doc_id)
+
+        if x_preciso_user_id and x_preciso_user_id != "anonymous":
+            # Best-effort: track sync upload as a tenant pipeline job for UX + observability.
+            try:
+                from app.services.enterprise_collab import TenantPipelineManager
+
+                manager = TenantPipelineManager(db)
+                pipeline_store = manager.store
+                job = manager.submit(
+                    user_id=x_preciso_user_id,
+                    job_type="ingest",
+                    flow="interactive",
+                    input_ref={
+                        "doc_id": doc_id,
+                        "file_hash": file_hash,
+                        "source": source,
+                        "ticker": ticker,
+                        "filename": filename,
+                        "document_type": doc_data.get("document_type"),
+                    },
+                )
+                pipeline_job_id = str(job.get("id") or "")
+                if pipeline_job_id:
+                    meta = (doc_data.get("metadata") or {}) if isinstance(doc_data, dict) else {}
+                    meta = dict(meta) if isinstance(meta, dict) else {}
+                    meta["pipeline_job_id"] = pipeline_job_id
+                    update_document_metadata(db, doc_id, meta)
+                    try:
+                        pipeline_store.update_pipeline_job_status(
+                            actor_user_id=x_preciso_user_id,
+                            job_id=pipeline_job_id,
+                            status="completed",
+                            output_ref={"doc_id": doc_id, "status": "completed"},
+                        )
+                    except Exception:
+                        pass
+            except Exception:
+                pipeline_job_id = None
+
         _seed_rag_context(
             db=db,
             doc_id=doc_id,
@@ -724,10 +819,21 @@ async def upload_file(
             document_id=doc_id,
             status="success",
             message=f"File '{filename}' uploaded successfully",
-            file_hash=file_hash
+            file_hash=file_hash,
+            job_id=pipeline_job_id,
         )
     except Exception as e:
         logger.error(f"Upload failed: {e}")
+        if pipeline_job_id and pipeline_store is not None and x_preciso_user_id:
+            try:
+                pipeline_store.update_pipeline_job_status(
+                    actor_user_id=x_preciso_user_id,
+                    job_id=pipeline_job_id,
+                    status="failed",
+                    error=str(e),
+                )
+            except Exception:
+                pass
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
 
