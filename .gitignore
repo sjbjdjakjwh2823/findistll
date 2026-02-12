@@ -24,3 +24,5 @@ __pycache__/
 bin/cloudflared
 bin/cloudflared*
 .worktrees/
+
+skills.md
