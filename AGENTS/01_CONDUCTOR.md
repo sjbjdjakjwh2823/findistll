@@ -58,6 +58,7 @@ Workers must propose contract changes, not implement them.
 - `app/services/task_queue.py`
 - `app/services/enterprise_collab.py`
 - `app/services/metrics_logger.py`
+- `app/worker.py`
 - `app/middleware/` (except auth/rbac)
 - `tests/test_*pipeline*`
 - `tests/test_*queue*`
@@ -117,4 +118,3 @@ When a phase is ~80% done:
   - remaining backlog
   - tests to add
   - rollout gates
-
