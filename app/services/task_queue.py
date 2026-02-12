@@ -13,6 +13,7 @@ class TaskQueue:
     def __init__(self, queue_name: Optional[str] = None) -> None:
         self.queue_name = queue_name or os.getenv("DATAFORGE_QUEUE", "dataforge:extract")
         self.embed_queue = os.getenv("DATAFORGE_EMBED_QUEUE", "dataforge:embed")
+        self.rag_queue = os.getenv("DATAFORGE_RAG_QUEUE", "dataforge:rag")
         self.dead_letter_queue = os.getenv("DATAFORGE_DLQ", "dataforge:dead_letter")
         self.redis_url = os.getenv("REDIS_URL")
         self.client = None
@@ -103,34 +104,50 @@ class TaskQueue:
             return
         self.client.rpush(self.dead_letter_queue, json.dumps(payload))
 
-    def dequeue(self, timeout: int = 5) -> Optional[Dict[str, Any]]:
+    def enqueue_rag_query(self, *, job_id: str, tenant_id: str, user_id: str, role: str, query: str, top_k: int, threshold: float, metadata_filter: Optional[Dict[str, Any]] = None) -> None:
+        if not self.client:
+            raise RuntimeError("Redis not configured for TaskQueue")
+        payload: Dict[str, Any] = {
+            "task_type": "rag_query",
+            "job_id": job_id,
+            "tenant_id": tenant_id,
+            "user_id": user_id,
+            "role": role,
+            "query": query,
+            "top_k": int(top_k),
+            "threshold": float(threshold),
+            "metadata_filter": metadata_filter or {},
+        }
+        if self.mode == "streams":
+            self._xadd(self.rag_queue, payload)
+            return
+        self.client.rpush(self.rag_queue, json.dumps(payload))
+
+    def dequeue_from(self, stream: str, timeout: int = 5) -> Optional[Dict[str, Any]]:
         if not self.client:
             return None
         if self.mode == "streams":
-            self._ensure_group(self.queue_name)
+            self._ensure_group(stream)
             if self.mode != "streams":
                 # WRONGTYPE fallback
-                result = self.client.blpop(self.queue_name, timeout=timeout)
+                result = self.client.blpop(stream, timeout=timeout)
                 if not result:
                     return None
                 _, payload = result
                 return json.loads(payload)
-            # Try to claim stale pending first (best-effort).
-            task = self._try_claim_stale(self.queue_name)
+            task = self._try_claim_stale(stream)
             if task:
                 return task
-            # Consume new messages.
             resp = self.client.xreadgroup(
                 groupname=self.group,
                 consumername=self.consumer,
-                streams={self.queue_name: ">"},
+                streams={stream: ">"},
                 count=1,
                 block=self.block_ms,
             )
             if not resp:
                 return None
-            # resp: [(stream, [(msg_id, {field: value})])]
-            stream, entries = resp[0]
+            stream_name, entries = resp[0]
             msg_id, fields = entries[0]
             raw = fields.get(b"payload") if isinstance(fields, dict) else None
             if raw is None:
@@ -140,16 +157,22 @@ class TaskQueue:
             except Exception:
                 payload = {}
             payload["_msg_id"] = msg_id.decode("utf-8") if isinstance(msg_id, (bytes, bytearray)) else str(msg_id)
-            payload["_stream"] = stream.decode("utf-8") if isinstance(stream, (bytes, bytearray)) else str(stream)
+            payload["_stream"] = stream_name.decode("utf-8") if isinstance(stream_name, (bytes, bytearray)) else str(stream_name)
             payload["_queue_mode"] = "streams"
             payload["_dequeued_at_ms"] = int(time.time() * 1000)
             return payload
 
-        result = self.client.blpop(self.queue_name, timeout=timeout)
+        result = self.client.blpop(stream, timeout=timeout)
         if not result:
             return None
         _, payload = result
         return json.loads(payload)
+
+    def dequeue(self, timeout: int = 5) -> Optional[Dict[str, Any]]:
+        return self.dequeue_from(self.queue_name, timeout=timeout)
+
+    def dequeue_rag(self, timeout: int = 5) -> Optional[Dict[str, Any]]:
+        return self.dequeue_from(self.rag_queue, timeout=timeout)
 
     def ack(self, task: Dict[str, Any]) -> None:
         if not self.client or self.mode != "streams":

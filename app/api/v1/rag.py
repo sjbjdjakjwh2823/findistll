@@ -9,10 +9,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.core.auth import CurrentUser, get_current_user
+from app.core.tenant_context import get_effective_tenant_id
 from app.db.registry import get_db
 from app.services.spoke_c_rag import RAGEngine
 from app.services.metrics_logger import MetricsLogger
 from app.services.enterprise_collab import EnterpriseCollabStore, TenantPipelineManager
+from app.services.task_queue import TaskQueue
 
 
 router = APIRouter(prefix="/rag", tags=["RAG"])
@@ -23,6 +25,7 @@ class RagQueryIn(BaseModel):
     top_k: int = Field(default=5, ge=1, le=20)
     threshold: float = Field(default=0.6, ge=0.0, le=1.0)
     metadata_filter: Optional[Dict[str, Any]] = None
+    mode: str = Field(default="sync", description="sync|async")
 
 
 def _role_policy(role: str) -> Dict[str, Any]:
@@ -137,6 +140,7 @@ def _build_causal_sections(db: Any, query: str, limit: int = 12) -> Dict[str, An
 
 @router.post("/query")
 def rag_query(payload: RagQueryIn, user: CurrentUser = Depends(get_current_user)):
+    mode = (payload.mode or "sync").strip().lower()
     policy = _role_policy(user.role)
     enforce_owner = (user.role or "").lower() in {"viewer", "analyst"}
     metadata_filter = payload.metadata_filter or {}
@@ -186,6 +190,56 @@ def rag_query(payload: RagQueryIn, user: CurrentUser = Depends(get_current_user)
             raise HTTPException(status_code=429, detail=str(exc))
         except Exception:
             job_id = None
+
+    if mode == "async":
+        if os.getenv("RAG_ASYNC_ENABLED", "0") != "1":
+            raise HTTPException(status_code=400, detail="async mode disabled (set RAG_ASYNC_ENABLED=1)")
+        if not job_id or not store:
+            raise HTTPException(status_code=500, detail="failed to allocate pipeline job for async request")
+        queue = TaskQueue()
+        if not queue.enabled():
+            try:
+                store.update_pipeline_job_status(
+                    actor_user_id=user.user_id,
+                    job_id=job_id,
+                    status="failed",
+                    error="TaskQueue disabled: set REDIS_URL to enable async RAG",
+                )
+            except Exception:
+                pass
+            raise HTTPException(
+                status_code=503,
+                detail={"job_id": job_id, "error": "TaskQueue disabled: set REDIS_URL to enable async RAG"},
+            )
+        tenant_id = get_effective_tenant_id()
+        try:
+            queue.enqueue_rag_query(
+                job_id=job_id,
+                tenant_id=tenant_id,
+                user_id=user.user_id,
+                role=user.role,
+                query=payload.query[:8000],
+                top_k=k,
+                threshold=payload.threshold,
+                metadata_filter=metadata_filter,
+            )
+        except Exception as exc:
+            try:
+                store.update_pipeline_job_status(
+                    actor_user_id=user.user_id,
+                    job_id=job_id,
+                    status="failed",
+                    error=str(exc),
+                )
+            except Exception:
+                pass
+            raise HTTPException(status_code=500, detail={"job_id": job_id, "error": str(exc)})
+        return {
+            "job_id": job_id,
+            "status": "pending",
+            "mode": "async",
+        }
+
     supa = getattr(db, "client", None)
     engine = RAGEngine(
         supabase_client=supa,

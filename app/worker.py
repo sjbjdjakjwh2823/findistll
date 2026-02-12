@@ -6,6 +6,7 @@ from pathlib import Path
 from datetime import datetime, timezone, timedelta
 
 from app.core.logging import configure_logging
+from app.core.tenant_context import clear_tenant_id, set_tenant_id
 from app.api.v1.ingest import (
     get_db,
     get_document_by_id,
@@ -29,6 +30,7 @@ def run_worker_loop() -> None:
     logger.info("DataForge worker started")
     engine = UnifiedConversionEngine()
     collab = EnterpriseCollabStore(db)
+    rag_queue_name = os.getenv("DATAFORGE_RAG_QUEUE", "dataforge:rag")
     last_reclaim = 0.0
     lease_seconds = int(os.getenv("DATAFORGE_LEASE_SECONDS", "300"))
     max_retries = int(os.getenv("DATAFORGE_MAX_RETRIES", "3"))
@@ -38,9 +40,15 @@ def run_worker_loop() -> None:
         if now - last_reclaim > 60:
             _reclaim_stale_jobs(db, queue, lease_seconds)
             last_reclaim = now
-        task = queue.dequeue(timeout=5)
+        # Prefer interactive RAG tasks when present to avoid UI latency spikes.
+        task = queue.dequeue_from(rag_queue_name, timeout=1) or queue.dequeue(timeout=5)
         if not task:
             time.sleep(1)
+            continue
+
+        task_type = str(task.get("task_type") or "")
+        if task_type == "rag_query":
+            _handle_rag_task(db, queue, collab, task)
             continue
 
         doc_id = task.get("doc_id")
@@ -283,3 +291,101 @@ def _reclaim_stale_jobs(db, queue: TaskQueue, lease_seconds: int) -> None:
                     queue.enqueue_extract(doc_id)
                 except Exception:
                     update_document_status(db, doc_id, "dead_letter", "requeue failed (queued recovery)")
+
+
+def _handle_rag_task(db, queue: TaskQueue, collab: EnterpriseCollabStore, task: dict) -> None:
+    tenant_id = str(task.get("tenant_id") or "").strip() or "public"
+    user_id = str(task.get("user_id") or "system")
+    role = str(task.get("role") or "viewer")
+    job_id = str(task.get("job_id") or "").strip()
+    query = str(task.get("query") or "").strip()
+    top_k = int(task.get("top_k") or 5)
+    threshold = float(task.get("threshold") or 0.6)
+    metadata_filter = task.get("metadata_filter") or {}
+    if not isinstance(metadata_filter, dict):
+        metadata_filter = {}
+
+    if not job_id or not query:
+        try:
+            queue.ack(task)
+        except Exception:
+            pass
+        return
+
+    set_tenant_id(tenant_id)
+    try:
+        try:
+            collab.update_pipeline_job_status(
+                actor_user_id=user_id,
+                job_id=job_id,
+                status="processing",
+                output_ref={"task": "rag_query"},
+            )
+        except Exception:
+            pass
+
+        from app.services.spoke_c_rag import RAGEngine
+
+        supa = getattr(db, "client", None)
+        engine = RAGEngine(
+            supabase_client=supa,
+            db_client=db,
+            openai_api_key=os.getenv("OPENAI_API_KEY"),
+        )
+        ctx = engine.retrieve(
+            query=query,
+            k=top_k,
+            threshold=threshold,
+            metadata_filter=metadata_filter,
+        )
+        evidence = [
+            {
+                "chunk_id": r.chunk_id,
+                "content": (r.content or "")[:4000],
+                "similarity": r.similarity,
+                "metadata": r.metadata,
+            }
+            for r in (ctx.results or [])
+        ]
+        legacy_summary = engine.format_context(ctx)
+        output_ref = {
+            "k": top_k,
+            "evidence_count": len(evidence),
+            "avg_similarity": float((ctx.metrics or {}).get("avg_similarity", 0) or 0),
+            "result": {
+                "query": query,
+                "evidence": evidence,
+                "legacy_summary": legacy_summary,
+                "metrics": ctx.metrics,
+                "access_level": {"role": role},
+            },
+        }
+        try:
+            collab.update_pipeline_job_status(
+                actor_user_id=user_id,
+                job_id=job_id,
+                status="completed",
+                output_ref=output_ref,
+            )
+        except Exception:
+            pass
+        try:
+            queue.ack(task)
+        except Exception:
+            pass
+    except Exception as exc:
+        try:
+            collab.update_pipeline_job_status(
+                actor_user_id=user_id,
+                job_id=job_id,
+                status="failed",
+                error=str(exc),
+            )
+        except Exception:
+            pass
+        try:
+            queue.ack(task)
+        except Exception:
+            pass
+    finally:
+        clear_tenant_id()
