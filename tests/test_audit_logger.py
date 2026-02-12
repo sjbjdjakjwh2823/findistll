@@ -8,12 +8,10 @@ class TestAuditLogger(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        # Ensure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set for testing
-        # In a real test, you'd use a test-specific Supabase instance or mock it.
-        if not os.environ.get("SUPABASE_URL"):
-            os.environ["SUPABASE_URL"] = "https://nnuixqxmalttautcqckt.supabase.co"
-        if not os.environ.get("SUPABASE_SERVICE_ROLE_KEY"):
-            os.environ["SUPABASE_SERVICE_ROLE_KEY"] = "REDACTED_SUPABASE_SERVICE_ROLE_KEY"
+        # Never embed real credentials in tests. AuditLogger already stores a local
+        # copy of logs when Supabase is not configured.
+        os.environ.pop("SUPABASE_URL", None)
+        os.environ.pop("SUPABASE_SERVICE_ROLE_KEY", None)
 
         cls.logger = AuditLogger()
         cls.test_actor_id = "test_human_123"
@@ -87,9 +85,4 @@ class TestAuditLogger(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    # Before running tests, ensure the Supabase 'audit_logs' table is created
-    # and RLS policies are applied as defined in preciso/supabase_audit_logs.sql.
-    # For local development/testing, you might run this SQL manually in your Supabase UI.
-    print("\n*** IMPORTANT: Ensure Supabase 'audit_logs' table and RLS policies are set up! ***")
-    print("*** Please execute the SQL in preciso/supabase_audit_logs.sql manually in your Supabase project. ***")
     unittest.main(exit=False)

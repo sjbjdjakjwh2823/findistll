@@ -14,12 +14,14 @@ from supabase import create_client
 
 
 def get_supabase_client():
-    """Create Supabase client from environment or hardcoded fallback."""
-    url = os.getenv("SUPABASE_URL", "https://nnuixqxmalttautcqckt.supabase.co")
-    key = os.getenv(
-        "SUPABASE_SERVICE_ROLE_KEY",
-        "REDACTED_SUPABASE_SERVICE_ROLE_KEY"
-    )
+    """Create Supabase client from environment.
+
+    SECURITY: Do not ship hardcoded service role keys.
+    """
+    url = (os.getenv("SUPABASE_URL") or "").strip()
+    key = (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
+    if not url or not key:
+        raise SystemExit("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY")
     return create_client(url, key)
 
 
