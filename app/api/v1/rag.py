@@ -15,6 +15,7 @@ from app.services.spoke_c_rag import RAGEngine
 from app.services.metrics_logger import MetricsLogger
 from app.services.enterprise_collab import EnterpriseCollabStore, TenantPipelineManager
 from app.services.task_queue import TaskQueue
+from app.services.feature_flags import get_flag
 
 
 router = APIRouter(prefix="/rag", tags=["RAG"])
@@ -192,7 +193,7 @@ def rag_query(payload: RagQueryIn, user: CurrentUser = Depends(get_current_user)
             job_id = None
 
     if mode == "async":
-        if os.getenv("RAG_ASYNC_ENABLED", "0") != "1":
+        if not get_flag("rag_async_enabled"):
             raise HTTPException(status_code=400, detail="async mode disabled (set RAG_ASYNC_ENABLED=1)")
         if not job_id or not store:
             raise HTTPException(status_code=500, detail="failed to allocate pipeline job for async request")

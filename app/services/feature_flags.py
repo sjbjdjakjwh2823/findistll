@@ -12,12 +12,14 @@ _FLAG_ENV = {
     "rag_cache_enabled": "RAG_CACHE_ENABLED",
     "rag_rerank_enabled": "RAG_RERANK_ENABLED",
     "rag_compress_enabled": "RAG_COMPRESS_ENABLED",
+    "rag_async_enabled": "RAG_ASYNC_ENABLED",
     "finrobot_enabled": "FINROBOT_ENABLED",
     "rate_limit_enabled": "RATE_LIMIT_ENABLED",
     "license_check_enabled": "LICENSE_CHECK_ENABLED",
     "lakehouse_enabled": "LAKEHOUSE_ENABLED",
     "egress_sensitive_block": "EGRESS_SENSITIVE_BLOCK",
     "egress_approval_required": "EGRESS_APPROVAL_REQUIRED",
+    "pdf_text_layer_probe_first": "PDF_TEXT_LAYER_PROBE_FIRST",
 }
 
 _FLAG_META = {
@@ -26,12 +28,14 @@ _FLAG_META = {
     "rag_cache_enabled": "Enable Redis-backed RAG cache",
     "rag_rerank_enabled": "Enable RAG re-ranker",
     "rag_compress_enabled": "Enable RAG compression",
+    "rag_async_enabled": "Enable async RAG mode (queue/worker) for heavy queries",
     "finrobot_enabled": "Enable FinRobot multi-agent pipeline",
     "rate_limit_enabled": "Enable API rate limiting",
     "license_check_enabled": "Enable license checks middleware",
     "lakehouse_enabled": "Enable Lakehouse services (Delta/Spark/MLflow/UC)",
     "egress_sensitive_block": "Block external egress when sensitive content detected",
     "egress_approval_required": "Require approval before external egress",
+    "pdf_text_layer_probe_first": "Prefer PDF text-layer when sufficient before doing OCR",
 }
 
 
