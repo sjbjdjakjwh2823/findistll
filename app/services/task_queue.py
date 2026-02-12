@@ -2,6 +2,7 @@ import json
 import os
 from typing import Any, Dict, Optional
 import time
+from typing import List
 
 try:
     import redis
@@ -96,7 +97,7 @@ class TaskQueue:
     def enqueue_dead_letter(self, doc_id: str, reason: Optional[str] = None, extra: Optional[Dict[str, Any]] = None) -> None:
         if not self.client:
             raise RuntimeError("Redis not configured for TaskQueue")
-        payload = {"doc_id": doc_id, "reason": reason}
+        payload: Dict[str, Any] = {"doc_id": doc_id, "reason": reason, "enqueued_at_ms": int(time.time() * 1000)}
         if isinstance(extra, dict) and extra:
             payload.update(extra)
         if self.mode == "streams":
@@ -230,3 +231,131 @@ class TaskQueue:
             except Exception:
                 return 0
         return int(self.client.llen(self.dead_letter_queue))
+
+    # ---------------------------------------------------------------------
+    # DLQ admin ops (tenant-filtered best-effort)
+    # ---------------------------------------------------------------------
+    def dlq_peek_for_tenant(self, *, tenant_id: str, limit: int = 50, scan_limit: int = 500) -> Dict[str, Any]:
+        """
+        Returns up to `limit` DLQ entries matching `tenant_id` by scanning the first `scan_limit` messages.
+        This is best-effort (not atomic) and intended for admin UI/ops.
+        """
+        if not self.client:
+            return {"items": [], "scanned": 0, "matched": 0}
+        tenant_id = (tenant_id or "").strip() or "public"
+        items: List[Dict[str, Any]] = []
+        scanned = 0
+
+        if self.mode == "streams":
+            try:
+                entries = self.client.xrange(self.dead_letter_queue, min="-", max="+", count=int(scan_limit))
+                scanned = len(entries or [])
+                for msg_id, fields in entries or []:
+                    raw = fields.get(b"payload") if isinstance(fields, dict) else None
+                    if raw is None:
+                        continue
+                    try:
+                        payload = json.loads(raw.decode("utf-8"))
+                    except Exception:
+                        payload = {}
+                    if str(payload.get("tenant_id") or "public") != tenant_id:
+                        continue
+                    payload = dict(payload)
+                    payload["_dlq_id"] = msg_id.decode("utf-8") if isinstance(msg_id, (bytes, bytearray)) else str(msg_id)
+                    items.append(payload)
+                    if len(items) >= int(limit):
+                        break
+                return {"items": items, "scanned": scanned, "matched": len(items)}
+            except Exception as exc:
+                if "WRONGTYPE" in str(exc):
+                    self.mode = "list"
+                else:
+                    return {"items": [], "scanned": 0, "matched": 0}
+
+        try:
+            raws = self.client.lrange(self.dead_letter_queue, 0, int(scan_limit) - 1) or []
+            scanned = len(raws)
+            for raw in raws:
+                raw_bytes = raw if isinstance(raw, (bytes, bytearray)) else str(raw).encode("utf-8")
+                try:
+                    payload = json.loads(raw_bytes.decode("utf-8"))
+                except Exception:
+                    payload = {}
+                if str(payload.get("tenant_id") or "public") != tenant_id:
+                    continue
+                payload = dict(payload)
+                payload["_dlq_raw"] = raw_bytes.decode("utf-8", errors="replace")
+                items.append(payload)
+                if len(items) >= int(limit):
+                    break
+            return {"items": items, "scanned": scanned, "matched": len(items)}
+        except Exception:
+            return {"items": [], "scanned": 0, "matched": 0}
+
+    def dlq_pop_for_tenant(self, *, tenant_id: str, count: int = 1, scan_limit: int = 1000) -> List[Dict[str, Any]]:
+        """
+        Removes and returns up to `count` DLQ entries matching `tenant_id` by scanning the first `scan_limit`.
+        Best-effort (not atomic), intended for admin tooling.
+        """
+        if not self.client:
+            return []
+        tenant_id = (tenant_id or "").strip() or "public"
+        want = max(0, int(count))
+        if want <= 0:
+            return []
+
+        popped: List[Dict[str, Any]] = []
+
+        if self.mode == "streams":
+            try:
+                entries = self.client.xrange(self.dead_letter_queue, min="-", max="+", count=int(scan_limit)) or []
+                for msg_id, fields in entries:
+                    raw = fields.get(b"payload") if isinstance(fields, dict) else None
+                    if raw is None:
+                        continue
+                    try:
+                        payload = json.loads(raw.decode("utf-8"))
+                    except Exception:
+                        payload = {}
+                    if str(payload.get("tenant_id") or "public") != tenant_id:
+                        continue
+                    try:
+                        self.client.xdel(self.dead_letter_queue, msg_id)
+                    except Exception:
+                        continue
+                    payload = dict(payload)
+                    payload["_dlq_id"] = msg_id.decode("utf-8") if isinstance(msg_id, (bytes, bytearray)) else str(msg_id)
+                    popped.append(payload)
+                    if len(popped) >= want:
+                        break
+                return popped
+            except Exception as exc:
+                if "WRONGTYPE" in str(exc):
+                    self.mode = "list"
+                else:
+                    return []
+
+        try:
+            raws = self.client.lrange(self.dead_letter_queue, 0, int(scan_limit) - 1) or []
+            for raw in raws:
+                raw_bytes = raw if isinstance(raw, (bytes, bytearray)) else str(raw).encode("utf-8")
+                try:
+                    payload = json.loads(raw_bytes.decode("utf-8"))
+                except Exception:
+                    payload = {}
+                if str(payload.get("tenant_id") or "public") != tenant_id:
+                    continue
+                try:
+                    removed = self.client.lrem(self.dead_letter_queue, 1, raw_bytes)
+                except Exception:
+                    removed = 0
+                if not removed:
+                    continue
+                payload = dict(payload)
+                payload["_dlq_raw"] = raw_bytes.decode("utf-8", errors="replace")
+                popped.append(payload)
+                if len(popped) >= want:
+                    break
+            return popped
+        except Exception:
+            return []

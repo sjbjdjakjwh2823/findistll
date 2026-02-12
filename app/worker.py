@@ -59,8 +59,25 @@ def run_worker_loop() -> None:
         if not doc:
             continue
 
+        metadata0 = doc.get("metadata", {}) or {}
+        tenant_id = str(metadata0.get("tenant_id") or "").strip() or "public"
+        set_tenant_id(tenant_id)
         try:
             start = time.time()
+            # If this document is tied to a pipeline job that has been canceled, do not process it.
+            try:
+                pipeline_job_id0 = str(metadata0.get("pipeline_job_id") or "")
+                if pipeline_job_id0:
+                    j = collab.get_pipeline_job(job_id=pipeline_job_id0) or {}
+                    if str(j.get("status") or "") == "canceled":
+                        update_document_status(db, doc_id, "canceled", "pipeline job canceled")
+                        try:
+                            queue.ack(task)
+                        except Exception:
+                            pass
+                        continue
+            except Exception:
+                pass
             update_document_status(db, doc_id, "processing")
             raw_content = doc.get("raw_content") or {}
             file_bytes = None
@@ -70,7 +87,7 @@ def run_worker_loop() -> None:
                 filename = raw_content.get("filename") or os.path.basename(file_path)
                 if file_path and os.path.exists(file_path):
                     file_bytes = Path(file_path).read_bytes()
-            metadata = doc.get("metadata", {}) or {}
+            metadata = metadata0
             # Prefer queue-provided job/user hints (no extra DB lookups), but persist them on the document row.
             changed = False
             if task.get("job_id") and not metadata.get("pipeline_job_id"):
@@ -138,7 +155,7 @@ def run_worker_loop() -> None:
                 logger.warning("metrics logging failed (success)", exc_info=True)
         except Exception as exc:
             logger.exception("Worker failed for %s", doc_id)
-            metadata = doc.get("metadata", {}) or {}
+            metadata = metadata0
             retries = int(metadata.get("retry_count", 0))
             pipeline_job_id = str(metadata.get("pipeline_job_id") or "")
             actor_user_id = str(metadata.get("owner_user_id") or "system")
@@ -183,7 +200,18 @@ def run_worker_loop() -> None:
                 except Exception:
                     logger.warning("queue ack failed (dlq)", exc_info=True)
                 try:
-                    queue.enqueue_dead_letter(doc_id, reason=str(exc))
+                    queue.enqueue_dead_letter(
+                        doc_id,
+                        reason=str(exc),
+                        extra={
+                            "tenant_id": str(metadata.get("tenant_id") or tenant_id or "public"),
+                            "pipeline_job_id": pipeline_job_id or None,
+                            "owner_user_id": str(metadata.get("owner_user_id") or actor_user_id or "system"),
+                            "error_class": str(metadata.get("error_class") or ""),
+                            "retry_count": int(metadata.get("retry_count") or (retries + 1)),
+                            "worker_id": os.getenv("HOSTNAME", "worker"),
+                        },
+                    )
                 except Exception:
                     logger.warning("dead letter enqueue failed", exc_info=True)
             try:
@@ -191,6 +219,8 @@ def run_worker_loop() -> None:
                 MetricsLogger().log("worker.job_failure", 1, {"retry": retries})
             except Exception:
                 logger.warning("metrics logging failed (failure)", exc_info=True)
+        finally:
+            clear_tenant_id()
 
 
 if __name__ == "__main__":
@@ -314,6 +344,17 @@ def _handle_rag_task(db, queue: TaskQueue, collab: EnterpriseCollabStore, task: 
 
     set_tenant_id(tenant_id)
     try:
+        # Respect cancellation for async jobs.
+        try:
+            j = collab.get_pipeline_job(job_id=job_id) or {}
+            if str(j.get("status") or "") == "canceled":
+                try:
+                    queue.ack(task)
+                except Exception:
+                    pass
+                return
+        except Exception:
+            pass
         try:
             collab.update_pipeline_job_status(
                 actor_user_id=user_id,

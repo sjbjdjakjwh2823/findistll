@@ -300,15 +300,19 @@ def rag_query(payload: RagQueryIn, user: CurrentUser = Depends(get_current_user)
         causal = _build_causal_sections(db=db, query=payload.query) if policy.get("causal") else {}
         legacy_summary = engine.format_context(context)
 
-        MetricsLogger().log(
-            "rag.query.count",
-            1,
-            {
-                "k": payload.top_k,
-                "user_id": user.user_id,
-                "has_prediction": 1 if causal.get("prediction") else 0,
-            },
-        )
+        try:
+            MetricsLogger().log(
+                "rag.query.count",
+                1,
+                {
+                    "k": payload.top_k,
+                    "user_id": user.user_id,
+                    "has_prediction": 1 if causal.get("prediction") else 0,
+                },
+            )
+        except Exception:
+            # Metrics must never break the RAG user path.
+            pass
 
         response = {
             "query": payload.query,
