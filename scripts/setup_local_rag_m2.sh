@@ -35,7 +35,8 @@ PY
 echo "[4/4] Recommended env"
 cat <<EOF
 OPENAI_BASE_URL=${OLLAMA_URL}/v1
-OPENAI_API_KEY=local-dev-key
+# For local Ollama-compatible endpoints, any non-empty string is usually acceptable.
+OPENAI_API_KEY=
 EMBEDDING_PROVIDER=sentence_transformers
 EMBEDDING_MODEL=${EMBED_MODEL}
 EMBEDDING_DIM=384
